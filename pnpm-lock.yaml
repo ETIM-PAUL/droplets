@@ -184,6 +184,9 @@ importers:
 
   apps/miniapp:
     dependencies:
+      '@nimiq/mini-app-sdk':
+        specifier: ^0.2.4
+        version: 0.2.4
       react:
         specifier: ^19.0.0
         version: 19.3.1
@@ -483,6 +486,9 @@ packages:
     cpu: [x64]
     os: [linux]
     libc: [glibc]
+
+  '@nimiq/mini-app-sdk@0.2.4':
+    resolution: {integrity: sha512-gDumiC+5OiN5rIaWXS2moNmDKTav8evrAvs2qLMfcSyTVgIKtX7Prmcgj7k9PXrMyGk0JMmIKaG1lbPkSg8/Ew==}
 
   '@rolldown/pluginutils@1.0.0-rc.3':
     resolution: {integrity: sha512-eybk3TjzzzV97Dlj5c+XrBFW57eTNhzod66y9HrBlzJ6NsCrWCp/2kaPS3K9wJmurBC0Tdw4yPjXKZqlznim3Q==}
@@ -1206,6 +1212,8 @@ snapshots:
 
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     optional: true
+
+  '@nimiq/mini-app-sdk@0.2.4': {}
 
   '@rolldown/pluginutils@1.0.0-rc.3': {}
 

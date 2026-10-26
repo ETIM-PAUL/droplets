@@ -213,7 +213,11 @@ importers:
 
   packages/client: {}
 
-  packages/core: {}
+  packages/core:
+    dependencies:
+      '@scure/base':
+        specifier: ^2.4.0
+        version: 2.4.0
 
   packages/wallet-evm: {}
 
@@ -630,6 +634,9 @@ packages:
     resolution: {integrity: sha512-wPWi++K4Bs1VR4XihOhfGi4IGX6Cub7FlerTf8X2v+2BtDHddgSqWCXwGD+h2yAe4/niIhNDwAltioOC+wEogQ==}
     cpu: [x64]
     os: [win32]
+
+  '@scure/base@2.4.0':
+    resolution: {integrity: sha512-thZ1TuJwFwBblOhgsjDKvvGirBxNp+wSvY/DR6tJBJOTDhdAAcHJ8Vbr2eFnqaxeca4+t0i9KBf+uHYGWwZORg==}
 
   '@types/babel__core@7.20.5':
     resolution: {integrity: sha512-qoQprZvz5wQFJwMDqeseRXWv3rqMvhgpbXFfVyWhbx9X47POIA6i/+dXefEmZKoAgOaTdaIgNSMqMIU61yRyzA==}
@@ -1291,6 +1298,8 @@ snapshots:
 
   '@rollup/rollup-win32-x64-msvc@4.65.0':
     optional: true
+
+  '@scure/base@2.4.0': {}
 
   '@types/babel__core@7.20.5':
     dependencies:

@@ -1,6 +1,7 @@
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { connectHost, type HostState } from "./host";
+import { Spike } from "./spike";
 
 function App() {
   const [host, setHost] = useState<HostState | null>(null);
@@ -36,6 +37,6 @@ function App() {
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
+    {location.hash === "#spike" ? <Spike /> : <App />}
   </StrictMode>,
 );

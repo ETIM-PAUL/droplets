@@ -1,1 +1,1 @@
-export const name = "@railkit/adapters";
+export * from "./mock-route";

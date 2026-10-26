@@ -172,3 +172,22 @@ describe("parsePaymentInput", () => {
     expect(kind("send me money")).toBe("unrecognised");
   });
 });
+
+import { addMoney, ceilToDecimals, compareMoney, money, mulBpsCeil } from "./money";
+
+describe("money", () => {
+  it("adds and compares exactly", () => {
+    expect(addMoney(money("0.1", "NIM"), money("0.2", "NIM")).amount).toBe("0.3");
+    expect(compareMoney(money("10", "KES"), money("9.99", "KES"))).toBe(1);
+  });
+  it("refuses to mix currencies and bad input", () => {
+    expect(() => addMoney(money("1", "NIM"), money("1", "KES"))).toThrow(/mismatch/);
+    expect(() => money("1e3", "NIM")).toThrow();
+    expect(() => money("-1", "NIM")).toThrow();
+  });
+  it("rounds fees up", () => {
+    expect(mulBpsCeil(money("4834", "SAT"), 100).amount).toBe("48.34");
+    expect(ceilToDecimals(money("48.34", "SAT"), 0).amount).toBe("49");
+    expect(ceilToDecimals(money("12.301", "KES"), 2).amount).toBe("12.31");
+  });
+});

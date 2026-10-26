@@ -1,0 +1,21 @@
+# Planning and internal docs (kept local)
+Errand*Build Plan*.md
+*Build Plan*.md
+/docs/
+/notes/
+
+# Dependencies and build output
+node_modules/
+dist/
+coverage/
+.vite/
+*.tsbuildinfo
+
+# Env and secrets
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+.idea/

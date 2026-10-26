@@ -4,6 +4,7 @@ import { parsePaymentInput } from "../parse";
 import { fail, ok, type Result } from "../result";
 import { transition } from "./machine";
 import {
+  UserFacingError,
   WalletError,
   type HostNetwork,
   type Order,
@@ -58,6 +59,10 @@ export class Engine {
 
   /** Quotes every route that can handle the intent, cheapest first. */
   async quote(intent: PayIntent): Promise<Result<Quote[]>> {
+    const d = intent.destination;
+    if ((d.kind === "lightning-address" || d.kind === "lnurl") && !intent.amount) {
+      return fail("bad_amount", "Enter how much to send.");
+    }
     const candidates = this.routes.filter((r) => r.canHandle(intent));
     if (candidates.length === 0) {
       return fail("unsupported", "Errand can't pay this yet. Try a different payment request.");
@@ -70,7 +75,8 @@ export class Engine {
       }
     });
     if (quotes.length === 0) {
-      return fail("unsupported", "No route is available right now. Try again in a minute.");
+      const reason = settled.find((s) => s.status === "rejected" && s.reason instanceof UserFacingError) as PromiseRejectedResult | undefined;
+      return fail("unsupported", reason ? reason.reason.message : "No route is available right now. Try again in a minute.");
     }
     quotes.sort((a, b) => compareMoney(a.send, b.send) || a.etaSeconds - b.etaSeconds);
     return ok(quotes);
@@ -150,7 +156,9 @@ export class Engine {
     const s = await route.poll(order.quote.providerRef);
     if (s.status === "completed") {
       if (order.state === "outcome_unknown") order = transition(order, "processing", this.now(), "provider confirmed payment");
-      order = transition(order, "completed", this.now());
+      const verified = s.verified !== false;
+      order = transition(order, "completed", this.now(), verified ? undefined : "settlement not independently verified");
+      order = { ...order, settlement: verified ? "verified" : "unverified" };
     } else if (s.status === "failed") {
       order = transition(order, "failed", this.now(), s.message, `The payment failed: ${s.message}. Contact support with your order number ${order.id}.`);
     } else if (order.state === "outcome_unknown" && s.status === "processing") {

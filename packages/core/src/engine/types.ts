@@ -34,6 +34,8 @@ export interface Quote {
   steps: Step[];
   /** The provider's own id for this quote, if it has one. */
   providerRef: string | null;
+  /** Things the user should know before approving, e.g. that the host dialog shows the final fee. */
+  notes?: string[];
 }
 
 export type OrderState =
@@ -64,11 +66,13 @@ export interface Order {
   updatedAt: number;
   /** Shown to the user when the order ends badly: what happened and what to do next. */
   message: string | null;
+  /** Set when completed: whether the provider independently confirmed settlement. */
+  settlement?: "verified" | "unverified";
 }
 
 export type ProviderStatus =
   | { status: "pending" | "processing" }
-  | { status: "completed" }
+  | { status: "completed"; verified?: boolean }
   | { status: "failed"; message: string };
 
 export interface RouteAdapter {
@@ -79,6 +83,9 @@ export interface RouteAdapter {
   open(quote: Quote): Promise<{ providerRef: string }>;
   poll(providerRef: string): Promise<ProviderStatus>;
 }
+
+/** An error whose message is safe and useful to show the user as written. */
+export class UserFacingError extends Error {}
 
 export class WalletError extends Error {
   constructor(

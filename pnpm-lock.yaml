@@ -187,6 +187,12 @@ importers:
       '@nimiq/mini-app-sdk':
         specifier: ^0.2.4
         version: 0.2.4
+      '@railkit/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@railkit/wallet-nimiq':
+        specifier: workspace:*
+        version: link:../../packages/wallet-nimiq
       react:
         specifier: ^19.0.0
         version: 19.3.1
@@ -223,9 +229,17 @@ importers:
         specifier: ^2.4.0
         version: 2.4.0
 
-  packages/wallet-evm: {}
+  packages/wallet-evm:
+    dependencies:
+      '@railkit/core':
+        specifier: workspace:*
+        version: link:../core
 
-  packages/wallet-nimiq: {}
+  packages/wallet-nimiq:
+    dependencies:
+      '@railkit/core':
+        specifier: workspace:*
+        version: link:../core
 
   packages/widgets: {}
 

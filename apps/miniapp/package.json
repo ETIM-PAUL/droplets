@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@nimiq/mini-app-sdk": "^0.2.4",
+    "@railkit/core": "workspace:*",
+    "@railkit/wallet-nimiq": "workspace:*",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

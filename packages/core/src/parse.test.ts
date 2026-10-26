@@ -191,3 +191,33 @@ describe("money", () => {
     expect(ceilToDecimals(money("12.301", "KES"), 2).amount).toBe("12.31");
   });
 });
+
+import { parseEvmAddress, toChecksumAddress } from "./evm-address";
+
+describe("parseEvmAddress", () => {
+  // EIP-55 reference vectors.
+  const VECTORS = [
+    "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
+    "0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359",
+    "0xdbF03B407c01E7cD3CBea99509d93f8DDDC8C6FB",
+    "0xD1220A0cf47c7B9Be7A2E6BA89F429762e7b9aDb",
+  ];
+  it("accepts correct checksums and lowercase", () => {
+    for (const a of VECTORS) {
+      expect(parseEvmAddress(a).ok).toBe(true);
+      expect(toChecksumAddress(a.toLowerCase())).toBe(a);
+      const r = parseEvmAddress(a.toLowerCase());
+      expect(r.ok && r.value.address).toBe(a);
+    }
+  });
+  it("rejects a wrong-case address as a typo", () => {
+    const bad = VECTORS[0]!.replace("aAeb", "AaEb");
+    const r = parseEvmAddress(bad);
+    expect(!r.ok && r.error.code).toBe("bad_checksum");
+  });
+  it("rejects wrong lengths and classifies via parsePaymentInput", () => {
+    expect(parseEvmAddress("0x1234").ok).toBe(false);
+    const r = parsePaymentInput(VECTORS[1]!);
+    expect(r.ok && r.value.kind).toBe("evm-address");
+  });
+});

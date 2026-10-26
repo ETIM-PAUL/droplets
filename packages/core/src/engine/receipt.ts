@@ -23,6 +23,8 @@ function recipientOf(order: Order): string {
       return new URL(d.url).hostname;
     case "emvco":
       return d.merchantName ?? "Merchant";
+    case "evm-address":
+      return d.address;
     case "bolt11":
       return d.description ?? "Lightning invoice";
   }

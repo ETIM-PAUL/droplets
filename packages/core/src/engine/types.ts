@@ -2,6 +2,7 @@ import type { Money } from "../money";
 import type { ParsedPayment } from "../parse";
 
 export type Asset = "NIM" | "USDT";
+export type EvmChain = "polygon" | "ethereum" | "arbitrum";
 export type HostNetwork = "mainnet" | "testnet";
 
 export interface PayIntent {
@@ -11,6 +12,8 @@ export interface PayIntent {
   amount?: Money;
   /** What the user pays with. */
   sourceAsset: Asset;
+  /** For payouts to a wallet address: which chain the tokens should arrive on. */
+  targetChain?: EvmChain;
 }
 
 /** One thing the wallet must do. Wallet adapters (phase 8) implement each kind. */

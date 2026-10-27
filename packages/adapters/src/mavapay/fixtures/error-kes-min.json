@@ -1,0 +1,7 @@
+{
+  "status": 400,
+  "body": {
+    "status": "error",
+    "message": "Amount cannot be less than 150 KES"
+  }
+}

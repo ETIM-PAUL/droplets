@@ -1,3 +1,4 @@
+import { maskRecipient } from "../corridors";
 import type { Money } from "../money";
 import type { Order } from "./types";
 
@@ -23,6 +24,8 @@ function recipientOf(order: Order): string {
       return new URL(d.url).hostname;
     case "emvco":
       return d.merchantName ?? "Merchant";
+    case "fiat-payout":
+      return maskRecipient(d.recipient);
     case "evm-address":
       return d.address;
     case "bolt11":

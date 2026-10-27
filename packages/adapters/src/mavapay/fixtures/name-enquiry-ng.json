@@ -1,0 +1,12 @@
+{
+  "status": 200,
+  "body": {
+    "status": "ok",
+    "message": "",
+    "data": {
+      "accountName": "Aisha White",
+      "accountNumber": "0087241555",
+      "bankCode": "000013"
+    }
+  }
+}

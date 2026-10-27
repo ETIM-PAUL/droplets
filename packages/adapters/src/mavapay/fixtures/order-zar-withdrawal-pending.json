@@ -1,0 +1,99 @@
+{
+  "status": 200,
+  "body": {
+    "status": "ok",
+    "data": {
+      "id": "261026-HM51S-JVV94",
+      "quoteId": "459ef85c-fb8b-4120-8f93-9a13202609cd",
+      "settledQuoteId": null,
+      "amount": 10000,
+      "channel": "API",
+      "currency": "ZAR",
+      "paymentMethod": "LIGHTNING",
+      "status": "PAID",
+      "createdAt": "2026-10-26T23:43:16.233Z",
+      "updatedAt": "2026-10-26T23:43:20.169Z",
+      "stablecoinTransactionMetadata": [],
+      "transactions": [
+        {
+          "id": "9b27464b-1a32-48ce-b71e-ce3a6100e56c",
+          "walletId": "14b2493a-1c25-468b-8636-6113c827d82c",
+          "ref": "dfeebb280590f1e6cb5db8b127d89",
+          "hash": "ed91786f427507e34d6e74bde378ed711c20cacf67db12e3021ae2e042fd3570",
+          "amount": 10000,
+          "fees": 50,
+          "currency": "ZAR",
+          "type": "DEPOSIT",
+          "status": "SUCCESS",
+          "autopayout": true,
+          "createdAt": "2026-10-26T23:43:18.707Z",
+          "updatedAt": "2026-10-26T23:43:18.707Z",
+          "metadata": {
+            "id": "75f5e3d5-9322-4f2a-a505-e99cc25cf618",
+            "merchantId": "3b16a951-3b94-4121-9c32-64c5cda6f32c",
+            "orderId": "261026-HM51S-JVV94",
+            "merchantName": "test merchant 1",
+            "bankName": "CAPITEC BANK",
+            "bankAccountNumber": "1325558779",
+            "reference": "MPYxKpNg4ZDmbzxL7M98",
+            "customerInternalFee": 0,
+            "customerReference": null,
+            "createdAt": "2026-10-26T23:43:19.195Z",
+            "updatedAt": "2026-10-26T23:43:19.195Z"
+          }
+        },
+        {
+          "id": "8e75f71b-eae1-4354-a83a-89895564bf8a",
+          "walletId": "14b2493a-1c25-468b-8636-6113c827d82c",
+          "ref": null,
+          "hash": "ed91786f427507e34d6e74bde378ed711c20cacf67db12e3021ae2e042fd3570",
+          "amount": 10000,
+          "fees": 0,
+          "currency": "ZAR",
+          "type": "WITHDRAWAL",
+          "status": "PENDING",
+          "autopayout": true,
+          "createdAt": "2026-10-26T23:43:19.359Z",
+          "updatedAt": "2026-10-26T23:43:19.359Z",
+          "metadata": {
+            "id": "30e01857-5f6c-4cd3-986a-600574076c4a",
+            "merchantId": "3b16a951-3b94-4121-9c32-64c5cda6f32c",
+            "orderId": "261026-HM51S-JVV94",
+            "merchantName": "test merchant 1",
+            "bankName": "CAPITEC BANK",
+            "bankAccountNumber": "1325558779",
+            "reference": "MPYxKpNg4ZDmbzxL7M98",
+            "customerInternalFee": 0,
+            "customerReference": null,
+            "createdAt": "2026-10-26T23:43:19.683Z",
+            "updatedAt": "2026-10-26T23:43:26.492Z"
+          }
+        }
+      ],
+      "quotes": [
+        {
+          "id": "459ef85c-fb8b-4120-8f93-9a13202609cd",
+          "exchangeRate": 1331865.4964474754,
+          "usdToTargetCurrencyRate": 16.63559068,
+          "transactionFeesInSourceCurrency": 37,
+          "transactionFeesInTargetCurrency": 50,
+          "transactionFeesInUsdCent": 4,
+          "paymentBtcDetail": "lnbc76u1p4dlevnpp5akghsm6zw5r7xntwwj77x78dwywzpjk0vld39cczrt3wqshax4cqdz9296k7ar98gsrgdfev4nrsdtr94nxywrz956rzv3s95uxvwfn95ukzvfnxgcryd3s893kgcqzzsxqzfvsp5amsghgdwq8yku2sjcqvn02haawdphnlw6utg008g7jjzjw8wvmcq9qxpqysgq9ur58w5wvggmqshkkp0vf0xcx6yu7fj46hj8rkl2cjrzevvpmkzjqlh2eevfhwax5kunn0u02k4nz0aqa6was52685x2w5a6n5a7wccqkh70x0",
+          "paymentMethod": "LIGHTNING",
+          "totalAmount": 7600,
+          "equivalentAmount": 10000,
+          "expiry": "2026-10-26T23:48:15.000Z",
+          "sourceCurrency": "BTCSAT",
+          "targetCurrency": "ZARCENT",
+          "paymentCurrency": "ZARCENT",
+          "customerInternalFee": 0,
+          "executableBtcAmount": "7600",
+          "btcRoundingSurplus": "45",
+          "customerReference": null,
+          "createdAt": "2026-10-26T23:43:16.233Z",
+          "updatedAt": "2026-10-26T23:43:16.233Z"
+        }
+      ]
+    }
+  }
+}

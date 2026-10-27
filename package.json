@@ -3,13 +3,16 @@
   "private": true,
   "license": "MIT",
   "packageManager": "pnpm@12.11.2",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "pnpm -r run build",
     "typecheck": "pnpm -r run typecheck",
     "test": "vitest run",
     "check:licenses": "node scripts/check-licenses.mjs",
-    "ci": "pnpm typecheck && pnpm test && pnpm build && pnpm check:licenses"
+    "ci": "pnpm typecheck && pnpm test && pnpm build && pnpm check:licenses",
+    "test:contract": "MAVAPAY_CONTRACT=1 node --env-file=.env node_modules/vitest/vitest.mjs run packages/adapters/src/mavapay/contract.test.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

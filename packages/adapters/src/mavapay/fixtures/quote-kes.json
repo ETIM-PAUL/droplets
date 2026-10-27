@@ -1,0 +1,26 @@
+{
+  "status": 200,
+  "body": {
+    "status": "ok",
+    "data": {
+      "id": "874eefd0-2916-4998-b21d-9112ce7a7ba2",
+      "exchangeRate": 10571582.445589902,
+      "usdToTargetCurrencyRate": 131.34787045000002,
+      "sourceCurrency": "BTCSAT",
+      "targetCurrency": "KESCENT",
+      "transactionFeesInSourceCurrency": 1324,
+      "transactionFeesInTargetCurrency": 14000,
+      "amountInSourceCurrency": 25100,
+      "amountInTargetCurrency": 250000,
+      "paymentMethod": "LIGHTNING",
+      "expiry": "2026-10-26T23:51:37.000Z",
+      "isValid": true,
+      "invoice": "lnbc251u1p4dlejapp5qxnmrxhmwpuz2ehf0gr64rymeq0xdc5rrrf9aftfxh5jfcvut6uqdz9296k7ar98gsrsde5v4jkveps95erjvfk956rjwfc943ryvty95unzvfjvdjnwcfhvfsnycqzzsxqzfvsp56e3lvfykdqqu0vxfd96llh3v57av83f7rntgeu80zl3vmvnswvdq9qxpqysgqhmuwg0zfl649jls9aagun0snnes2a9gr7jxgnpvftz8n3kh6q88jmuph5nwcaqn8n059ma5le4tcsge9pcddak4dzw7f8f3nnee0zzsqgk4uqz",
+      "hash": "01a7b19afb70782566e97a07aa8c9bc81e66e28318d25ea56935e924e19c5eb8",
+      "totalAmountInSourceCurrency": 25100,
+      "customerInternalFee": 0,
+      "invoiceRequired": false,
+      "orderId": "261026-BX7KW-AXNZJ"
+    }
+  }
+}

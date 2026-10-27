@@ -1,0 +1,7 @@
+{
+  "status": 400,
+  "body": {
+    "status": "error",
+    "message": "Order not found"
+  }
+}

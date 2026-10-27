@@ -12,3 +12,5 @@ export * from "./engine/store";
 export * from "./engine/types";
 export * from "./engine/executor";
 export * from "./engine/receipt";
+export * from "./phone";
+export * from "./corridors";

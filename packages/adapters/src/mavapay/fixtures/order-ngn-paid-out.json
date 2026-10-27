@@ -1,0 +1,97 @@
+{
+  "status": 200,
+  "body": {
+    "status": "ok",
+    "data": {
+      "id": "261026-VSVJB-F6123",
+      "quoteId": "c77ca1a5-050f-4d84-a9bb-ad9ba7dc2639",
+      "settledQuoteId": null,
+      "amount": 500000,
+      "channel": "API",
+      "currency": "NGN",
+      "paymentMethod": "LIGHTNING",
+      "status": "PAID",
+      "createdAt": "2026-10-26T23:46:46.316Z",
+      "updatedAt": "2026-10-26T23:46:51.026Z",
+      "stablecoinTransactionMetadata": [],
+      "transactions": [
+        {
+          "id": "c0cfc035-d392-4852-ac8e-2446f03ae673",
+          "walletId": "ad59f6a6-1701-4fe2-94b7-7b31c4310c4a",
+          "ref": "9ab85474a3b08eac51cfeb4b7be97",
+          "hash": "6ce0eb7a8f26c1519f6d93af0d600d957fc42331a62ef2c440023ba4ebda5c84",
+          "amount": 500000,
+          "fees": 10000,
+          "currency": "NGN",
+          "type": "DEPOSIT",
+          "status": "SUCCESS",
+          "autopayout": true,
+          "createdAt": "2026-10-26T23:46:50.046Z",
+          "updatedAt": "2026-10-26T23:46:50.046Z",
+          "metadata": {
+            "id": "aa6829a6-60b9-4d7c-9ef5-a202c5bc627c",
+            "orderId": "261026-VSVJB-F6123",
+            "bankCode": "000013",
+            "bankName": "GTBANK PLC",
+            "bankAccountName": "Jane Jackson",
+            "bankAccountNumber": "0087241555",
+            "customerInternalFee": 0,
+            "customerReference": null,
+            "createdAt": "2026-10-26T23:46:50.537Z",
+            "updatedAt": "2026-10-26T23:46:50.537Z"
+          }
+        },
+        {
+          "id": "6e1e52a5-5008-4834-bfcb-bcf34c2114ee",
+          "walletId": "ad59f6a6-1701-4fe2-94b7-7b31c4310c4a",
+          "ref": "87090d43de6107d56c73a894f3bdf",
+          "hash": "6ce0eb7a8f26c1519f6d93af0d600d957fc42331a62ef2c440023ba4ebda5c84",
+          "amount": 500000,
+          "fees": 0,
+          "currency": "NGN",
+          "type": "WITHDRAWAL",
+          "status": "SUCCESS",
+          "autopayout": true,
+          "createdAt": "2026-10-26T23:46:54.996Z",
+          "updatedAt": "2026-10-26T23:47:05.232Z",
+          "metadata": {
+            "id": "96bc8993-6721-433d-873d-1bffe9eb153c",
+            "orderId": "261026-VSVJB-F6123",
+            "bankCode": "000013",
+            "bankName": "GTBANK PLC",
+            "bankAccountName": "Jane Jackson",
+            "bankAccountNumber": "0087241555",
+            "customerInternalFee": 0,
+            "customerReference": null,
+            "createdAt": "2026-10-26T23:46:55.323Z",
+            "updatedAt": "2026-10-26T23:47:02.698Z"
+          }
+        }
+      ],
+      "quotes": [
+        {
+          "id": "c77ca1a5-050f-4d84-a9bb-ad9ba7dc2639",
+          "exchangeRate": 110233375.5646161,
+          "usdToTargetCurrencyRate": 1376.49,
+          "transactionFeesInSourceCurrency": 90,
+          "transactionFeesInTargetCurrency": 10000,
+          "transactionFeesInUsdCent": 8,
+          "paymentBtcDetail": "lnbc47u1p4dlen9pp5dnswk750ymq4r8mdjwhs6cqdj4lugge35ch093zqqga6f676tjzqdz9296k7ar98gsxxdehvdsnzcf495cr2vrx956xgwp594snjcnz94skgwtzvymkgcejxcenjcqzzsxqzfvsp5thakavkec5qnrfntdy48hx8xlrd9tswxfur8f8gm7ugs0u5yr3ls9qxpqysgqa2e7hfujssmch4wle5d4e4fv3mpyxspxngef08wsgrkheqmx8a8zn8adhwrl9nzenrfnenwrlv9tfc2q2rf72kj5y52yhpgx0mwlkssp6mltk4",
+          "paymentMethod": "LIGHTNING",
+          "totalAmount": 4700,
+          "equivalentAmount": 500000,
+          "expiry": "2026-10-26T23:51:45.000Z",
+          "sourceCurrency": "BTCSAT",
+          "targetCurrency": "NGNKOBO",
+          "paymentCurrency": "NGNKOBO",
+          "customerInternalFee": 0,
+          "executableBtcAmount": "4700",
+          "btcRoundingSurplus": "64",
+          "customerReference": null,
+          "createdAt": "2026-10-26T23:46:46.317Z",
+          "updatedAt": "2026-10-26T23:46:46.317Z"
+        }
+      ]
+    }
+  }
+}

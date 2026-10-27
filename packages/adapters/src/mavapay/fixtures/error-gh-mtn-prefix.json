@@ -1,0 +1,7 @@
+{
+  "status": 400,
+  "body": {
+    "status": "error",
+    "message": "Error validating GHS beneficiary: Phone number does not match MTN network. MTN: 024, 025, 053, 054, 055, 059. AIRTEL: 027, 057, 026, 056. VODAFONE: 020, 050."
+  }
+}

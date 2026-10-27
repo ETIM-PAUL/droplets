@@ -1,0 +1,29 @@
+{
+  "status": 200,
+  "body": {
+    "status": "ok",
+    "message": "Bank list for country: NG",
+    "data": [
+      {
+        "bankName": "78 FINANCE COMPANY LIMITED",
+        "nipBankCode": "110072"
+      },
+      {
+        "bankName": "9 PAYMENT SERVICE BANK",
+        "nipBankCode": "120001"
+      },
+      {
+        "bankName": "9JAPAY MICROFINANCE BANK",
+        "nipBankCode": "090629"
+      },
+      {
+        "bankName": "AAA FINANCE AND INVESTMENT COMPANY LIMITED",
+        "nipBankCode": "050005"
+      },
+      {
+        "bankName": "AB MICROFINANCE BANK",
+        "nipBankCode": "090270"
+      }
+    ]
+  }
+}

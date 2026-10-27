@@ -1,0 +1,26 @@
+{
+  "status": 200,
+  "body": {
+    "status": "ok",
+    "data": {
+      "id": "c77ca1a5-050f-4d84-a9bb-ad9ba7dc2639",
+      "exchangeRate": 110233375.5646161,
+      "usdToTargetCurrencyRate": 1376.49,
+      "sourceCurrency": "BTCSAT",
+      "targetCurrency": "NGNKOBO",
+      "transactionFeesInSourceCurrency": 90,
+      "transactionFeesInTargetCurrency": 10000,
+      "amountInSourceCurrency": 4700,
+      "amountInTargetCurrency": 500000,
+      "paymentMethod": "LIGHTNING",
+      "expiry": "2026-10-26T23:51:45.000Z",
+      "isValid": true,
+      "invoice": "lnbc47u1p4dlen9pp5dnswk750ymq4r8mdjwhs6cqdj4lugge35ch093zqqga6f676tjzqdz9296k7ar98gsxxdehvdsnzcf495cr2vrx956xgwp594snjcnz94skgwtzvymkgcejxcenjcqzzsxqzfvsp5thakavkec5qnrfntdy48hx8xlrd9tswxfur8f8gm7ugs0u5yr3ls9qxpqysgqa2e7hfujssmch4wle5d4e4fv3mpyxspxngef08wsgrkheqmx8a8zn8adhwrl9nzenrfnenwrlv9tfc2q2rf72kj5y52yhpgx0mwlkssp6mltk4",
+      "hash": "6ce0eb7a8f26c1519f6d93af0d600d957fc42331a62ef2c440023ba4ebda5c84",
+      "totalAmountInSourceCurrency": 4700,
+      "customerInternalFee": 0,
+      "invoiceRequired": false,
+      "orderId": "261026-VSVJB-F6123"
+    }
+  }
+}

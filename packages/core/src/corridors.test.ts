@@ -62,3 +62,14 @@ describe("display helpers", () => {
     expect(machankuraAddress("+254712345678")).toBe("254712345678@8333.mobi");
   });
 });
+
+import { groupDigits } from "./money";
+import { receiptDate } from "./engine/receipt";
+
+describe("receipt formatting", () => {
+  it("groups digits and writes a time-zone-free date", () => {
+    expect(groupDigits("2500")).toBe("2,500");
+    expect(groupDigits("1234567.5")).toBe("1,234,567.5");
+    expect(receiptDate(Date.UTC(2026, 9, 27, 20, 40, 11))).toBe("27 Oct 2026, 20:40 UTC");
+  });
+});

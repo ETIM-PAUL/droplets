@@ -1,5 +1,5 @@
 import { maskRecipient } from "../corridors";
-import type { Money } from "../money";
+import { groupDigits, type Money } from "../money";
 import type { Order } from "./types";
 
 export interface Receipt {
@@ -51,16 +51,25 @@ export function buildReceipt(order: Order): Receipt | null {
 }
 
 /** Plain text the sender can share with the recipient. Contains no secrets. */
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** "27 Oct 2026, 20:40 UTC": the same for sender and recipient, whatever their time zones. */
+export function receiptDate(ms: number): string {
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}, ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`;
+}
+
+/** Plain text the sender can share with the recipient. Contains no secrets. */
 export function receiptText(r: Receipt): string {
-  const lines = [
-    `Payment receipt`,
+  return [
+    "Payment receipt",
     `To: ${r.recipient}`,
-    `Amount: ${r.receive.amount} ${r.receive.currency}`,
-    `Date: ${new Date(r.completedAt).toISOString()}`,
+    `Amount: ${groupDigits(r.receive.amount)} ${r.receive.currency}`,
+    `Date: ${receiptDate(r.completedAt)}`,
     `Reference: ${r.orderId}`,
     r.settlement === "verified"
-      ? "Status: confirmed by the recipient's service"
-      : "Status: sent. The recipient's service doesn't offer confirmation, so ask them to check.",
-  ];
-  return lines.join("\n");
+      ? "Status: delivered, confirmed by the provider"
+      : "Status: sent. The recipient's service doesn't confirm receipt, so ask them to check.",
+  ].join("\n");
 }

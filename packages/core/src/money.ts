@@ -55,3 +55,10 @@ export function ceilToDecimals(a: Money, decimals: number): Money {
   const n = toScaled(a.amount);
   return { amount: fromScaled(((n + unit - 1n) / unit) * unit), currency: a.currency };
 }
+
+/** "1234567.5" → "1,234,567.5". Display only; keeps the digits exactly as given. */
+export function groupDigits(amount: string): string {
+  const [whole = "0", frac] = amount.split(".");
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return frac === undefined ? grouped : `${grouped}.${frac}`;
+}

@@ -104,7 +104,7 @@ describe("paying a Lightning Address end to end", () => {
 
     const r = buildReceipt(o)!;
     expect(r).toMatchObject({ recipient: "paul@example.com", receive: { amount: "2500", currency: "SAT" }, settlement: "verified" });
-    expect(receiptText(r)).toMatch(/confirmed by the recipient's service/);
+    expect(receiptText(r)).toMatch(/delivered, confirmed by the provider/);
     expect(receiptText(r)).not.toMatch(/lnbc/);
   });
 

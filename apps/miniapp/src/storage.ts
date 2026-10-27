@@ -70,3 +70,16 @@ export function recipientBook(storage: Storage | undefined = safeLocalStorage(),
     },
   };
 }
+
+/** The beta session token, kept on this device. */
+export const sessionToken = {
+  get: (storage: Storage | undefined = safeLocalStorage()): string | null => read<string | null>("errand.session.v1", null, storage),
+  set: (token: string, storage: Storage | undefined = safeLocalStorage()) => write("errand.session.v1", token, storage),
+  clear: (storage: Storage | undefined = safeLocalStorage()) => {
+    try {
+      storage?.removeItem("errand.session.v1");
+    } catch {
+      // Nothing to clear.
+    }
+  },
+};

@@ -14,9 +14,12 @@
     "@hono/node-server": "2.1.5",
     "@railkit/adapters": "workspace:*",
     "@railkit/core": "workspace:*",
-    "hono": "4.13.14"
+    "hono": "4.13.14",
+    "pg": "8.23.1"
   },
   "devDependencies": {
+    "@types/pg": "8.23.1",
+    "pg-mem": "3.0.14",
     "tsx": "4.23.15"
   }
 }

@@ -98,6 +98,8 @@ describe("payout API", () => {
     let last = 0;
     for (let i = 0; i < 21; i++) last = (await app.request("/v1/payouts/quote", post(KE, { "x-forwarded-for": "1.2.3.4" }))).status;
     expect(last).toBe(429);
+    // A spoofed first entry doesn't buy a fresh allowance.
+    expect((await app.request("/v1/payouts/quote", post(KE, { "x-forwarded-for": "9.9.9.9, 1.2.3.4" }))).status).toBe(429);
     expect((await app.request("/v1/payouts/quote", post(KE, { "x-forwarded-for": "5.6.7.8" }))).status).toBe(200);
   });
 
@@ -190,5 +192,75 @@ describe("airtime API", () => {
     expect(h.stale).toEqual([]);
     expect((await h.app.request("/v1/webhooks/bitrefill/tok_abcdef123456", post(body))).status).toBe(200);
     expect(h.stale).toEqual([body.id]);
+  });
+});
+
+import { issueSession, parseInvites } from "./ops/beta";
+import { MemoryOpsStore } from "./ops/store";
+
+describe("closed beta", () => {
+  const T = 1_800_000_000_000;
+  const beta = { invites: parseInvites("PAUL-7Q2=Paul,MAMA-K3=Mum"), secret: "s", maxSatsPerOrder: 30_000n, maxSatsPerDay: 60_000n };
+  function betaApp() {
+    const ops = new MemoryOpsStore();
+    const alerts: string[] = [];
+    // A minute before the fake quote expires, so open quotes count toward the cap.
+    const { app } = setup({ ops, beta, now: () => T - 60_000, adminToken: "admin-token-123", alert: async (t) => void alerts.push(t) });
+    const auth = (invite: string) => ({ Authorization: `Bearer ${issueSession(invite, beta, T)}` });
+    return { app, ops, alerts, auth };
+  }
+
+  it("exchanges an invite code for a session", async () => {
+    const { app } = betaApp();
+    const ok = await app.request("/v1/session", post({ invite: " paul-7q2 " }));
+    expect(await ok.json()).toMatchObject({ token: expect.any(String), name: "Paul" });
+    expect((await app.request("/v1/session", post({ invite: "NOPE" }))).status).toBe(401);
+  });
+
+  it("requires a session for paid features, but not for listing corridors", async () => {
+    const { app, auth } = betaApp();
+    expect((await app.request("/v1/payouts/quote", post(KE))).status).toBe(401);
+    expect((await app.request("/v1/corridors")).status).toBe(200);
+    expect((await app.request("/v1/payouts/quote", post(KE, auth("PAUL-7Q2")))).status).toBe(200);
+  });
+
+  it("logs quotes under the invite and enforces the daily cap", async () => {
+    const { app, ops, auth } = betaApp();
+    // Each fake quote costs 25,000 sats; the cap is 60,000 a day.
+    expect((await app.request("/v1/payouts/quote", post(KE, auth("PAUL-7Q2")))).status).toBe(200);
+    expect((await ops.get(QUOTE.orderId))?.invite).toBe("PAUL-7Q2");
+    await ops.recordQuote({ ...(await ops.get(QUOTE.orderId))!, id: "other-order-1" });
+    const third = await app.request("/v1/payouts/quote", post(KE, auth("PAUL-7Q2")));
+    expect(third.status).toBe(403);
+    expect(((await third.json()) as { error: { message: string } }).error.message).toMatch(/24 hours/);
+  });
+
+  it("hides one tester's orders from another", async () => {
+    const { app, auth } = betaApp();
+    await app.request("/v1/payouts/quote", post(KE, auth("PAUL-7Q2")));
+    expect((await app.request(`/v1/payouts/orders/${QUOTE.orderId}`, { headers: auth("PAUL-7Q2") })).status).toBe(200);
+    expect((await app.request(`/v1/payouts/orders/${QUOTE.orderId}`, { headers: auth("MAMA-K3") })).status).toBe(404);
+  });
+
+  it("records order state from status checks", async () => {
+    const { app, ops, auth } = betaApp();
+    await app.request("/v1/payouts/quote", post(KE, auth("PAUL-7Q2")));
+    await app.request(`/v1/payouts/orders/${QUOTE.orderId}`, { headers: auth("PAUL-7Q2") });
+    expect((await ops.get(QUOTE.orderId))?.state).toBe("paid");
+  });
+
+  it("takes feedback and alerts the team", async () => {
+    const { app, alerts, auth } = betaApp();
+    const r = await app.request("/v1/feedback", post({ message: "Took ages", orderId: QUOTE.orderId }, auth("MAMA-K3")));
+    expect(r.status).toBe(200);
+    expect(alerts[0]).toBe(`FEEDBACK from MAMA-K3 on ${QUOTE.orderId}: "Took ages"`);
+  });
+
+  it("serves metrics only with the admin token", async () => {
+    const { app } = betaApp();
+    expect((await app.request("/v1/admin/metrics")).status).toBe(404);
+    expect((await app.request("/v1/admin/metrics", { headers: { Authorization: "Bearer wrong" } })).status).toBe(404);
+    const m = await app.request("/v1/admin/metrics", { headers: { Authorization: "Bearer admin-token-123" } });
+    expect(await m.json()).toMatchObject({ completedOrders: 0, method: expect.stringMatching(/invite/) });
   });
 });

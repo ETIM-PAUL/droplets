@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { ProviderError, type BitrefillApi, type MavapayApi } from "@railkit/adapters";
@@ -6,11 +6,16 @@ import {
   CORRIDORS,
   isCorridorId,
   normalizePhone,
+  parseBolt11,
   type CountryCode,
   validatePayoutAmount,
   validateRecipient,
   type PayoutRecipient,
 } from "@railkit/core";
+import { issueSession, overLimit, verifySession, type BetaConfig } from "./ops/beta";
+import { airtimeToOps, payoutToOps } from "./ops/map";
+import { betaMetrics } from "./ops/metrics";
+import type { OpsStore } from "./ops/store";
 import { rateLimiter } from "./rate-limit";
 import { verifyMavapaySignature } from "./webhook";
 
@@ -25,13 +30,23 @@ export interface AppDeps {
   airtimeCountries?: ReadonlySet<string>;
   /** Secret path token for Bitrefill's (unsigned) webhooks. */
   bitrefillWebhookToken?: string;
+  /** Server-side order log for alerts and metrics. */
+  ops?: OpsStore;
+  /** Closed beta: invite-only sessions and spending caps. Off when undefined. */
+  beta?: BetaConfig;
+  adminToken?: string;
+  alert?: (text: string) => Promise<void>;
   log?: (msg: string, data?: Record<string, unknown>) => void;
   now?: () => number;
 }
 
+type Env = { Variables: { invite: string | null } };
+
+const safeEqual = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
+
 const ORDER_ID = /^[0-9A-Za-z-]{6,64}$/;
 
-const bad = (message: string, status: 400 | 403 | 404 | 429 | 502 | 503 = 400) =>
+const bad = (message: string, status: 400 | 401 | 403 | 404 | 429 | 502 | 503 = 400) =>
   Response.json({ error: { message } }, { status });
 
 function readRecipient(x: unknown): PayoutRecipient | null {
@@ -51,7 +66,8 @@ export function createApp(d: AppDeps) {
   const log = d.log ?? ((msg, data) => console.log(JSON.stringify({ msg, ...data })));
   const quoteLimit = rateLimiter(20, 60_000, d.now);
   const readLimit = rateLimiter(120, 60_000, d.now);
-  const clientKey = (h: (n: string) => string | undefined) => h("x-forwarded-for")?.split(",")[0]?.trim() || "local";
+  // The proxy in front of us (Render) appends the real client address last; earlier entries are whatever the client sent.
+  const clientKey = (h: (n: string) => string | undefined) => h("x-forwarded-for")?.split(",").at(-1)?.trim() || "local";
 
   const providerError = (e: unknown) => {
     if (e instanceof ProviderError) return bad(e.message, e.status);
@@ -59,8 +75,42 @@ export function createApp(d: AppDeps) {
     return bad("Something went wrong on our side. Try again in a minute.", 502);
   };
 
-  const app = new Hono();
-  app.use("/v1/*", cors({ origin: d.allowedOrigins, allowMethods: ["GET", "POST"], allowHeaders: ["Content-Type"] }));
+  const now = d.now ?? Date.now;
+  const sessionLimit = rateLimiter(10, 60_000, d.now);
+
+  const app = new Hono<Env>();
+  app.use("/v1/*", cors({ origin: d.allowedOrigins, allowMethods: ["GET", "POST"], allowHeaders: ["Content-Type", "Authorization"] }));
+
+  // Paid features need a beta session when the beta is on. The invite rides along for limits and metrics.
+  const session = async (c: { req: { header(n: string): string | undefined }; set(k: "invite", v: string | null): void }, next: () => Promise<void>) => {
+    if (!d.beta) {
+      c.set("invite", null);
+      return next();
+    }
+    const token = c.req.header("authorization")?.replace(/^Bearer /i, "");
+    const invite = verifySession(token, d.beta, now());
+    if (!invite) return bad("Your invite has ended or isn't valid. Enter your invite code again.", 401);
+    c.set("invite", invite);
+    return next();
+  };
+  for (const path of ["/v1/payouts/*", "/v1/airtime/*", "/v1/feedback"]) app.use(path, session as never);
+
+  /** An order placed under another invite looks like it doesn't exist. */
+  const notYours = async (id: string, invite: string | null) => {
+    if (!d.ops || !d.beta) return false;
+    const o = await d.ops.get(id);
+    return !!o && o.invite !== invite;
+  };
+
+  app.post("/v1/session", async (c) => {
+    if (!d.beta) return c.json({ token: null, name: null });
+    if (!sessionLimit(clientKey((n) => c.req.header(n)))) return bad("Too many tries. Wait a minute.", 429);
+    const body = (await c.req.json().catch(() => null)) as { invite?: unknown } | null;
+    const code = typeof body?.invite === "string" ? body.invite.trim().toUpperCase() : "";
+    if (!d.beta.invites.has(code)) return bad("That invite code isn't right. Check it and try again.", 401);
+    log("beta session", { invite: code });
+    return c.json({ token: issueSession(code, d.beta, now()), name: d.beta.invites.get(code) });
+  });
 
   app.get("/health", (c) => c.json({ ok: true }));
 
@@ -92,7 +142,16 @@ export function createApp(d: AppDeps) {
 
     try {
       const q = await d.mavapay.quote({ corridor, amount: amount.value, recipient: recipient.value });
-      log("payout quote", { corridor, orderId: q.orderId, sats: q.sats });
+      const invite = c.get("invite");
+      if (d.beta && d.ops && invite) {
+        const reason = await overLimit(invite, BigInt(q.sats), d.beta, d.ops, now());
+        if (reason) return bad(reason, 403);
+      }
+      await d.ops?.recordQuote({
+        id: q.orderId, kind: "payout", invite, product: corridor, receiveAmount: q.receive.amount,
+        receiveCurrency: q.receive.currency, sats: q.sats, createdAt: now(), expiresAt: q.expiresAt,
+      });
+      log("payout quote", { corridor, orderId: q.orderId, sats: q.sats, invite });
       return c.json(q);
     } catch (e) {
       return providerError(e);
@@ -103,8 +162,11 @@ export function createApp(d: AppDeps) {
     if (!readLimit(clientKey((n) => c.req.header(n)))) return bad("Too many requests. Wait a minute.", 429);
     const id = c.req.param("orderId");
     if (!ORDER_ID.test(id)) return bad("That order number isn't valid.");
+    if (await notYours(id, c.get("invite"))) return bad("Order not found.", 404);
     try {
-      return c.json(await d.mavapay.getOrder(id));
+      const status = await d.mavapay.getOrder(id);
+      await d.ops?.setState(id, payoutToOps(status.state), now());
+      return c.json(status);
     } catch (e) {
       return providerError(e);
     }
@@ -168,7 +230,17 @@ export function createApp(d: AppDeps) {
     }
     try {
       const q = await d.bitrefill.quote({ phone: phone.value, operatorId: body.operatorId, amount: { amount: amount.amount, currency: amount.currency } });
-      log("airtime quote", { country, invoiceId: q.invoiceId, sats: q.sats });
+      const invite = c.get("invite");
+      if (d.beta && d.ops && invite) {
+        const reason = await overLimit(invite, BigInt(q.sats), d.beta, d.ops, now());
+        if (reason) return bad(reason, 403);
+      }
+      const inv = parseBolt11(q.invoice);
+      await d.ops?.recordQuote({
+        id: q.invoiceId, kind: "airtime", invite, product: country, receiveAmount: q.receive.amount, receiveCurrency: q.receive.currency,
+        sats: q.sats, createdAt: now(), expiresAt: inv.ok ? inv.value.expiresAt * 1000 : now() + 30 * 60_000,
+      });
+      log("airtime quote", { country, invoiceId: q.invoiceId, sats: q.sats, invite });
       return c.json(q);
     } catch (e) {
       return providerError(e);
@@ -180,8 +252,11 @@ export function createApp(d: AppDeps) {
     if (!readLimit(clientKey((n) => c.req.header(n)))) return bad("Too many requests. Wait a minute.", 429);
     const id = c.req.param("invoiceId");
     if (!/^[0-9a-f-]{36}$/.test(id)) return bad("That invoice number isn't valid.");
+    if (await notYours(id, c.get("invite"))) return bad("Order not found.", 404);
     try {
-      return c.json(await d.bitrefill.status(id));
+      const status = await d.bitrefill.status(id);
+      await d.ops?.setState(id, airtimeToOps(status.state), now());
+      return c.json(status);
     } catch (e) {
       return providerError(e);
     }
@@ -214,6 +289,40 @@ export function createApp(d: AppDeps) {
       return bad("Invalid JSON.");
     }
     return c.json({ received: true });
+  });
+
+  app.post("/v1/feedback", async (c) => {
+    if (!d.ops) return bad("Feedback isn't available right now.", 503);
+    if (!readLimit(clientKey((n) => c.req.header(n)))) return bad("Too many requests. Wait a minute.", 429);
+    const body = (await c.req.json().catch(() => null)) as { message?: unknown; orderId?: unknown } | null;
+    const message = typeof body?.message === "string" ? body.message.trim().slice(0, 2000) : "";
+    if (!message) return bad("Tell us what happened.");
+    const orderId = typeof body?.orderId === "string" && ORDER_ID.test(body.orderId) ? body.orderId : null;
+    const invite = c.get("invite");
+    await d.ops.addFeedback({ id: randomUUID(), invite, orderId, message, createdAt: now() });
+    // Untrusted text: quoted, never interpreted.
+    await d.alert?.(`FEEDBACK from ${invite ?? "anonymous"}${orderId ? ` on ${orderId}` : ""}: ${JSON.stringify(message)}`).catch(() => undefined);
+    return c.json({ received: true });
+  });
+
+  const admin = (h: string | undefined) => !!d.adminToken && !!h && safeEqual(h.replace(/^Bearer /i, ""), d.adminToken);
+
+  app.get("/v1/admin/metrics", async (c) => {
+    if (!admin(c.req.header("authorization")) || !d.ops) return bad("Not found.", 404);
+    return c.json(betaMetrics(await d.ops.listSince(0), now()));
+  });
+
+  app.get("/v1/admin/orders", async (c) => {
+    if (!admin(c.req.header("authorization")) || !d.ops) return bad("Not found.", 404);
+    const days = Math.min(Number(c.req.query("days") ?? 7) || 7, 90);
+    const state = c.req.query("state");
+    const list = await d.ops.listSince(now() - days * 86_400_000);
+    return c.json({ orders: state ? list.filter((o) => o.state === state) : list });
+  });
+
+  app.get("/v1/admin/feedback", async (c) => {
+    if (!admin(c.req.header("authorization")) || !d.ops) return bad("Not found.", 404);
+    return c.json({ feedback: await d.ops.listFeedback(now() - 30 * 86_400_000) });
   });
 
   return app;

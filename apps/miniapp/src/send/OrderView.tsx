@@ -1,6 +1,7 @@
 import { buildReceipt, receiptText, stuckReason, type Order } from "@railkit/core";
 import { useEffect, useState } from "react";
 import { formatMoney } from "../format";
+import { ReportProblem } from "../ReportProblem";
 import { orderStore, sendEngine } from "./engine";
 
 interface Props {
@@ -103,6 +104,7 @@ export function OrderView({ orderId, enabled, onHome, onRetry }: Props) {
           <button className="primary" onClick={() => onRetry(order)}>Try again</button>
         )}
         {!ACTIVE.has(order.state) && <button className="secondary" onClick={onHome}>Back to home</button>}
+        <ReportProblem orderId={order.quote.providerRef?.split(":").slice(1).join(":") || order.id} />
       </div>
     </div>
   );

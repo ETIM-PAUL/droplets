@@ -3,11 +3,13 @@ import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { formatMoney } from "./format";
 import { connectHost, type HostState } from "./host";
-import { api, orderStore } from "./send/engine";
+import { InviteGate } from "./InviteGate";
+import { ReportProblem } from "./ReportProblem";
+import { api, orderStore, SIGNED_OUT } from "./send/engine";
 import { OrderView } from "./send/OrderView";
 import { SendHome } from "./send/SendHome";
 import { Spike } from "./spike";
-import { recipientBook, type SavedRecipient } from "./storage";
+import { recipientBook, sessionToken, type SavedRecipient } from "./storage";
 import "./styles.css";
 
 type View = { name: "home" } | { name: "send"; start?: SavedRecipient } | { name: "order"; id: string };
@@ -31,6 +33,13 @@ function App() {
   const [view, setView] = useState<View>({ name: "home" });
   const [orders, setOrders] = useState<Order[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [signedIn, setSignedIn] = useState(() => sessionToken.get() !== null);
+
+  useEffect(() => {
+    const out = () => setSignedIn(false);
+    window.addEventListener(SIGNED_OUT, out);
+    return () => window.removeEventListener(SIGNED_OUT, out);
+  }, []);
 
   useEffect(() => {
     void connectHost().then(setHost);
@@ -60,6 +69,8 @@ function App() {
       </div>
     );
   }
+
+  if (!signedIn) return <InviteGate onIn={() => setSignedIn(true)} />;
 
   const enabled = new Set((corridors ?? []).map((c) => c.id));
 
@@ -139,6 +150,8 @@ function App() {
             </ul>
           </section>
         )}
+        <div className="grow" />
+        <ReportProblem />
       </div>
     </div>
   );

@@ -1,6 +1,11 @@
 import { serve } from "@hono/node-server";
 import { createBitrefillApi, createMavapayApi } from "@railkit/adapters";
+import pg from "pg";
 import { createApp } from "./app";
+import { parseInvites, type BetaConfig } from "./ops/beta";
+import { airtimeToOps, payoutToOps } from "./ops/map";
+import { MemoryOpsStore, PgOpsStore, type OpsStore } from "./ops/store";
+import { watchOnce, webhookAlerter } from "./ops/watcher";
 
 function required(name: string): string {
   const v = process.env[name];
@@ -20,11 +25,39 @@ const bitrefill = process.env.BITREFILL_API_KEY
     })
   : undefined;
 
+const mavapay = createMavapayApi({ apiKey: required("MAVAPAY_API_KEY"), baseUrl: required("MAVAPAY_BASE_URL") });
+
+let ops: OpsStore;
+if (process.env.DATABASE_URL) {
+  const store = new PgOpsStore(new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 5 }));
+  await store.migrate();
+  ops = store;
+} else {
+  console.warn(JSON.stringify({ msg: "DATABASE_URL not set: order log is in memory and lost on restart" }));
+  ops = new MemoryOpsStore();
+}
+
+const beta: BetaConfig | undefined =
+  process.env.BETA_REQUIRED === "true"
+    ? {
+        invites: parseInvites(process.env.BETA_INVITES),
+        secret: required("SESSION_SECRET"),
+        maxSatsPerOrder: BigInt(process.env.BETA_MAX_SATS_PER_ORDER ?? "150000"),
+        maxSatsPerDay: BigInt(process.env.BETA_MAX_SATS_PER_DAY ?? "300000"),
+      }
+    : undefined;
+
+const alert = webhookAlerter(process.env.ALERT_WEBHOOK_URL || undefined);
+
 const app = createApp({
+  ops,
+  beta,
+  alert,
+  adminToken: process.env.ADMIN_TOKEN || undefined,
   bitrefill,
   airtimeCountries: new Set(list(process.env.AIRTIME_COUNTRIES)),
   bitrefillWebhookToken: bitrefillToken,
-  mavapay: createMavapayApi({ apiKey: required("MAVAPAY_API_KEY"), baseUrl: required("MAVAPAY_BASE_URL") }),
+  mavapay,
   corridors: new Set(list(process.env.CORRIDORS)),
   allowedOrigins: list(process.env.ALLOWED_ORIGINS),
   webhookSecret: process.env.MAVAPAY_WEBHOOK_SECRET || undefined,
@@ -34,3 +67,17 @@ const port = Number(process.env.PORT ?? 8787);
 serve({ fetch: app.fetch, port }, () => {
   console.log(JSON.stringify({ msg: "railkit api listening", port, corridors: list(process.env.CORRIDORS) }));
 });
+
+// Every 2 minutes: catch payments made after the app closed, and alert on stuck or failed orders.
+setInterval(() => {
+  watchOnce({
+    store: ops,
+    alert,
+    refresh: async (o) =>
+      o.kind === "payout"
+        ? payoutToOps((await mavapay.getOrder(o.id)).state)
+        : bitrefill
+          ? airtimeToOps((await bitrefill.status(o.id)).state)
+          : null,
+  }).catch((e) => console.error(JSON.stringify({ msg: "watcher failed", error: String(e) })));
+}, 120_000);

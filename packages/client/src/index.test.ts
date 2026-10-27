@@ -20,6 +20,19 @@ describe("RailKit client", () => {
     await expect(c.corridors()).rejects.toMatchObject({ status: 403, message: "Kenya: M-Pesa is paused right now." });
   });
 
+  it("sends the session token and reports an ended session", async () => {
+    let auth: string | null = null;
+    let signedOut = false;
+    const f = (async (_u: RequestInfo | URL, init?: RequestInit) => {
+      auth = (init?.headers as Record<string, string>).Authorization ?? null;
+      return new Response(JSON.stringify({ error: { message: "Your invite has ended" } }), { status: 401 });
+    }) as typeof fetch;
+    const c = createRailkitClient({ baseUrl: "/api", fetch: f, token: () => "tok", onUnauthorized: () => (signedOut = true) });
+    await expect(c.payouts.getOrder("o1")).rejects.toMatchObject({ status: 401 });
+    expect(auth).toBe("Bearer tok");
+    expect(signedOut).toBe(true);
+  });
+
   it("turns network failures into a connection message", async () => {
     const c = createRailkitClient({ baseUrl: "/api", fetch: (async () => { throw new TypeError("offline"); }) as typeof fetch });
     await expect(c.corridors()).rejects.toBeInstanceOf(ApiError);

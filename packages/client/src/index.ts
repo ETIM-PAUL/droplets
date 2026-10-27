@@ -12,6 +12,10 @@ export interface RailkitClientOptions {
   baseUrl: string;
   fetch?: typeof fetch;
   timeoutMs?: number;
+  /** Beta session token, read on every call. */
+  token?: () => string | null;
+  /** Called when the API says the session is missing or has ended. */
+  onUnauthorized?: () => void;
 }
 
 /** Typed client for the RailKit API. Holds no secrets; the API holds the provider keys. */
@@ -22,11 +26,14 @@ export function createRailkitClient(o: RailkitClientOptions) {
   async function call<T>(path: string, init?: RequestInit): Promise<T> {
     let res: Response;
     try {
-      res = await doFetch(base + path, { ...init, signal: AbortSignal.timeout(o.timeoutMs ?? 20_000) });
+      const token = o.token?.();
+      const headers = { ...(init?.headers as Record<string, string> | undefined), ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+      res = await doFetch(base + path, { ...init, headers, signal: AbortSignal.timeout(o.timeoutMs ?? 20_000) });
     } catch {
       throw new ApiError("Can't reach Errand's server. Check your connection and try again.", 0);
     }
     const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+    if (res.status === 401) o.onUnauthorized?.();
     if (!res.ok) throw new ApiError(body?.error?.message ?? "Errand's server had a problem. Try again in a minute.", res.status);
     return body as T;
   }
@@ -43,7 +50,11 @@ export function createRailkitClient(o: RailkitClientOptions) {
     status: (invoiceId) => call<{ invoiceId: string; state: AirtimeState }>(`/v1/airtime/invoices/${encodeURIComponent(invoiceId)}`),
   });
 
+  const json = (body: unknown): RequestInit => ({ method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
   return {
+    session: (invite: string) => call<{ token: string | null; name: string | null }>("/v1/session", json({ invite })),
+    feedback: (message: string, orderId?: string) => call<{ received: true }>("/v1/feedback", json({ message, orderId })),
     payouts: gateway,
     airtime,
     lookupAirtime: (country: CountryCode, phone: string) =>

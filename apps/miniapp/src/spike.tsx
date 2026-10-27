@@ -1,5 +1,5 @@
 import { getHostNetwork, init } from "@nimiq/mini-app-sdk";
-import { lendaswapExitRoute, lnurlPayRoute, payoutRoute } from "@railkit/adapters";
+import { airtimeRoute, lendaswapExitRoute, lnurlPayRoute, payoutRoute } from "@railkit/adapters";
 import { createRailkitClient } from "@railkit/client";
 import {
   buildReceipt,
@@ -13,6 +13,7 @@ import {
   routeExecutors,
   WalletError,
   type CorridorId,
+  type AirtimeOperator,
   type CountryCode,
   type EvmChain,
   type Order,
@@ -46,6 +47,10 @@ export function Spike() {
   const [mkCountry, setMkCountry] = useState<CountryCode>("KE");
   const [mkPhone, setMkPhone] = useState("");
   const [sats, setSats] = useState("");
+  const [atCountry, setAtCountry] = useState<CountryCode>("KE");
+  const [atPhone, setAtPhone] = useState("");
+  const [operator, setOperator] = useState<{ phone: string; op: AirtimeOperator } | null>(null);
+  const [atAmount, setAtAmount] = useState("");
 
   const report = (e: unknown) => setOut(e instanceof Error ? e.message : String(e));
 
@@ -113,6 +118,24 @@ export function Spike() {
     setOut(`Account holder: ${r.accountName}`);
   }
 
+  async function lookupOperator() {
+    setOperator(null);
+    const r = await api.lookupAirtime(atCountry, atPhone);
+    setOperator({ phone: r.phone, op: r.operator });
+    setOut(`${r.operator.name}: packages ${r.operator.packages.map((p) => p.value).join(", ") || "none"} ${r.operator.currency}` +
+      (r.operator.range ? `; or any amount ${r.operator.range.min} to ${r.operator.range.max}` : ""));
+  }
+
+  async function topUp() {
+    if (!operator) return;
+    await runOrder(airtimeRoute({ gateway: api.airtime(atCountry), network: hostNetwork(), enabledCountries: new Set([atCountry]) }), {
+      kind: "pay",
+      destination: { kind: "airtime", phone: operator.phone, operatorId: operator.op.id, operatorName: operator.op.name },
+      sourceAsset: "NIM",
+      amount: { amount: atAmount.trim(), currency: operator.op.currency },
+    });
+  }
+
   async function payPhone() {
     const e164 = normalizePhone(mkPhone, mkCountry);
     if (!e164.ok) return setOut(e164.error.message);
@@ -174,6 +197,21 @@ export function Spike() {
       <input {...field} value={name} onChange={(e) => setName(e.target.value)} placeholder="Recipient name as on the account" />
       <input {...field} value={fiat} onChange={(e) => setFiat(e.target.value)} placeholder={`Amount in ${c.currency}${c.minAmount ? ` (min ${c.minAmount})` : ""}`} />
       <button disabled={!fiat.trim() || !name.trim()} onClick={() => sendHome().catch(report)}>Send</button>
+
+      <h2>Top up a phone (Bitrefill)</h2>
+      <select value={atCountry} onChange={(e) => { setAtCountry(e.target.value as CountryCode); setOperator(null); }}>
+        {(["KE", "NG", "GH", "ZA"] as const).map((x) => (
+          <option key={x}>{x}</option>
+        ))}
+      </select>
+      <input {...field} value={atPhone} onChange={(e) => { setAtPhone(e.target.value); setOperator(null); }} placeholder="Phone to top up" />
+      <button disabled={!atPhone.trim()} onClick={() => lookupOperator().catch(report)}>Find network</button>
+      {operator && (
+        <>
+          <input {...field} value={atAmount} onChange={(e) => setAtAmount(e.target.value)} placeholder={`Amount in ${operator.op.currency}`} />
+          <button disabled={!atAmount.trim()} onClick={() => topUp().catch(report)}>Top up {operator.op.name}</button>
+        </>
+      )}
 
       <h2>Pay a phone number (Machankura)</h2>
       <select value={mkCountry} onChange={(e) => setMkCountry(e.target.value as CountryCode)}>

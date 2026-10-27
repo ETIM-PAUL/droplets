@@ -1,0 +1,11 @@
+{
+  "status": 500,
+  "body": {
+    "meta": {
+      "phone_number": "+1",
+      "_endpoint": "/check_phone_number"
+    },
+    "message": "Number is not valid",
+    "error_code": "invalid_number"
+  }
+}

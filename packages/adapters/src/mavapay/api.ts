@@ -1,8 +1,8 @@
+import { ProviderError } from "../provider-error";
 import {
   CORRIDORS,
   fromScaled,
   toScaled,
-  UserFacingError,
   type CorridorId,
   type Money,
   type PayoutRecipient,
@@ -34,15 +34,6 @@ export interface PayoutGateway {
   getOrder(orderId: string): Promise<PayoutOrderStatus>;
 }
 
-export class ProviderError extends UserFacingError {
-  constructor(
-    message: string,
-    /** HTTP status to hand back to our own client. */
-    readonly status: 400 | 404 | 502,
-  ) {
-    super(message);
-  }
-}
 
 const MINOR_UNIT: Record<string, { code: string; factor: bigint }> = {
   KES: { code: "KESCENT", factor: 100n },

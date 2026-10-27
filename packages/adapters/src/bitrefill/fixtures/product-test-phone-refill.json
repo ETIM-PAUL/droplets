@@ -1,0 +1,84 @@
+{
+  "status": 200,
+  "body": {
+    "meta": {
+      "id": "test-phone-refill",
+      "_endpoint": "/products/test-phone-refill"
+    },
+    "data": {
+      "id": "test-phone-refill",
+      "name": "Test Phone Refill",
+      "base_name": "Test Phone Refill",
+      "country_code": "KN",
+      "country_name": "St Kitts and Nevis",
+      "currency": "USD",
+      "categories": [
+        "phone"
+      ],
+      "redemption_methods": [],
+      "created_time": "2021-10-21T12:04:11.679Z",
+      "recipient_type": "phone_number",
+      "image": "this_is_a_test",
+      "termsAndConditions": "You must comply, otherwise...",
+      "in_stock": true,
+      "range": {
+        "min": 10,
+        "max": 100,
+        "step": 10,
+        "price_rate": 1300.713966424953
+      },
+      "packages": [
+        {
+          "id": "test-phone-refill<&>10",
+          "value": "10",
+          "price": 13008
+        },
+        {
+          "id": "test-phone-refill<&>20",
+          "value": "20",
+          "price": 26015
+        },
+        {
+          "id": "test-phone-refill<&>30",
+          "value": "30",
+          "price": 39022
+        },
+        {
+          "id": "test-phone-refill<&>40",
+          "value": "40",
+          "price": 52029
+        },
+        {
+          "id": "test-phone-refill<&>50",
+          "value": "50",
+          "price": 65036
+        },
+        {
+          "id": "test-phone-refill<&>60",
+          "value": "60",
+          "price": 78043
+        },
+        {
+          "id": "test-phone-refill<&>70",
+          "value": "70",
+          "price": 91050
+        },
+        {
+          "id": "test-phone-refill<&>80",
+          "value": "80",
+          "price": 104058
+        },
+        {
+          "id": "test-phone-refill<&>90",
+          "value": "90",
+          "price": 117065
+        },
+        {
+          "id": "test-phone-refill<&>100",
+          "value": "100",
+          "price": 130072
+        }
+      ]
+    }
+  }
+}

@@ -60,7 +60,7 @@ export class Engine {
   /** Quotes every route that can handle the intent, cheapest first. */
   async quote(intent: PayIntent): Promise<Result<Quote[]>> {
     const d = intent.destination;
-    if ((d.kind === "lightning-address" || d.kind === "lnurl" || d.kind === "fiat-payout") && !intent.amount) {
+    if ((d.kind === "lightning-address" || d.kind === "lnurl" || d.kind === "fiat-payout" || d.kind === "airtime") && !intent.amount) {
       return fail("bad_amount", "Enter how much to send.");
     }
     const candidates = this.routes.filter((r) => r.canHandle(intent));

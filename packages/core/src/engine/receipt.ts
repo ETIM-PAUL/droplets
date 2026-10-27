@@ -24,6 +24,8 @@ function recipientOf(order: Order): string {
       return new URL(d.url).hostname;
     case "emvco":
       return d.merchantName ?? "Merchant";
+    case "airtime":
+      return `${d.operatorName ?? d.operatorId} top-up for ${d.phone.slice(0, 4)}••••${d.phone.slice(-3)}`;
     case "fiat-payout":
       return maskRecipient(d.recipient);
     case "evm-address":

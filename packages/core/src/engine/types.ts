@@ -1,4 +1,5 @@
 import type { Money } from "../money";
+import type { AirtimeDestination } from "../airtime";
 import type { FiatPayoutDestination } from "../corridors";
 import type { ParsedPayment } from "../parse";
 
@@ -8,7 +9,7 @@ export type HostNetwork = "mainnet" | "testnet";
 
 export interface PayIntent {
   kind: "pay";
-  destination: ParsedPayment | FiatPayoutDestination;
+  destination: ParsedPayment | FiatPayoutDestination | AirtimeDestination;
   /** Amount the recipient should get; omitted when the destination fixes it. */
   amount?: Money;
   /** What the user pays with. */

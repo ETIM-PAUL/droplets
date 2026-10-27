@@ -1,9 +1,12 @@
+import { timingSafeEqual } from "node:crypto";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { ProviderError, type MavapayApi } from "@railkit/adapters";
+import { ProviderError, type BitrefillApi, type MavapayApi } from "@railkit/adapters";
 import {
   CORRIDORS,
   isCorridorId,
+  normalizePhone,
+  type CountryCode,
   validatePayoutAmount,
   validateRecipient,
   type PayoutRecipient,
@@ -17,6 +20,11 @@ export interface AppDeps {
   corridors: ReadonlySet<string>;
   allowedOrigins: string[];
   webhookSecret?: string;
+  bitrefill?: Pick<BitrefillApi, "lookup" | "quote" | "status" | "markStale">;
+  /** Airtime kill switch: countries served, e.g. {"KE"}. */
+  airtimeCountries?: ReadonlySet<string>;
+  /** Secret path token for Bitrefill's (unsigned) webhooks. */
+  bitrefillWebhookToken?: string;
   log?: (msg: string, data?: Record<string, unknown>) => void;
   now?: () => number;
 }
@@ -122,6 +130,76 @@ export function createApp(d: AppDeps) {
     } catch (e) {
       return providerError(e);
     }
+  });
+
+  const airtimeCountry = (c: string | undefined): CountryCode | null =>
+    c && ["KE", "NG", "GH", "ZA"].includes(c) && d.airtimeCountries?.has(c) ? (c as CountryCode) : null;
+
+  app.get("/v1/airtime/lookup", async (c) => {
+    if (!d.bitrefill) return bad("Top-ups aren't available yet.", 503);
+    if (!readLimit(clientKey((n) => c.req.header(n)))) return bad("Too many requests. Wait a minute.", 429);
+    const country = airtimeCountry(c.req.query("country"));
+    if (!country) return bad("Top-ups for this country are paused right now.", 403);
+    const phone = normalizePhone(c.req.query("phone") ?? "", country);
+    if (!phone.ok) return bad(phone.error.message);
+    try {
+      return c.json({ phone: phone.value, operator: await d.bitrefill.lookup(phone.value) });
+    } catch (e) {
+      return providerError(e);
+    }
+  });
+
+  app.post("/v1/airtime/quote", async (c) => {
+    if (!d.bitrefill) return bad("Top-ups aren't available yet.", 503);
+    if (!quoteLimit(clientKey((n) => c.req.header(n)))) return bad("Too many quotes in a short time. Wait a minute and try again.", 429);
+    let body: Record<string, unknown>;
+    try {
+      body = await c.req.json();
+    } catch {
+      return bad("Send the quote request as JSON.");
+    }
+    const country = airtimeCountry(typeof body.country === "string" ? body.country : undefined);
+    if (!country) return bad("Top-ups for this country are paused right now.", 403);
+    const phone = normalizePhone(typeof body.phone === "string" ? body.phone : "", country);
+    if (!phone.ok) return bad(phone.error.message);
+    const amount = body.amount as { amount?: unknown; currency?: unknown } | undefined;
+    if (typeof body.operatorId !== "string" || typeof amount?.amount !== "string" || typeof amount.currency !== "string") {
+      return bad("Choose a network and an amount.");
+    }
+    try {
+      const q = await d.bitrefill.quote({ phone: phone.value, operatorId: body.operatorId, amount: { amount: amount.amount, currency: amount.currency } });
+      log("airtime quote", { country, invoiceId: q.invoiceId, sats: q.sats });
+      return c.json(q);
+    } catch (e) {
+      return providerError(e);
+    }
+  });
+
+  app.get("/v1/airtime/invoices/:invoiceId", async (c) => {
+    if (!d.bitrefill) return bad("Top-ups aren't available yet.", 503);
+    if (!readLimit(clientKey((n) => c.req.header(n)))) return bad("Too many requests. Wait a minute.", 429);
+    const id = c.req.param("invoiceId");
+    if (!/^[0-9a-f-]{36}$/.test(id)) return bad("That invoice number isn't valid.");
+    try {
+      return c.json(await d.bitrefill.status(id));
+    } catch (e) {
+      return providerError(e);
+    }
+  });
+
+  app.post("/v1/webhooks/bitrefill/:token", async (c) => {
+    // Bitrefill doesn't sign webhooks: the secret path token stops strangers, and we only use the
+    // payload to decide which invoice to re-check from Bitrefill's API, never as the truth.
+    const token = d.bitrefillWebhookToken;
+    if (!token || !d.bitrefill) return bad("Webhooks aren't configured.", 503);
+    const given = c.req.param("token");
+    if (given.length !== token.length || !timingSafeEqual(Buffer.from(given), Buffer.from(token))) return bad("Not found.", 404);
+    const evt = (await c.req.json().catch(() => null)) as { id?: unknown } | null;
+    if (typeof evt?.id === "string" && /^[0-9a-f-]{36}$/.test(evt.id)) {
+      d.bitrefill.markStale(evt.id);
+      log("bitrefill webhook", { invoiceId: evt.id });
+    }
+    return c.json({ received: true });
   });
 
   app.post("/v1/webhooks/mavapay", async (c) => {

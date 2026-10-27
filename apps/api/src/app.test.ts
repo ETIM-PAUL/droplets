@@ -140,3 +140,55 @@ describe("Mavapay webhook", () => {
     expect((await setup({ webhookSecret: undefined }).app.request("/v1/webhooks/mavapay", post(event))).status).toBe(503);
   });
 });
+
+describe("airtime API", () => {
+  const OP = { id: "safaricom-kenya", name: "Safaricom Kenya", country: "KE", currency: "KES", packages: [], range: { min: "280", max: "4573", step: "1" } };
+  function airtime(over: Partial<AppDeps> = {}) {
+    const stale: string[] = [];
+    const quotes: unknown[] = [];
+    const { app } = setup({
+      bitrefill: {
+        lookup: async () => OP,
+        quote: async (r) => (quotes.push(r), { invoiceId: "e1e1a0f4-4a06-4b15-ac5a-1899131ce602", invoice: "lnbc...", sats: "4886", receive: r.amount }),
+        status: async (invoiceId) => ({ invoiceId, state: "paid" }),
+        markStale: (id) => void stale.push(id),
+      },
+      airtimeCountries: new Set(["KE"]),
+      bitrefillWebhookToken: "tok_abcdef123456",
+      ...over,
+    });
+    return { app, stale, quotes };
+  }
+
+  it("looks up an operator for a normalised number", async () => {
+    const res = await airtime().app.request("/v1/airtime/lookup?country=KE&phone=0712%20345%20678");
+    expect(await res.json()).toEqual({ phone: "+254712345678", operator: OP });
+  });
+
+  it("quotes with a normalised phone", async () => {
+    const h = airtime();
+    const res = await h.app.request("/v1/airtime/quote", post({ country: "KE", phone: "0712345678", operatorId: "safaricom-kenya", amount: { amount: "500", currency: "KES" } }));
+    expect(res.status).toBe(200);
+    expect(h.quotes[0]).toMatchObject({ phone: "+254712345678" });
+  });
+
+  it("enforces the country kill switch and a configured provider", async () => {
+    expect((await airtime().app.request("/v1/airtime/lookup?country=NG&phone=08031234567")).status).toBe(403);
+    expect((await airtime({ bitrefill: undefined }).app.request("/v1/airtime/lookup?country=KE&phone=0712345678")).status).toBe(503);
+  });
+
+  it("validates invoice ids", async () => {
+    const h = airtime();
+    expect((await h.app.request("/v1/airtime/invoices/e1e1a0f4-4a06-4b15-ac5a-1899131ce602")).status).toBe(200);
+    expect((await h.app.request("/v1/airtime/invoices/not-an-id")).status).toBe(400);
+  });
+
+  it("only lets webhooks with the secret token trigger a re-check", async () => {
+    const h = airtime();
+    const body = { id: "e1e1a0f4-4a06-4b15-ac5a-1899131ce602", status: "all_delivered" };
+    expect((await h.app.request("/v1/webhooks/bitrefill/wrong_token_0000", post(body))).status).toBe(404);
+    expect(h.stale).toEqual([]);
+    expect((await h.app.request("/v1/webhooks/bitrefill/tok_abcdef123456", post(body))).status).toBe(200);
+    expect(h.stale).toEqual([body.id]);
+  });
+});

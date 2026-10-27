@@ -1,0 +1,54 @@
+{
+  "status": 200,
+  "body": {
+    "meta": {
+      "products": [
+        {
+          "product_id": "safaricom-kenya",
+          "package_id": "safaricom-kenya<&>500",
+          "quantity": 1,
+          "phone_number": "+254712345678",
+          "value": "500"
+        }
+      ],
+      "payment_method": "lightning",
+      "auto_pay": false,
+      "_endpoint": "/invoices"
+    },
+    "data": {
+      "id": "8ad06dd9-358c-4075-b6fd-7ab2c74df86d",
+      "created_time": "2026-10-27T20:52:08.985Z",
+      "status": "not_delivered",
+      "user": {
+        "id": "redacted-user",
+        "email": "redacted@example.com"
+      },
+      "payment": {
+        "method": "lightning",
+        "address": "lnbc48860n1p4wzrhepp5f6aqmn3dpdkdfl7zq7x5cvmgnaez8vhxae6zqtq9ge5yruc6wmdqdz2gf5hgun9ve5kcmpq8pskgvpkv3jrjtfnx5uxxtf5xqmn2ttzxenxgtfhv93rycehx3jxvwpkvscqzx7xqrpcgsp56z9dkj5gzhyaktwv45pycghz36xaf2x8ucx60ntjf3vlucgujtns9qxpqysgq625g3zqvfzqyn8uxpfk90paclmsnxdqwjjwctl2wxfh5r9t5d3kyu50h94q79uxpmvh6jraaj3amk0grlqgaf77mrfj585p6czz6sxspsp6vdm",
+        "currency": "BTC",
+        "price": 4886,
+        "status": "unpaid",
+        "commission": 0
+      },
+      "orders": [
+        {
+          "id": "6ae10ef87425aebbf1aaab18",
+          "status": "created",
+          "phone_number": "254712345678",
+          "product": {
+            "id": "safaricom-kenya",
+            "name": "Safaricom Kenya",
+            "value": "500",
+            "currency": "KES",
+            "image": "safaricom-kenya",
+            "_href": "https://api-bitrefill.com/v2/products/safaricom-kenya"
+          },
+          "created_time": "2026-10-27T20:52:08.974Z",
+          "delivered_time": null,
+          "commission": 0
+        }
+      ]
+    }
+  }
+}

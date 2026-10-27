@@ -11,7 +11,7 @@ describe.skipIf(!live)("Mavapay staging contract", () => {
     expect(base).toContain("staging");
   });
 
-  it("quotes NGN, simulates the Lightning payment, and sees the payout succeed", { timeout: 60_000 }, async () => {
+  it("quotes NGN, simulates the Lightning payment, and sees the payout succeed", { timeout: 180_000 }, async () => {
     const m = createMavapayApi({ apiKey: process.env.MAVAPAY_API_KEY!, baseUrl: base });
     const q = await m.quote({
       corridor: "ng-bank",
@@ -28,7 +28,7 @@ describe.skipIf(!live)("Mavapay staging contract", () => {
     expect(sim.status).toBe(200);
 
     let state = "";
-    for (let i = 0; i < 15 && state !== "paid_out"; i++) {
+    for (let i = 0; i < 50 && state !== "paid_out"; i++) {
       await new Promise((r) => setTimeout(r, 3_000));
       state = (await m.getOrder(q.orderId)).state;
     }

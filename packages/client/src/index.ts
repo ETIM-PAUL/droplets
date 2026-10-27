@@ -1,5 +1,5 @@
-import { UserFacingError, type Corridor } from "@railkit/core";
-import type { PayoutGateway, PayoutOrderStatus, PayoutQuote } from "@railkit/adapters";
+import { UserFacingError, type AirtimeOperator, type Corridor, type CountryCode } from "@railkit/core";
+import type { AirtimeGateway, AirtimeQuote, AirtimeState, PayoutGateway, PayoutOrderStatus, PayoutQuote } from "@railkit/adapters";
 
 export class ApiError extends UserFacingError {
   constructor(message: string, readonly status: number) {
@@ -36,8 +36,18 @@ export function createRailkitClient(o: RailkitClientOptions) {
     getOrder: (orderId) => call<PayoutOrderStatus>(`/v1/payouts/orders/${encodeURIComponent(orderId)}`),
   };
 
+  /** The route only knows the E.164 phone; the API needs the country for its kill switch. */
+  const airtime = (country: CountryCode): AirtimeGateway => ({
+    quote: (req) =>
+      call<AirtimeQuote>("/v1/airtime/quote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...req, country }) }),
+    status: (invoiceId) => call<{ invoiceId: string; state: AirtimeState }>(`/v1/airtime/invoices/${encodeURIComponent(invoiceId)}`),
+  });
+
   return {
     payouts: gateway,
+    airtime,
+    lookupAirtime: (country: CountryCode, phone: string) =>
+      call<{ phone: string; operator: AirtimeOperator }>(`/v1/airtime/lookup?country=${country}&phone=${encodeURIComponent(phone)}`),
     corridors: async () => (await call<{ corridors: Corridor[] }>("/v1/corridors")).corridors,
     banks: async () => (await call<{ banks: { name: string; code: string }[] }>("/v1/payouts/banks?country=NG")).banks,
     nameEnquiry: (accountNumber: string, bankCode: string) =>

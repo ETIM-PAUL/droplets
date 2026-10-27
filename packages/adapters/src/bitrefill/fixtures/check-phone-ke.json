@@ -1,0 +1,80 @@
+{
+  "status": 200,
+  "body": {
+    "meta": {
+      "phone_number": "+254712345678",
+      "_endpoint": "/check_phone_number"
+    },
+    "data": {
+      "id": "safaricom-kenya",
+      "name": "Safaricom Kenya",
+      "base_name": "Safaricom",
+      "country_code": "KE",
+      "country_name": "Kenya",
+      "currency": "KES",
+      "categories": [
+        "refill"
+      ],
+      "redemption_methods": [],
+      "created_time": "2019-12-06T10:11:54.886Z",
+      "recipient_type": "phone_number",
+      "image": "safaricom-kenya",
+      "logo_background": "#39b54b",
+      "in_stock": true,
+      "range": {
+        "min": 280,
+        "max": 4573,
+        "step": 1,
+        "price_rate": 9.53954519121693
+      },
+      "packages": [
+        {
+          "id": "safaricom-kenya<&>500",
+          "value": "500",
+          "price": 4770
+        },
+        {
+          "id": "safaricom-kenya<&>1000",
+          "value": "1000",
+          "price": 9540
+        },
+        {
+          "id": "safaricom-kenya<&>1500",
+          "value": "1500",
+          "price": 14310
+        },
+        {
+          "id": "safaricom-kenya<&>2000",
+          "value": "2000",
+          "price": 19080
+        },
+        {
+          "id": "safaricom-kenya<&>2500",
+          "value": "2500",
+          "price": 23849
+        },
+        {
+          "id": "safaricom-kenya<&>3000",
+          "value": "3000",
+          "price": 28619
+        },
+        {
+          "id": "safaricom-kenya<&>3500",
+          "value": "3500",
+          "price": 33389
+        },
+        {
+          "id": "safaricom-kenya<&>4000",
+          "value": "4000",
+          "price": 38159
+        },
+        {
+          "id": "safaricom-kenya<&>4500",
+          "value": "4500",
+          "price": 42928
+        }
+      ]
+    },
+    "operator_found": true
+  }
+}

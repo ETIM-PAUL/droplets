@@ -1,6 +1,7 @@
 import { buildReceipt, Engine, MemoryOrderStore, parseBolt11, type PayIntent, type Step, type WalletExecutor } from "@railkit/core";
 import { describe, expect, it } from "vitest";
-import { createMavapayApi, orderState, ProviderError } from "./api";
+import { ProviderError } from "../provider-error";
+import { createMavapayApi, orderState } from "./api";
 import { fakeMavapay, fixture } from "./fake";
 import { payoutRoute } from "./route";
 

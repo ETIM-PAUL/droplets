@@ -1,0 +1,53 @@
+{
+  "status": 200,
+  "body": {
+    "meta": {
+      "products": [
+        {
+          "product_id": "test-phone-refill",
+          "package_id": "test-phone-refill<&>10",
+          "quantity": 1,
+          "phone_number": "+254712345678",
+          "value": "10"
+        }
+      ],
+      "payment_method": "balance",
+      "auto_pay": true,
+      "_endpoint": "/invoices"
+    },
+    "data": {
+      "id": "e1e1a0f4-4a06-4b15-ac5a-1899131ce602",
+      "created_time": "2026-10-27T20:51:50.098Z",
+      "status": "not_delivered",
+      "user": {
+        "id": "redacted-user",
+        "email": "redacted@example.com"
+      },
+      "payment": {
+        "method": "balance",
+        "currency": "BTC",
+        "price": 13003,
+        "status": "unpaid",
+        "commission": 0
+      },
+      "orders": [
+        {
+          "id": "6ae10ee67425aebbf1aaaa4e",
+          "status": "created",
+          "phone_number": "254712345678",
+          "product": {
+            "id": "test-phone-refill",
+            "name": "Test Phone Refill",
+            "value": "10",
+            "currency": "USD",
+            "image": "this_is_a_test",
+            "_href": "https://api-bitrefill.com/v2/products/test-phone-refill"
+          },
+          "created_time": "2026-10-27T20:51:50.084Z",
+          "delivered_time": null,
+          "commission": 0
+        }
+      ]
+    }
+  }
+}

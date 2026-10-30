@@ -2,6 +2,7 @@ import { randomUUID, timingSafeEqual } from "node:crypto";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { ProviderError, type BitrefillApi, type MavapayApi } from "@railkit/adapters";
+import { understand, type Bank, type Draft, type Extractor, type Missing } from "@railkit/agent";
 import {
   CORRIDORS,
   isCorridorId,
@@ -38,6 +39,8 @@ export interface AppDeps {
   /** Practice mode: lets the app ask Mavapay STAGING to pretend an invoice was paid. Never on with live keys. */
   simulatePayIn?: (orderId: string) => Promise<void>;
   alert?: (text: string) => Promise<void>;
+  /** Chat: an optional model for sentences the rules can't finish, capped per UTC day. */
+  agent?: { model?: Extractor; modelCallsPerDay?: number };
   log?: (msg: string, data?: Record<string, unknown>) => void;
   now?: () => number;
 }
@@ -95,7 +98,7 @@ export function createApp(d: AppDeps) {
     c.set("invite", invite);
     return next();
   };
-  for (const path of ["/v1/payouts/*", "/v1/airtime/*", "/v1/feedback"]) app.use(path, session as never);
+  for (const path of ["/v1/payouts/*", "/v1/airtime/*", "/v1/feedback", "/v1/agent/*"]) app.use(path, session as never);
 
   /** An order placed under another invite looks like it doesn't exist. */
   const notYours = async (id: string, invite: string | null) => {
@@ -174,11 +177,21 @@ export function createApp(d: AppDeps) {
     }
   });
 
+  // The bank list changes rarely; one fetch an hour serves the picker and the chat.
+  let bankCache: { at: number; banks: Bank[] } | null = null;
+  const ngBanks = async (): Promise<Bank[]> => {
+    if (bankCache && now() - bankCache.at < 3600_000) return bankCache.banks;
+    const seen = new Set<string>();
+    const banks = (await d.mavapay.banks("NG")).filter((b) => !seen.has(b.code) && seen.add(b.code)).map((b) => ({ name: b.name.trim(), code: b.code }));
+    bankCache = { at: now(), banks };
+    return banks;
+  };
+
   app.get("/v1/payouts/banks", async (c) => {
     if (c.req.query("country") !== "NG") return bad("Bank lists are available for NG only.");
     if (!d.corridors.has("ng-bank")) return bad("Nigerian bank payouts are paused right now.", 403);
     try {
-      return c.json({ banks: await d.mavapay.banks("NG") });
+      return c.json({ banks: await ngBanks() });
     } catch (e) {
       return providerError(e);
     }
@@ -194,6 +207,41 @@ export function createApp(d: AppDeps) {
     } catch (e) {
       return providerError(e);
     }
+  });
+
+  const agentLimit = rateLimiter(20, 60_000, d.now);
+  let modelDay = { day: "", calls: 0 };
+  const allowModel = () => {
+    const day = new Date(now()).toISOString().slice(0, 10);
+    if (modelDay.day !== day) modelDay = { day, calls: 0 };
+    if (modelDay.calls >= (d.agent?.modelCallsPerDay ?? 300)) return false;
+    modelDay.calls++;
+    return true;
+  };
+  const MISSING: Missing[] = ["corridor", "amount", "phone", "name", "bank", "account"];
+
+  /** One chat turn: a sentence (or an answer to Errand's last question) in, a checked draft and the next question out. */
+  app.post("/v1/agent/understand", async (c) => {
+    if (!agentLimit(clientKey((n) => c.req.header(n)))) return bad("Too many messages in a short time. Wait a minute.", 429);
+    const body = (await c.req.json().catch(() => null)) as { text?: unknown; draft?: unknown; expecting?: unknown } | null;
+    const text = typeof body?.text === "string" ? body.text.trim() : "";
+    if (!text) return bad("Type what you'd like to send.");
+    if (text.length > 300) return bad("That's a long message. Say it in one sentence, under 300 characters.");
+    const draft = body?.draft && typeof body.draft === "object" ? (body.draft as Draft) : undefined;
+    const expecting = MISSING.find((m) => m === body?.expecting);
+    let banks: Bank[] = [];
+    if (d.corridors.has("ng-bank")) {
+      try {
+        banks = await ngBanks();
+      } catch (e) {
+        log("agent bank list failed", { error: String(e) });
+      }
+    }
+    const enabled = new Set([...d.corridors].filter(isCorridorId));
+    const r = await understand({ text, draft, expecting }, { enabled, banks, model: d.agent?.model, allowModel, log });
+    // The message itself is not logged: it holds names and numbers.
+    log("agent turn", { source: r.source, missing: r.missing, invite: c.get("invite") });
+    return c.json(r);
   });
 
   const airtimeCountry = (c: string | undefined): CountryCode | null =>

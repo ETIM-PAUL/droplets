@@ -56,12 +56,14 @@ export function Spike() {
 
   async function runStep(step: Step) {
     if (!window.confirm("This sends money from your wallet (real money on mainnet). Continue?")) return;
+    const started = Date.now();
+    setOut("Waiting for Nimiq Pay…");
     try {
       const provider = await init({ timeout: 3_000 });
       const executor = routeExecutors({ "pay-lightning-invoice": createNimiqExecutor(provider), "send-nim": createNimiqExecutor(provider) });
       setOut(JSON.stringify({ ok: true, ...(await executor.execute(step)) }, null, 2));
     } catch (e) {
-      setOut(JSON.stringify({ ok: false, kind: e instanceof WalletError ? e.kind : "unclassified", message: e instanceof Error ? e.message : String(e) }, null, 2));
+      setOut(JSON.stringify({ ok: false, kind: e instanceof WalletError ? e.kind : "unclassified", message: e instanceof Error ? e.message : String(e), seconds: (Date.now() - started) / 1000 }, null, 2));
     }
   }
 
@@ -85,7 +87,7 @@ export function Spike() {
     const show = (o: Order) => {
       const receipt = buildReceipt(o);
       setOut(
-        JSON.stringify({ state: o.state, message: o.message, refs: o.stepRefs, timeline: o.timeline.map((t) => t.to) }, null, 2) +
+        JSON.stringify({ state: o.state, message: o.message, refs: o.stepRefs, timeline: o.timeline.map((t) => (t.note ? `${t.to}: ${t.note}` : t.to)) }, null, 2) +
           (receipt ? "\n\n" + receiptText(receipt) : ""),
       );
     };
@@ -159,6 +161,37 @@ export function Spike() {
       targetChain: chain,
       amount: { amount: usdc.trim(), currency: "USDC" },
     });
+  }
+
+  /** Lists every account Nimiq Pay shares with Errand, with its NIM balance and the network. Read-only. */
+  async function showAccounts() {
+    setOut("Reading your accounts…");
+    const provider = await init({ timeout: 3_000 });
+    const accounts = await provider.listAccounts();
+    const rows = [];
+    for (const address of accounts) {
+      try {
+        const luna = await provider.getBalance(address);
+        rows.push({ address, nim: (luna / 100_000).toFixed(5) });
+      } catch (e) {
+        rows.push({ address, error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+    const synced = await provider.isConsensusEstablished().catch(() => "unknown");
+    setOut(JSON.stringify({ network: getHostNetwork() ?? "not reported", synced, accounts: rows }, null, 2));
+  }
+
+  /** Asks the wallet to switch to Polygon (chain 137). Moves no money; tells us whether plan B can work. */
+  async function switchToPolygon() {
+    const eth = (window as unknown as { ethereum?: { request(a: { method: string; params?: unknown[] }): Promise<unknown> } }).ethereum;
+    if (!eth) return setOut("window.ethereum is not available here.");
+    try {
+      await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: "0x89" }] });
+      setOut(JSON.stringify({ switched: true, chainId: await eth.request({ method: "eth_chainId" }) }, null, 2));
+    } catch (e) {
+      const err = e as { code?: unknown; message?: unknown };
+      setOut(JSON.stringify({ switched: false, code: err?.code, message: String(err?.message ?? e) }, null, 2));
+    }
   }
 
   async function probeEvm() {
@@ -243,8 +276,12 @@ export function Spike() {
       <input {...field} value={nim} onChange={(e) => setNim(e.target.value)} placeholder="amount in NIM, e.g. 1.5" />
       <button disabled={!to.trim() || !nim.trim()} onClick={() => runStep({ kind: "send-nim", to: to.trim(), amount: { amount: nim.trim(), currency: "NIM" } })}>Send NIM</button>
 
+      <h2>My Nimiq accounts (read-only)</h2>
+      <button onClick={() => showAccounts().catch(report)}>Show my accounts</button>
+
       <h2>EVM provider (read-only)</h2>
       <button onClick={probeEvm}>Probe window.ethereum</button>
+      <button onClick={() => switchToPolygon().catch(report)}>Try switching to Polygon</button>
 
       <pre style={{ whiteSpace: "pre-wrap" }}>{out}</pre>
     </main>

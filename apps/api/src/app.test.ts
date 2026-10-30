@@ -287,3 +287,46 @@ describe("practice mode", () => {
     expect(seen).toEqual([]);
   });
 });
+
+describe("chat", () => {
+  const say = (body: unknown) => post(body);
+
+  it("turns a sentence into a checked draft without the model", async () => {
+    const { app } = setup();
+    const res = await app.request("/v1/agent/understand", say({ text: "Send ₦5,000 to 0123456789 GTBank" }));
+    expect(res.status).toBe(200);
+    const j = (await res.json()) as { draft: Record<string, unknown>; missing: string[]; source: string };
+    expect(j).toMatchObject({ missing: [], source: "rules" });
+    expect(j.draft).toMatchObject({ corridor: "ng-bank", amount: "5000", accountNumber: "0123456789", bank: { code: "000013" } });
+  });
+
+  it("caps model calls per day and keeps answering with rules", async () => {
+    let calls = 0;
+    const model = async () => (calls++, { corridor: null, amount: null, currency: null, phone: null, name: null, bank: null, accountNumber: null });
+    const { app } = setup({ agent: { model, modelCallsPerDay: 1 } });
+    for (let i = 0; i < 3; i++) {
+      const res = await app.request("/v1/agent/understand", say({ text: "send 2500 KES on mpesa" }));
+      expect(((await res.json()) as { question: string }).question).toMatch(/number/);
+    }
+    expect(calls).toBe(1);
+  });
+
+  it("does not log what the user typed", async () => {
+    const lines: string[] = [];
+    const { app } = setup({ log: (m, data) => lines.push(m + JSON.stringify(data)) });
+    await app.request("/v1/agent/understand", say({ text: "send 2500 KES to Mary 0712345678" }));
+    expect(lines.join(" ")).toMatch(/agent turn/);
+    expect(lines.join(" ")).not.toMatch(/Mary|0712|712345678/);
+  });
+
+  it("refuses empty and overlong messages", async () => {
+    const { app } = setup();
+    expect((await app.request("/v1/agent/understand", say({ text: "  " }))).status).toBe(400);
+    expect((await app.request("/v1/agent/understand", say({ text: "x".repeat(301) }))).status).toBe(400);
+  });
+
+  it("needs a beta session when the beta is on", async () => {
+    const { app } = setup({ beta: { invites: new Map([["AAAA", "Ade"]]), secret: "s", maxSatsPerOrder: 1n, maxSatsPerDay: 1n } });
+    expect((await app.request("/v1/agent/understand", say({ text: "send 2500" }))).status).toBe(401);
+  });
+});

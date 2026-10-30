@@ -10,13 +10,15 @@ import { Sentence, type Step } from "./Sentence";
 interface Props {
   enabled: Corridor[];
   start?: SavedRecipient;
+  /** From the chat: everything is known, so get the price straight away and show the confirm card. */
+  autoQuote?: boolean;
   onDone: (orderId: string) => void;
   onCancel: () => void;
 }
 
 const book = recipientBook();
 
-export function SendHome({ enabled, start, onDone, onCancel }: Props) {
+export function SendHome({ enabled, start, autoQuote, onDone, onCancel }: Props) {
   const [corridorId, setCorridorId] = useState<CorridorId | null>(start?.corridor ?? (enabled.length === 1 ? enabled[0]!.id : null));
   const [phone, setPhone] = useState(start?.recipient.type === "mobile-money" ? start.recipient.phone : "");
   const [name, setName] = useState(start ? (start.recipient.type === "mobile-money" ? start.recipient.name : start.recipient.accountName) : "");
@@ -25,7 +27,7 @@ export function SendHome({ enabled, start, onDone, onCancel }: Props) {
   );
   const [account, setAccount] = useState(start?.recipient.type === "bank" ? start.recipient.accountNumber : "");
   const [amount, setAmount] = useState(start?.lastAmount ?? "");
-  const [step, setStep] = useState<Step>(start ? "amount" : corridorId ? "who" : "where");
+  const [step, setStep] = useState<Step>(start ? (autoQuote ? "review" : "amount") : corridorId ? "who" : "where");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [quote, setQuote] = useState<Quote | null>(null);
@@ -34,7 +36,9 @@ export function SendHome({ enabled, start, onDone, onCancel }: Props) {
   // After a price appears, Send stays off briefly so a tap meant for something else can't send it.
   const [armedAt, setArmedAt] = useState(0);
   const [requoted, setRequoted] = useState(false);
-  const nameChecked = useRef("");
+  // The chat has just looked the account name up, so don't clear it and ask the bank again.
+  const nameChecked = useRef(autoQuote && start?.recipient.type === "bank" ? `${start.recipient.bankCode}:${start.recipient.accountNumber}` : "");
+  const autoQuoted = useRef(false);
 
   const corridor = corridorId ? CORRIDORS[corridorId] : null;
   const engine = useMemo(() => sendEngine(new Set(enabled.map((c) => c.id))), [enabled]);
@@ -69,6 +73,14 @@ export function SendHome({ enabled, start, onDone, onCancel }: Props) {
     const t = setInterval(() => setNow(Date.now()), 250);
     return () => clearInterval(t);
   }, [quote]);
+
+  useEffect(() => {
+    if (!autoQuote || !start || autoQuoted.current) return;
+    autoQuoted.current = true;
+    void getQuote();
+    // Once, on arrival from the chat.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const go = (s: Step) => {
     setError(null);

@@ -6,13 +6,18 @@ import { connectHost, type HostState } from "./host";
 import { InviteGate } from "./InviteGate";
 import { ReportProblem } from "./ReportProblem";
 import { api, orderStore, PRACTICE, SIGNED_OUT } from "./send/engine";
+import { Chat } from "./send/Chat";
 import { OrderView } from "./send/OrderView";
 import { SendHome } from "./send/SendHome";
 import { Spike } from "./spike";
 import { recipientBook, sessionToken, type SavedRecipient } from "./storage";
 import "./styles.css";
 
-type View = { name: "home" } | { name: "send"; start?: SavedRecipient } | { name: "order"; id: string };
+type View =
+  | { name: "home" }
+  | { name: "chat"; text: string }
+  | { name: "send"; start?: SavedRecipient; autoQuote?: boolean }
+  | { name: "order"; id: string };
 
 const STATUS: Record<Order["state"], [string, "ok" | "bad" | ""]> = {
   awaiting_approval: ["Waiting for you", ""],
@@ -33,6 +38,7 @@ function App() {
   const [view, setView] = useState<View>({ name: "home" });
   const [orders, setOrders] = useState<Order[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [sentence, setSentence] = useState("");
   // null while we ask the server whether the beta needs an invite.
   const [signedIn, setSignedIn] = useState<boolean | null>(() => (sessionToken.get() !== null ? true : null));
 
@@ -68,6 +74,13 @@ function App() {
     if (view.name === "home") void orderStore.list().then(setOrders);
   }, [view]);
 
+  // Nimiq Pay still connecting: check again every few seconds until the balance comes through.
+  useEffect(() => {
+    if (host?.status !== "ready" || host.balanceNim !== null) return;
+    const t = setTimeout(() => void connectHost().then(setHost), 4_000);
+    return () => clearTimeout(t);
+  }, [host]);
+
   // An order still in flight from last time: take the person straight back to it.
   useEffect(() => {
     const live = orders.find((o) => o.state === "submitting" || o.state === "processing" || o.state === "outcome_unknown");
@@ -91,7 +104,18 @@ function App() {
   const enabled = new Set((corridors ?? []).map((c) => c.id));
 
   if (view.name === "send" && corridors) {
-    return <SendHome enabled={corridors} start={view.start} onDone={(id) => setView({ name: "order", id })} onCancel={() => setView({ name: "home" })} />;
+    return <SendHome enabled={corridors} start={view.start} autoQuote={view.autoQuote} onDone={(id) => setView({ name: "order", id })} onCancel={() => setView({ name: "home" })} />;
+  }
+  if (view.name === "chat" && corridors) {
+    return (
+      <Chat
+        first={view.text}
+        enabled={corridors}
+        onReady={(start) => setView({ name: "send", start, autoQuote: true })}
+        onCancel={() => setView({ name: "home" })}
+        onManual={() => setView({ name: "send" })}
+      />
+    );
   }
   if (view.name === "order") {
     return (
@@ -114,7 +138,10 @@ function App() {
     <div className="screen">
       <div className="topbar">
         <span>Errand</span>
-        {host?.status === "ready" && <span className="balance">{formatMoney(host.balanceNim, "NIM")}</span>}
+        {host?.status === "ready" &&
+          (host.balanceNim === null
+            ? <span>Connecting to the Nimiq network…</span>
+            : <span className="balance">{formatMoney(host.balanceNim, "NIM")}</span>)}
       </div>
 
       <h1 className="sentence">Send money home in one sentence.</h1>
@@ -122,8 +149,27 @@ function App() {
       {loadError && <p className="alert" role="alert">{loadError}</p>}
 
       <div className="grow">
-        <button className="primary" disabled={!corridors || corridors.length === 0} onClick={() => setView({ name: "send" })}>
-          {corridors ? "Send money" : "Loading…"}
+        <form
+          className="composer"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!sentence.trim() || !corridors?.length) return;
+            setView({ name: "chat", text: sentence.trim() });
+            setSentence("");
+          }}
+        >
+          <input
+            aria-label="What would you like to send?"
+            placeholder={corridors?.some((c) => c.id === "ng-bank") ? "Send ₦5,000 to 0123456789 GTBank" : "Send 2,500 KES to Mary on M-Pesa 0712 345 678"}
+            value={sentence}
+            onChange={(e) => setSentence(e.target.value)}
+            maxLength={300}
+            autoComplete="off"
+          />
+          <button className="primary" disabled={!corridors || corridors.length === 0 || !sentence.trim()}>Go</button>
+        </form>
+        <button className="secondary" disabled={!corridors || corridors.length === 0} onClick={() => setView({ name: "send" })}>
+          {corridors ? "Fill it in step by step" : "Loading…"}
         </button>
 
         {saved.length > 0 && (

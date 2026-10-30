@@ -18,7 +18,8 @@
     "@railkit/wallet-nimiq": "workspace:*",
     "@satora/swap": "^1.7.1",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "@railkit/agent": "workspace:*"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",

@@ -161,3 +161,18 @@ button, input, select { font: inherit; color: inherit; }
   position: sticky; top: 0; z-index: 1; margin: 0; padding: 8px var(--gutter);
   background: #f6d365; color: #1c2433; font-size: 14px; font-weight: 600; text-align: center;
 }
+
+/* Chat */
+.chat { display: flex; flex-direction: column; gap: 8px; }
+.bubble { margin: 0; padding: 10px 14px; border-radius: 16px; max-width: 85%; overflow-wrap: anywhere; }
+.bubble.you { align-self: flex-end; background: var(--slot); color: var(--paper); border-bottom-right-radius: 4px; }
+.bubble.errand { align-self: flex-start; background: var(--surface); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+.bubble.note-bubble { background: var(--error-wash); color: var(--error); border-color: transparent; }
+.bubble.typing { color: var(--ink-soft); letter-spacing: 2px; }
+.composer { display: flex; gap: 8px; align-items: stretch; }
+.composer input {
+  flex: 1; min-width: 0; font: inherit; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px;
+}
+.composer input:focus { border-color: var(--slot); outline: none; }
+.composer .primary { width: auto; padding-left: 20px; padding-right: 20px; }

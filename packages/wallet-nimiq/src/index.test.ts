@@ -54,6 +54,31 @@ describe("createNimiqExecutor", () => {
   });
 });
 
+describe("network readiness", () => {
+  const fast = { consensusWaitMs: 3, pollMs: 1, sleep: async () => {} };
+
+  it("waits for Nimiq Pay to connect, then pays", async () => {
+    let checks = 0;
+    let paid = false;
+    const ex = createNimiqExecutor(
+      provider({ isConsensusEstablished: async () => ++checks >= 2, payLightningInvoice: async () => ((paid = true), { hash: "h", swapId: "s" }) }),
+      fast,
+    );
+    await ex.execute({ kind: "pay-lightning-invoice", invoice: INVOICE });
+    expect(paid).toBe(true);
+  });
+
+  it("refuses to start a payment while Nimiq Pay isn't connected", async () => {
+    let paid = false;
+    const ex = createNimiqExecutor(
+      provider({ isConsensusEstablished: async () => false, payLightningInvoice: async () => ((paid = true), { hash: "h", swapId: "s" }) }),
+      fast,
+    );
+    await expect(ex.execute({ kind: "pay-lightning-invoice", invoice: INVOICE })).rejects.toMatchObject({ kind: "failed", message: expect.stringMatching(/isn't connected/) });
+    expect(paid).toBe(false);
+  });
+});
+
 describe("classifyNimiqError", () => {
   it("treats uncertain and unfamiliar errors as unknown, never as safe to retry", () => {
     for (const type of ["TRANSACTION_OUTCOME_UNKNOWN", "NETWORK_ERROR", "INTERNAL_ERROR", "UNKNOWN_ERROR", "SOMETHING_NEW", ""]) {
@@ -61,6 +86,12 @@ describe("classifyNimiqError", () => {
     }
     expect(classifyNimiqError(new Error("plain")).kind).toBe("unknown");
   });
+  it("treats a timeout as unknown even when the type says nothing was sent", () => {
+    const e = classifyNimiqError(Object.assign(new Error("Operation timed out after 30000 milliseconds"), { type: "INVALID_TRANSACTION", code: -32602 }));
+    expect(e.kind).toBe("unknown");
+    expect(e.message).toContain("[INVALID_TRANSACTION -32602]");
+  });
+
   it("only calls an error failed when nothing could have been sent", () => {
     expect(classifyNimiqError(err("INVALID_TRANSACTION")).kind).toBe("failed");
   });

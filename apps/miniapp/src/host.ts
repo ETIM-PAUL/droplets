@@ -16,7 +16,10 @@ export type HostState =
       language: string;
       fiat: string;
       address: string;
-      balanceNim: string;
+      /** Total NIM across every account Nimiq Pay shares; null while it is still connecting. */
+      balanceNim: string | null;
+      /** Each account and its NIM. Seen on a real device: the first account was empty and the second held the funds. */
+      accounts: { address: string; nim: string }[];
     }
   | { status: "outside-nimiq-pay" }
   | { status: "error"; message: string };
@@ -51,12 +54,24 @@ export async function connectHost(sdk: HostSdk = defaultSdk): Promise<HostState>
     return { status: "outside-nimiq-pay" };
   }
 
+  let addresses: string[] = [];
   try {
-    const [address] = await provider.listAccounts();
+    addresses = await provider.listAccounts();
+    const address = addresses[0];
     if (!address) return { status: "error", message: "No account found in Nimiq Pay. Create or import one, then reopen Errand." };
-    const balanceNim = lunaToNim(await provider.getBalance(address));
-    return { status: "ready", network, language, fiat, address, balanceNim };
+    const accounts: { address: string; nim: string }[] = [];
+    let total = 0n;
+    for (const a of addresses) {
+      const luna = await provider.getBalance(a);
+      total += BigInt(luna);
+      accounts.push({ address: a, nim: lunaToNim(luna) });
+    }
+    return { status: "ready", network, language, fiat, address, balanceNim: lunaToNim(Number(total)), accounts };
   } catch (e) {
+    // Seen on a real device: "Nimiq network is not ready" while Nimiq Pay is still connecting. Retry instead.
+    if (addresses[0] && NimiqProviderError.is(e) && /not ready|consensus|connect/i.test(e.message)) {
+      return { status: "ready", network, language, fiat, address: addresses[0], balanceNim: null, accounts: [] };
+    }
     const message = NimiqProviderError.is(e) ? e.message : "Could not reach your wallet. Close and reopen Errand.";
     return { status: "error", message };
   }

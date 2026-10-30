@@ -4,6 +4,29 @@ import { toScaled, WalletError, type Step, type WalletExecutor } from "@railkit/
 export interface NimiqProviderLike {
   payLightningInvoice(req: { invoice: string }): Promise<{ hash: string; swapId: string }>;
   sendBasicTransaction(tx: { recipient: string; value: number }): Promise<string>;
+  /** Present on current Nimiq Pay; when it says false, payments fail after a long timeout. */
+  isConsensusEstablished?(): Promise<boolean>;
+}
+
+export interface NimiqExecutorOptions {
+  /** How long to wait for Nimiq Pay to connect before giving up. */
+  consensusWaitMs?: number;
+  pollMs?: number;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+const NOT_CONNECTED = "Nimiq Pay isn't connected to the Nimiq network yet, so nothing was sent. Wait a minute, check your connection, and try again.";
+
+/** Waits until Nimiq Pay reports consensus. A false answer means no payment was attempted. */
+async function waitForNetwork(provider: NimiqProviderLike, o: NimiqExecutorOptions): Promise<void> {
+  if (!provider.isConsensusEstablished) return;
+  const sleep = o.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const tries = Math.max(1, Math.ceil((o.consensusWaitMs ?? 20_000) / (o.pollMs ?? 1_000)));
+  for (let i = 0; i < tries; i++) {
+    if (await provider.isConsensusEstablished().catch(() => false)) return;
+    if (i < tries - 1) await sleep(o.pollMs ?? 1_000);
+  }
+  throw new WalletError("failed", NOT_CONNECTED);
 }
 
 const LUNA_PER_NIM = 100_000n;
@@ -27,9 +50,15 @@ const NOT_SENT = new Set(["INVALID_TRANSACTION", "UNKNOWN_REQUEST"]);
 export function classifyNimiqError(e: unknown): WalletError {
   if (e instanceof WalletError) return e;
   const type = typeof e === "object" && e && "type" in e ? String((e as { type: unknown }).type) : "";
-  const message = e instanceof Error ? e.message : String(e);
+  const code = typeof e === "object" && e && "code" in e ? (e as { code: unknown }).code : undefined;
+  const raw = e instanceof Error ? e.message : typeof e === "object" && e && "message" in e ? String((e as { message: unknown }).message) : String(e);
+  // Keep Nimiq Pay's own type and code in the message, so device reports show exactly what it said.
+  const message = `${raw} [${type || "no type"}${code === undefined ? "" : ` ${String(code)}`}]`;
 
   if (REJECTED.has(type)) return new WalletError("rejected", message);
+  // Seen on a real device (2026-10-30): Nimiq Pay's Lightning step "timed out after 30000 milliseconds".
+  // A timeout can come after funds left the wallet, so it is never "nothing was sent", whatever the type says.
+  if (/timed? ?out/i.test(raw)) return new WalletError("unknown", message);
   if (NOT_SENT.has(type)) return new WalletError("failed", message);
   if (type === "DUPLICATE_PAYMENT") {
     return new WalletError("unknown", "This invoice was already paid or is being paid. Check your wallet history before trying again.");
@@ -38,9 +67,10 @@ export function classifyNimiqError(e: unknown): WalletError {
 }
 
 /** Runs pay-lightning-invoice and send-nim steps in Nimiq Pay; the host shows its native approval dialog. */
-export function createNimiqExecutor(provider: NimiqProviderLike): WalletExecutor {
+export function createNimiqExecutor(provider: NimiqProviderLike, options: NimiqExecutorOptions = {}): WalletExecutor {
   return {
     async execute(step: Step) {
+      await waitForNetwork(provider, options);
       try {
         switch (step.kind) {
           case "pay-lightning-invoice": {

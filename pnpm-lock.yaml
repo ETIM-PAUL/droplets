@@ -184,6 +184,9 @@ importers:
       '@railkit/adapters':
         specifier: workspace:*
         version: link:../../packages/adapters
+      '@railkit/agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
       '@railkit/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -219,6 +222,9 @@ importers:
       '@railkit/adapters':
         specifier: workspace:*
         version: link:../../packages/adapters
+      '@railkit/agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
       '@railkit/client':
         specifier: workspace:*
         version: link:../../packages/client
@@ -260,13 +266,20 @@ importers:
         specifier: ^2.4.0
         version: 2.4.0
 
-  packages/agent: {}
+  packages/agent:
+    dependencies:
+      '@railkit/core':
+        specifier: workspace:*
+        version: link:../core
 
   packages/client:
     dependencies:
       '@railkit/adapters':
         specifier: workspace:*
         version: link:../adapters
+      '@railkit/agent':
+        specifier: workspace:*
+        version: link:../agent
       '@railkit/core':
         specifier: workspace:*
         version: link:../core

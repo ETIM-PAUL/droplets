@@ -35,7 +35,8 @@ export const CORRIDORS: Record<CorridorId, Corridor> = {
   // Minimum seen as a Mavapay staging error on 2026-10-26.
   "ke-mpesa": { id: "ke-mpesa", label: "Kenya: M-Pesa", country: "KE", currency: "KES", recipientType: "mobile-money", network: "mpesa", minAmount: "150", prefixes: ["7", "1"] },
   "ke-airtel": { id: "ke-airtel", label: "Kenya: Airtel Money", country: "KE", currency: "KES", recipientType: "mobile-money", network: "airtel", minAmount: "150", prefixes: ["7", "1"] },
-  "ng-bank": { id: "ng-bank", label: "Nigeria: bank account", country: "NG", currency: "NGN", recipientType: "bank", minAmount: null },
+  // Minimum from a Mavapay staging error on 2026-10-30.
+  "ng-bank": { id: "ng-bank", label: "Nigeria: bank account", country: "NG", currency: "NGN", recipientType: "bank", minAmount: "2000" },
   // MTN prefixes as listed in a Mavapay validation error on 2026-10-26.
   "gh-mtn": { id: "gh-mtn", label: "Ghana: MTN MoMo", country: "GH", currency: "GHS", recipientType: "mobile-money", network: "mtn", minAmount: null, prefixes: ["24", "25", "53", "54", "55", "59"] },
   "za-bank": { id: "za-bank", label: "South Africa: bank account", country: "ZA", currency: "ZAR", recipientType: "bank", minAmount: null },

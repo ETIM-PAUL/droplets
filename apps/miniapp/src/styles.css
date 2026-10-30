@@ -156,3 +156,8 @@ button, input, select { font: inherit; color: inherit; }
 .list .status.bad { color: var(--error); }
 .section-title { font-size: 15px; color: var(--ink-soft); margin: 0 0 4px; font-weight: 500; }
 .balance { font-family: var(--display); font-size: 22px; margin: 0; }
+
+.practice {
+  position: sticky; top: 0; z-index: 1; margin: 0; padding: 8px var(--gutter);
+  background: #f6d365; color: #1c2433; font-size: 14px; font-weight: 600; text-align: center;
+}

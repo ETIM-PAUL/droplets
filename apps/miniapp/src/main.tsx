@@ -5,7 +5,7 @@ import { formatMoney } from "./format";
 import { connectHost, type HostState } from "./host";
 import { InviteGate } from "./InviteGate";
 import { ReportProblem } from "./ReportProblem";
-import { api, orderStore, SIGNED_OUT } from "./send/engine";
+import { api, orderStore, PRACTICE, SIGNED_OUT } from "./send/engine";
 import { OrderView } from "./send/OrderView";
 import { SendHome } from "./send/SendHome";
 import { Spike } from "./spike";
@@ -33,7 +33,22 @@ function App() {
   const [view, setView] = useState<View>({ name: "home" });
   const [orders, setOrders] = useState<Order[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [signedIn, setSignedIn] = useState(() => sessionToken.get() !== null);
+  // null while we ask the server whether the beta needs an invite.
+  const [signedIn, setSignedIn] = useState<boolean | null>(() => (sessionToken.get() !== null ? true : null));
+
+  useEffect(() => {
+    if (signedIn !== null) return;
+    // With the beta off the server hands out no token for any code, so the invite screen is skipped.
+    api.session("").then(
+      (s) => {
+        if (s.token === null) {
+          sessionToken.set("open");
+          setSignedIn(true);
+        } else setSignedIn(false);
+      },
+      () => setSignedIn(false),
+    );
+  }, [signedIn]);
 
   useEffect(() => {
     const out = () => setSignedIn(false);
@@ -70,6 +85,7 @@ function App() {
     );
   }
 
+  if (signedIn === null) return <div className="screen"><p className="hint">Opening Errand…</p></div>;
   if (!signedIn) return <InviteGate onIn={() => setSignedIn(true)} />;
 
   const enabled = new Set((corridors ?? []).map((c) => c.id));
@@ -157,6 +173,14 @@ function App() {
   );
 }
 
+/** Shown on every screen in practice mode, so nobody mistakes a rehearsal for a real payment. */
+function PracticeBanner() {
+  return PRACTICE ? <p className="practice" role="status">Practice mode: no real money moves.</p> : null;
+}
+
 createRoot(document.getElementById("root")!).render(
-  <StrictMode>{location.hash === "#spike" ? <Spike /> : <App />}</StrictMode>,
+  <StrictMode>
+    <PracticeBanner />
+    {location.hash === "#spike" ? <Spike /> : <App />}
+  </StrictMode>,
 );

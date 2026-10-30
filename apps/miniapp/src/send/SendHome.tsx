@@ -4,7 +4,7 @@ import { createNimiqExecutor } from "@railkit/wallet-nimiq";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatCountdown, formatMoney } from "../format";
 import { recipientBook, type SavedRecipient } from "../storage";
-import { api, sendEngine } from "./engine";
+import { api, PRACTICE, practiceWallet, sendEngine } from "./engine";
 import { Sentence, type Step } from "./Sentence";
 
 interface Props {
@@ -104,7 +104,8 @@ export function SendHome({ enabled, start, onDone, onCancel }: Props) {
       return setError(created.error.message);
     }
     try {
-      const wallet = createNimiqExecutor(await init({ timeout: 5_000 }));
+      const orderRef = quote.providerRef?.replace(/^payout:/, "") ?? "";
+      const wallet = PRACTICE ? practiceWallet(orderRef) : createNimiqExecutor(await init({ timeout: 5_000 }));
       // Show the order screen at once; approval and tracking continue there.
       const pending = engine.approve(created.value.id, wallet);
       book.remember({ corridor: corridorId, recipient: quote.intent.destination.kind === "fiat-payout" ? quote.intent.destination.recipient : recipient()!, lastAmount: amount.trim(), usedAt: Date.now() });
@@ -219,7 +220,7 @@ export function SendHome({ enabled, start, onDone, onCancel }: Props) {
             <div className="grow" />
             {quote && expiresIn > 0 ? (
               <button className="primary" disabled={busy} onClick={() => void send()}>
-                {busy ? "Opening Nimiq Pay…" : `Send ${formatMoney(quote.receive.amount, quote.receive.currency)}`}
+                {busy ? (PRACTICE ? "Practising…" : "Opening Nimiq Pay…") : `${PRACTICE ? "Practise sending" : "Send"} ${formatMoney(quote.receive.amount, quote.receive.currency)}`}
               </button>
             ) : (
               quote && <button className="primary" onClick={() => void getQuote()}>Get a new price</button>

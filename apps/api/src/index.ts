@@ -1,5 +1,5 @@
 import { serve } from "@hono/node-server";
-import { createBitrefillApi, createMavapayApi } from "@railkit/adapters";
+import { createBitrefillApi, createMavapayApi, ProviderError } from "@railkit/adapters";
 import pg from "pg";
 import { createApp } from "./app";
 import { parseInvites, type BetaConfig } from "./ops/beta";
@@ -49,7 +49,27 @@ const beta: BetaConfig | undefined =
 
 const alert = webhookAlerter(process.env.ALERT_WEBHOOK_URL || undefined);
 
+// Practice mode only ever talks to Mavapay staging: refuse to start it against live keys.
+const practice = process.env.PRACTICE_MODE === "true";
+if (practice && !/staging/.test(process.env.MAVAPAY_BASE_URL ?? "")) {
+  throw new Error("PRACTICE_MODE=true needs MAVAPAY_BASE_URL to point at Mavapay staging");
+}
+
 const app = createApp({
+  simulatePayIn: practice
+    ? async (orderId) => {
+        const res = await fetch(`${process.env.MAVAPAY_BASE_URL}/simulation/pay-in`, {
+          method: "POST",
+          headers: { "x-api-key": required("MAVAPAY_API_KEY"), "Content-Type": "application/json" },
+          body: JSON.stringify({ currency: "BTC", orderId }),
+          signal: AbortSignal.timeout(20_000),
+        });
+        if (!res.ok) {
+          const j = (await res.json().catch(() => null)) as { message?: string } | null;
+          throw new ProviderError(`Practice payment failed: ${j?.message ?? res.status}`, 502);
+        }
+      }
+    : undefined,
   ops,
   beta,
   alert,

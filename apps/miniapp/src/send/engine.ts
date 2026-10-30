@@ -1,7 +1,7 @@
 import { getHostNetwork } from "@nimiq/mini-app-sdk";
 import { payoutRoute } from "@railkit/adapters";
 import { createRailkitClient } from "@railkit/client";
-import { Engine } from "@railkit/core";
+import { Engine, type WalletExecutor } from "@railkit/core";
 import { LocalOrderStore, sessionToken } from "../storage";
 
 export const SIGNED_OUT = "errand:signed-out";
@@ -20,4 +20,17 @@ export const orderStore = new LocalOrderStore();
 export function sendEngine(enabled: ReadonlySet<string>) {
   const network = hostNetwork();
   return new Engine({ routes: [payoutRoute({ gateway: api.payouts, network, enabled })], store: orderStore, network });
+}
+
+/** Practice mode: payments are simulated on Mavapay staging and no real money moves. Set VITE_PRACTICE_MODE=true. */
+export const PRACTICE = import.meta.env.VITE_PRACTICE_MODE === "true";
+
+/** Stands in for Nimiq Pay in practice mode: "pays" by asking staging to simulate the payment for this order. */
+export function practiceWallet(orderId: string): WalletExecutor {
+  return {
+    async execute() {
+      await api.simulatePayment(orderId);
+      return { ref: `practice:${orderId}` };
+    },
+  };
 }

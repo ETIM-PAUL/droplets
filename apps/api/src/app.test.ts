@@ -264,3 +264,17 @@ describe("closed beta", () => {
     expect(await m.json()).toMatchObject({ completedOrders: 0, method: expect.stringMatching(/invite/) });
   });
 });
+
+describe("practice mode", () => {
+  it("is absent unless configured", async () => {
+    expect((await setup().app.request("/v1/dev/simulate-payment/261026-AAAAA-BBBBB", post({}))).status).toBe(404);
+  });
+  it("simulates a staging payment for an order", async () => {
+    const seen: string[] = [];
+    const { app } = setup({ simulatePayIn: async (id) => void seen.push(id) });
+    const r = await app.request("/v1/dev/simulate-payment/261026-AAAAA-BBBBB", post({}));
+    expect(r.status).toBe(200);
+    expect(seen).toEqual(["261026-AAAAA-BBBBB"]);
+    expect((await app.request("/v1/dev/simulate-payment/..%2Fx", post({}))).status).toBe(400);
+  });
+});

@@ -35,6 +35,8 @@ export interface AppDeps {
   /** Closed beta: invite-only sessions and spending caps. Off when undefined. */
   beta?: BetaConfig;
   adminToken?: string;
+  /** Practice mode: lets the app ask Mavapay STAGING to pretend an invoice was paid. Never on with live keys. */
+  simulatePayIn?: (orderId: string) => Promise<void>;
   alert?: (text: string) => Promise<void>;
   log?: (msg: string, data?: Record<string, unknown>) => void;
   now?: () => number;
@@ -289,6 +291,19 @@ export function createApp(d: AppDeps) {
       return bad("Invalid JSON.");
     }
     return c.json({ received: true });
+  });
+
+  app.post("/v1/dev/simulate-payment/:orderId", async (c) => {
+    if (!d.simulatePayIn) return bad("Not found.", 404);
+    const id = c.req.param("orderId");
+    if (!ORDER_ID.test(id)) return bad("That order number isn't valid.");
+    try {
+      await d.simulatePayIn(id);
+      log("practice payment", { orderId: id });
+      return c.json({ simulated: true });
+    } catch (e) {
+      return providerError(e);
+    }
   });
 
   app.post("/v1/feedback", async (c) => {

@@ -54,6 +54,8 @@ export function createRailkitClient(o: RailkitClientOptions) {
 
   return {
     session: (invite: string) => call<{ token: string | null; name: string | null }>("/v1/session", json({ invite })),
+    /** Practice mode only: asks the API to have Mavapay staging pretend the order was paid. */
+    simulatePayment: (orderId: string) => call<{ simulated: true }>(`/v1/dev/simulate-payment/${encodeURIComponent(orderId)}`, json({})),
     feedback: (message: string, orderId?: string) => call<{ received: true }>("/v1/feedback", json({ message, orderId })),
     payouts: gateway,
     airtime,

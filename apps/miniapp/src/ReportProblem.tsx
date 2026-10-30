@@ -23,8 +23,7 @@ export function ReportProblem({ orderId }: { orderId?: string }) {
   return (
     <form className="field" onSubmit={(e) => { e.preventDefault(); void send(); }}>
       <label htmlFor="report">What went wrong?</label>
-      <textarea id="report" rows={4} value={text} onChange={(e) => setText(e.target.value)}
-        style={{ background: "var(--surface)", border: "1.5px solid var(--line)", borderRadius: 10, padding: 14, font: "inherit" }} />
+      <textarea id="report" rows={4} value={text} onChange={(e) => setText(e.target.value)} />
       {state !== "idle" && state !== "sending" && <p className="alert" role="alert">{state}</p>}
       <button className="secondary" disabled={!text.trim() || state === "sending"}>{state === "sending" ? "Sending…" : "Send report"}</button>
     </form>

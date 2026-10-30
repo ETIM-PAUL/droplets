@@ -1,5 +1,6 @@
 import { UserFacingError, type AirtimeOperator, type Corridor, type CountryCode } from "@railkit/core";
 import type { Draft, Missing, QrUnderstood, Understood } from "@railkit/agent";
+import type { RampOffer, RampOfferError, RampState } from "@railkit/adapters/server";
 import type { AirtimeGateway, AirtimeQuote, AirtimeState, PayoutGateway, PayoutOrderStatus, PayoutQuote } from "@railkit/adapters";
 
 export class ApiError extends UserFacingError {
@@ -66,6 +67,14 @@ export function createRailkitClient(o: RailkitClientOptions) {
     understand: (text: string, draft?: Draft, expecting?: Missing) => call<Understood>("/v1/agent/understand", json({ text, draft, expecting })),
     /** A QR the phone couldn't read itself. */
     understandQr: (text: string, network: "mainnet" | "testnet") => call<QrUnderstood>("/v1/agent/qr", json({ text, network })),
+    /** Add money: where it's switched on, offers for an amount, and orders the provider takes payment for. */
+    topupOptions: async () => (await call<{ countries: { country: CountryCode; currency: string }[] }>("/v1/topup/options")).countries,
+    topupOffers: (req: { country: string; amount: string; walletAddress: string }) =>
+      call<{ currency: string; offers: RampOffer[]; errors: RampOfferError[] }>("/v1/topup/offers", json(req)),
+    createTopup: (req: { country: string; amount: string; walletAddress: string; providerCode: string; paymentMethod?: string; userId: string }) =>
+      call<{ orderId: string; redirectUrl: string }>("/v1/topup/orders", json(req)),
+    topupStatus: (orderId: string) =>
+      call<{ orderId: string; state: RampState; payoutAmount: string | null; transactionHash: string | null }>(`/v1/topup/orders/${encodeURIComponent(orderId)}`),
     corridors: async () => (await call<{ corridors: Corridor[] }>("/v1/corridors")).corridors,
     banks: async () => (await call<{ banks: { name: string; code: string }[] }>("/v1/payouts/banks?country=NG")).banks,
     nameEnquiry: (accountNumber: string, bankCode: string) =>

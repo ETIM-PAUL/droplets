@@ -1,7 +1,8 @@
-import type { Bank, Draft, Missing } from "@railkit/agent";
+import type { Bank, Draft, Missing, TopupIntent } from "@railkit/agent";
 import { CORRIDORS, validateRecipient, type Corridor, type PayoutRecipient } from "@railkit/core";
 import { useEffect, useRef, useState } from "react";
 import type { SavedRecipient } from "../storage";
+import { AppBar, ChatInput } from "../ui";
 import { api } from "./engine";
 
 interface Props {
@@ -9,6 +10,8 @@ interface Props {
   enabled: Corridor[];
   /** Everything is known: go to the confirm card with a live price. */
   onReady: (start: SavedRecipient) => void;
+  /** "buy 100 NIM": money coming in, so Add money takes over with the amount filled in. */
+  onTopup: (prefill: TopupIntent) => void;
   onCancel: () => void;
   /** Fill it in step by step instead. */
   onManual: () => void;
@@ -25,7 +28,7 @@ interface Line {
  * checks a Nigerian account holder's name with the bank, then hands over to the confirm card.
  * Nothing here can send money; only the confirm card's Send button and Nimiq Pay's own dialog can.
  */
-export function Chat({ first, enabled, onReady, onCancel, onManual }: Props) {
+export function Chat({ first, enabled, onReady, onTopup, onCancel, onManual }: Props) {
   const [lines, setLines] = useState<Line[]>([]);
   const [draft, setDraft] = useState<Draft>({});
   const [expecting, setExpecting] = useState<Missing | null>(null);
@@ -37,7 +40,10 @@ export function Chat({ first, enabled, onReady, onCancel, onManual }: Props) {
 
   const say = (...l: Line[]) => setLines((x) => [...x, ...l]);
 
-  useEffect(() => end.current?.scrollIntoView({ block: "end", behavior: "smooth" }), [lines, busy]);
+  // Braces matter: newer browsers return a Promise from scrollIntoView, and React would call it as a cleanup.
+  useEffect(() => {
+    end.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+  }, [lines, busy]);
 
   useEffect(() => {
     if (started.current) return;
@@ -53,6 +59,10 @@ export function Chat({ first, enabled, onReady, onCancel, onManual }: Props) {
     setBankChoices([]);
     try {
       const r = await api.understand(text, before, exp ?? undefined);
+      if (r.intent === "topup") {
+        onTopup(r.topup ?? {});
+        return;
+      }
       setDraft(r.draft);
       say(...r.notes.map((n) => ({ from: "errand" as const, text: n, note: true })));
       if (r.question) {
@@ -110,10 +120,7 @@ export function Chat({ first, enabled, onReady, onCancel, onManual }: Props) {
 
   return (
     <div className="screen">
-      <div className="topbar">
-        <button type="button" onClick={onCancel}>Cancel</button>
-        <button type="button" onClick={onManual}>Fill it in step by step</button>
-      </div>
+      <AppBar title="Ask Errand" onBack={onCancel} backLabel="Cancel" right={<button type="button" className="text-button" onClick={onManual}>Step by step</button>} />
 
       <div className="grow">
         <div className="chat" aria-live="polite">
@@ -143,20 +150,19 @@ export function Chat({ first, enabled, onReady, onCancel, onManual }: Props) {
         )}
 
         <div className="grow" />
-        {(
-          <form className="composer" onSubmit={(e) => { e.preventDefault(); answer(reply); }}>
-            <input
-              aria-label="Your answer"
-              value={reply}
-              onChange={(e) => setReply(e.target.value)}
-              inputMode={expecting === "phone" || expecting === "account" ? "tel" : expecting === "amount" ? "decimal" : "text"}
-              autoComplete="off"
-              maxLength={300}
-              autoFocus
-            />
-            <button className="primary" disabled={busy || !reply.trim()}>{expecting ? "Reply" : "Send"}</button>
-          </form>
-        )}
+        <div className="dock">
+          <ChatInput
+            label="Your answer"
+            placeholder={expecting ? "Type your answer…" : "Message Errand…"}
+            value={reply}
+            onChange={setReply}
+            onSend={() => answer(reply)}
+            busy={busy}
+            inputMode={expecting === "phone" || expecting === "account" ? "tel" : expecting === "amount" ? "decimal" : "text"}
+            autoFocus
+            size="compact"
+          />
+        </div>
       </div>
     </div>
   );

@@ -2,6 +2,7 @@ import { buildReceipt, destinationLabel, receiptText, stuckReason, type Order } 
 import { useEffect, useState } from "react";
 import { formatMoney } from "../format";
 import { ReportProblem } from "../ReportProblem";
+import { AppBar, Icon } from "../ui";
 import { orderStore, sendEngine } from "./engine";
 
 interface Props {
@@ -63,19 +64,18 @@ export function OrderView({ orderId, enabled, onHome, onRetry }: Props) {
 
   return (
     <div className="screen">
-      <div className="topbar">
-        <button type="button" onClick={onHome}>Home</button>
-        <span>{new Date(order.createdAt).toLocaleString()}</span>
-      </div>
+      <AppBar title="Payment" onBack={onHome} backLabel="Home" />
 
-      {order.state === "completed" ? (
-        <div>
-          <p className="arrived-amount">{gets}</p>
-          <p className="question">arrived with {who}.</p>
-        </div>
-      ) : (
-        <h1 className="sentence">Sending {gets} to {who}</h1>
-      )}
+      <div className="result">
+        <span className={`result-icon${order.state === "completed" ? " ok" : ["cancelled", "failed", "expired"].includes(order.state) ? " bad" : ""}`}>
+          <Icon name={order.state === "completed" ? "check" : ["cancelled", "failed", "expired"].includes(order.state) ? "close" : "clock"} size={30} />
+        </span>
+        <p className="arrived-amount">{gets}</p>
+        <p className="question">
+          {order.state === "completed" ? `arrived with ${who}` : ["cancelled", "failed", "expired"].includes(order.state) ? `to ${who} didn't go through` : `on its way to ${who}`}
+        </p>
+        <p className="note">{new Date(order.createdAt).toLocaleString()}</p>
+      </div>
 
       <div className="grow">
         {!["cancelled", "failed", "expired"].includes(order.state) && (

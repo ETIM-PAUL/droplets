@@ -33,7 +33,19 @@ export interface Draft {
 
 export type Missing = "corridor" | "amount" | "phone" | "name" | "bank" | "account";
 
+/** "buy 100 NIM", "add ₦10,000 to my wallet": money coming in, not going out. */
+export interface TopupIntent {
+  /** Fiat to pay, when the user said one ("add ₦10,000"). */
+  amount?: string;
+  currency?: string;
+  /** NIM wanted, when the user said that instead ("buy 100 NIM"). */
+  nim?: string;
+}
+
 export interface Understood {
+  /** "send" (the default) asks questions until a payout can be quoted; "topup" hands over to Add money. */
+  intent?: "send" | "topup";
+  topup?: TopupIntent;
   draft: Draft;
   missing: Missing[];
   /** The next thing to ask, or null when the draft is ready for a quote. */

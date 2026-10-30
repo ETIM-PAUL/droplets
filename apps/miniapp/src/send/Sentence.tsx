@@ -26,9 +26,9 @@ export function Sentence({ corridor, name, amount, step, onEdit }: Props) {
   );
   const network = corridor ? corridor.label.split(": ")[1]! : "";
   return (
-    <h1 className="sentence">
+    <h2 className="sentence">
       Send {slot("amount", amount && corridor ? formatMoney(amount, corridor.currency) : "", "some money")} to{" "}
       {slot("who", name, "someone")} on {slot("where", network, "their account")}
-    </h1>
+    </h2>
   );
 }

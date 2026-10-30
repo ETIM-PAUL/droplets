@@ -83,3 +83,37 @@ export const sessionToken = {
     }
   },
 };
+
+export interface LocalTopup {
+  orderId: string;
+  provider: string;
+  amount: string;
+  currency: string;
+  /** NIM the offer said to expect. The provider's final amount can differ. */
+  expectedNim: string;
+  address: string;
+  redirectUrl: string;
+  createdAt: number;
+  /** Last state seen, so the list shows something before the next check. */
+  state: string;
+}
+
+/** Top-ups started on this device, newest first. Only ids and amounts: the provider holds the payment details. */
+export function topupBook(storage: Storage | undefined = safeLocalStorage(), key = "errand.topups.v1", keep = 20) {
+  return {
+    list: (): LocalTopup[] => read<LocalTopup[]>(key, [], storage),
+    put(t: LocalTopup) {
+      const rest = read<LocalTopup[]>(key, [], storage).filter((x) => x.orderId !== t.orderId);
+      write(key, [t, ...rest].slice(0, keep), storage);
+    },
+  };
+}
+
+/** A random id for this device, so the provider can tell repeat customers apart without knowing who they are. */
+export function deviceId(storage: Storage | undefined = safeLocalStorage(), key = "errand.device.v1"): string {
+  const known = read<string | null>(key, null, storage);
+  if (known) return known;
+  const id = `dev-${crypto.randomUUID()}`;
+  write(key, id, storage);
+  return id;
+}

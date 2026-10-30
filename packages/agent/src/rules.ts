@@ -1,6 +1,6 @@
 import { CORRIDORS, type CorridorId } from "@railkit/core";
 import { matchBank } from "./banks";
-import type { Bank, Draft, Missing } from "./intent";
+import type { Bank, Draft, Missing, TopupIntent } from "./intent";
 
 /** Words for money, rewritten to ISO codes before anything else reads the sentence. */
 const CURRENCY_WORDS: [RegExp, string][] = [
@@ -179,4 +179,38 @@ export function parseAnswer(text: string, expecting: Missing, enabled: ReadonlyS
   }
   // Not a plain answer: read it as a whole sentence instead ("actually make it 3000").
   return parseSentence(t, enabled, banks);
+}
+
+const TOPUP_VERB = /\b(buy|top\s?up|topup|fund|load|deposit|add(\s+money)?|get)\b/i;
+const TOPUP_TARGET = /\b(nim|nimiq|my\s+(wallet|balance|nimiq|account|errand))\b/i;
+/** Words that make "top up" about a phone or a person, not the user's own wallet. */
+const NOT_TOPUP = /\b(airtime|data|phone|recharge|send|transfer|pay|m-?pesa|airtel|mtn|momo|bank|to\s+my\s+(mum|mom|mother|dad|father|sister|brother|wife|husband|friend|son|daughter))\b/i;
+/** "for Grace": a named person, so it's for someone else. Case matters here, so it's separate. */
+const FOR_SOMEONE = /\b(for|to|top\s?up)\s+[A-Z][a-z]/;
+
+/**
+ * Spots a request to put money into the user's own wallet. Deliberately narrow: a phone or account number,
+ * or any word about someone else, keeps it a send, because reading a payout as a top-up (or the other way)
+ * is the misread that matters. "top up 5000 naira" with nothing else counts: there is nobody to send to.
+ */
+export function parseTopup(input: string): TopupIntent | null {
+  let text = ` ${input.normalize("NFKC").slice(0, 300)} `;
+  if (!TOPUP_VERB.test(text) || NOT_TOPUP.test(text) || FOR_SOMEONE.test(text.replace(/\b(to|for)\s+(NIM|Nimiq|Errand)\b/g, ""))) return null;
+  if (/\+?\d(?:[ -]?\d){8,14}/.test(text)) return null;
+  const bareTopUp = /\btop\s?up\b/i.test(text);
+  if (!TOPUP_TARGET.test(text) && !bareTopUp) return null;
+
+  for (const [re, iso] of CURRENCY_WORDS) text = text.replace(re, iso);
+  const m = /(?:\b(KES|NGN|GHS|ZAR)\s*)?(\d{1,3}(?:,\d{3})+|\d+)(\.\d{1,2})?\s*(k|thousand)?\b\s*(KES|NGN|GHS|ZAR|NIM)?/i.exec(text);
+  if (!m) return {};
+  let whole = m[2]!.replace(/,/g, "");
+  let frac = m[3] ?? "";
+  if (m[4]) {
+    whole = (BigInt(whole) * 1000n + (frac ? BigInt(frac.slice(1).padEnd(3, "0")) : 0n)).toString();
+    frac = "";
+  }
+  const amount = whole.replace(/^0+(?=\d)/, "") + frac;
+  const unit = (m[1] ?? m[5] ?? (/\bnim\b/i.test(text) && !/\b(KES|NGN|GHS|ZAR)\b/.test(text) ? "NIM" : ""))?.toUpperCase();
+  if (unit === "NIM") return { nim: amount };
+  return unit ? { amount, currency: unit } : { amount };
 }

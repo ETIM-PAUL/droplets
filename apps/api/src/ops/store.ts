@@ -1,6 +1,6 @@
 import type { Pool } from "pg";
 
-export type OrderKind = "payout" | "airtime";
+export type OrderKind = "payout" | "airtime" | "topup";
 /** Our own view of an order, kept server-side for alerts and metrics. "done" means delivered to the recipient. */
 export type OpsState = "awaiting_payment" | "paid" | "done" | "failed" | "expired";
 
@@ -9,7 +9,7 @@ export interface OpsOrder {
   kind: OrderKind;
   /** Which beta invite placed it; null when invites are off. */
   invite: string | null;
-  /** Corridor id for payouts, country for airtime. */
+  /** Corridor id for payouts, country for airtime, "provider:country" for top-ups. */
   product: string;
   receiveAmount: string;
   receiveCurrency: string;

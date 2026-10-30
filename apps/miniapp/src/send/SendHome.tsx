@@ -4,6 +4,7 @@ import { createNimiqExecutor } from "@railkit/wallet-nimiq";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatCountdown, formatMoney } from "../format";
 import { recipientBook, type SavedRecipient } from "../storage";
+import { AppBar } from "../ui";
 import { api, PRACTICE, practiceWallet, sendEngine } from "./engine";
 import { Sentence, type Step } from "./Sentence";
 
@@ -149,9 +150,7 @@ export function SendHome({ enabled, start, autoQuote, onDone, onCancel }: Props)
 
   return (
     <div className="screen">
-      <div className="topbar">
-        <button type="button" onClick={onCancel}>Cancel</button>
-      </div>
+      <AppBar title={step === "review" ? "Review" : "Send money"} onBack={onCancel} backLabel="Cancel" />
       <Sentence corridor={corridor} name={name} amount={amount} step={step} onEdit={busy ? undefined : go} />
 
       <div className="grow">
@@ -242,7 +241,7 @@ export function SendHome({ enabled, start, autoQuote, onDone, onCancel }: Props)
                   <dd>{expiresIn > 0 ? formatCountdown(expiresIn) : "expired"}</dd>
                 </dl>
                 {requoted && <p className="hint" role="status">This is a new price. Check it before you send.</p>}
-                <section>
+                <section className="card">
                   <h2 className="section-title">How it gets there</h2>
                   {explainRoute(quote).map((l) => <p key={l} className="note">{l}</p>)}
                   <p className="note">Nimiq Pay shows what this costs in NIM or USDT, including its swap fee, before you approve.</p>

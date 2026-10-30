@@ -4,6 +4,7 @@ import { createNimiqExecutor } from "@railkit/wallet-nimiq";
 import QrScanner from "qr-scanner";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatCountdown, formatMoney } from "../format";
+import { AppBar } from "../ui";
 import { api, hostNetwork, PRACTICE, sendEngine } from "./engine";
 
 interface Props {
@@ -133,10 +134,7 @@ export function Scan({ enabled, onDone, onCancel }: Props) {
 
   return (
     <div className="screen">
-      <div className="topbar">
-        <button type="button" onClick={onCancel}>Cancel</button>
-      </div>
-      <h1 className="sentence">Pay a code</h1>
+      <AppBar title="Pay a code" onBack={onCancel} backLabel="Cancel" />
 
       <div className="grow">
         {!found && (
@@ -186,7 +184,7 @@ export function Scan({ enabled, onDone, onCancel }: Props) {
               <dt>Price holds for</dt>
               <dd>{expiresIn > 0 ? formatCountdown(expiresIn) : "expired"}</dd>
             </dl>
-            <section>
+            <section className="card">
               <h2 className="section-title">How it gets there</h2>
               {explainRoute(quote).map((l) => <p key={l} className="note">{l}</p>)}
               {quote.notes?.map((n) => <p key={n} className="note">{n}</p>)}

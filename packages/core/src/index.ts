@@ -17,3 +17,4 @@ export * from "./corridors";
 export * from "./airtime";
 export * from "./qr";
 export * from "./describe";
+export * from "./nimiq-address";

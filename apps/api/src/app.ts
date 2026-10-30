@@ -2,11 +2,13 @@ import { randomUUID, timingSafeEqual } from "node:crypto";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { ProviderError, type BitrefillApi, type MavapayApi } from "@railkit/adapters";
+import type { ChangellyFiatApi } from "@railkit/adapters/server";
 import { understand, understandQr, type Bank, type Draft, type Extractor, type Missing, type QrExtractor } from "@railkit/agent";
 import {
   CORRIDORS,
   isCorridorId,
   normalizePhone,
+  parseNimiqAddress,
   parseBolt11,
   type CountryCode,
   validatePayoutAmount,
@@ -14,7 +16,7 @@ import {
   type PayoutRecipient,
 } from "@railkit/core";
 import { issueSession, overLimit, verifySession, type BetaConfig } from "./ops/beta";
-import { airtimeToOps, payoutToOps } from "./ops/map";
+import { airtimeToOps, payoutToOps, rampToOps } from "./ops/map";
 import { betaMetrics } from "./ops/metrics";
 import type { OpsStore } from "./ops/store";
 import { rateLimiter } from "./rate-limit";
@@ -39,6 +41,8 @@ export interface AppDeps {
   /** Practice mode: lets the app ask Mavapay STAGING to pretend an invoice was paid. Never on with live keys. */
   simulatePayIn?: (orderId: string) => Promise<void>;
   alert?: (text: string) => Promise<void>;
+  /** Add money: Changelly's fiat on-ramp, the countries it's switched on for, and NIM's ticker there. */
+  ramp?: { api: Pick<ChangellyFiatApi, "offers" | "validateAddress" | "createOrder" | "getOrder" | "readCallback">; countries: ReadonlySet<string>; nimTicker: string };
   /** Chat: an optional model for sentences the rules can't finish, capped per UTC day. */
   agent?: { model?: Extractor; qrModel?: QrExtractor; modelCallsPerDay?: number };
   log?: (msg: string, data?: Record<string, unknown>) => void;
@@ -98,7 +102,7 @@ export function createApp(d: AppDeps) {
     c.set("invite", invite);
     return next();
   };
-  for (const path of ["/v1/payouts/*", "/v1/airtime/*", "/v1/feedback", "/v1/agent/*"]) app.use(path, session as never);
+  for (const path of ["/v1/payouts/*", "/v1/airtime/*", "/v1/feedback", "/v1/agent/*", "/v1/topup/*"]) app.use(path, session as never);
 
   /** An order placed under another invite looks like it doesn't exist. */
   const notYours = async (id: string, invite: string | null) => {
@@ -255,6 +259,103 @@ export function createApp(d: AppDeps) {
     const r = await understandQr(text, { model: d.agent?.qrModel, allowModel, now: now(), hostNetwork, log });
     log("agent qr", { status: r.status, source: r.source, kind: r.payment?.kind ?? null });
     return c.json(r);
+  });
+
+  // ---- Add money (Changelly Fiat API). The user pays on the provider's page; NIM goes straight to their address.
+  const RAMP_FIAT: Record<string, string> = { NG: "NGN", KE: "KES", GH: "GHS", ZA: "ZAR" };
+
+  /** Checks a top-up request's country, amount and address. Returns an error response or the clean values. */
+  function readTopup(b: Record<string, unknown> | null) {
+    const country = typeof b?.country === "string" ? b.country.toUpperCase() : "";
+    if (!d.ramp || !d.ramp.countries.has(country) || !RAMP_FIAT[country]) return { error: bad("Adding money isn't available in your country yet.", 403) };
+    const amount = typeof b?.amount === "string" ? b.amount.trim() : "";
+    if (!/^\d{1,9}(\.\d{1,2})?$/.test(amount) || Number(amount) <= 0) return { error: bad(`Enter an amount in ${RAMP_FIAT[country]}.`) };
+    const addr = parseNimiqAddress(typeof b?.walletAddress === "string" ? b.walletAddress : "");
+    if (!addr.ok) return { error: bad(addr.error.message) };
+    const userId = typeof b?.userId === "string" && /^[\w-]{8,64}$/.test(b.userId) ? b.userId : null;
+    return { country, fiat: RAMP_FIAT[country]!, amount, walletAddress: addr.value, userId };
+  }
+
+  app.get("/v1/topup/options", (c) =>
+    c.json({ countries: d.ramp ? [...d.ramp.countries].filter((x) => RAMP_FIAT[x]).map((country) => ({ country, currency: RAMP_FIAT[country] })) : [] }),
+  );
+
+  app.post("/v1/topup/offers", async (c) => {
+    if (!quoteLimit(clientKey((n) => c.req.header(n)))) return bad("Too many requests in a short time. Wait a minute and try again.", 429);
+    const t = readTopup((await c.req.json().catch(() => null)) as Record<string, unknown> | null);
+    if ("error" in t) return t.error;
+    try {
+      const ip = clientKey((n) => c.req.header(n));
+      const r = await d.ramp!.api.offers({ currencyFrom: t.fiat, currencyTo: d.ramp!.nimTicker, amountFrom: t.amount, country: t.country, ...(ip !== "local" ? { ip } : {}) });
+      return c.json({ currency: t.fiat, ...r });
+    } catch (e) {
+      return providerError(e);
+    }
+  });
+
+  app.post("/v1/topup/orders", async (c) => {
+    if (!quoteLimit(clientKey((n) => c.req.header(n)))) return bad("Too many requests in a short time. Wait a minute and try again.", 429);
+    const b = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
+    const t = readTopup(b);
+    if ("error" in t) return t.error;
+    const providerCode = typeof b?.providerCode === "string" && /^[a-z0-9_-]{2,32}$/i.test(b.providerCode) ? b.providerCode : "";
+    if (!providerCode) return bad("Choose an offer first.");
+    const paymentMethod = typeof b?.paymentMethod === "string" && /^[a-z0-9_-]{2,40}$/i.test(b.paymentMethod) ? b.paymentMethod : undefined;
+    const invite = c.get("invite");
+    try {
+      if (!(await d.ramp!.api.validateAddress(d.ramp!.nimTicker, t.walletAddress))) return bad("The provider can't send NIM to that address. Check it in Nimiq Pay.");
+      const ip = clientKey((n) => c.req.header(n));
+      const order = await d.ramp!.api.createOrder({
+        externalOrderId: randomUUID(),
+        externalUserId: invite ?? t.userId ?? "errand-user",
+        providerCode,
+        currencyFrom: t.fiat,
+        currencyTo: d.ramp!.nimTicker,
+        amountFrom: t.amount,
+        country: t.country,
+        walletAddress: t.walletAddress,
+        ...(paymentMethod ? { paymentMethod } : {}),
+        ...(ip !== "local" ? { ip } : {}),
+      });
+      await d.ops?.recordQuote({
+        id: order.externalOrderId, kind: "topup", invite, product: `${providerCode}:${t.country}`, receiveAmount: t.amount,
+        receiveCurrency: t.fiat, sats: "0", createdAt: now(), expiresAt: now() + 60 * 60_000,
+      });
+      log("topup order", { orderId: order.externalOrderId, providerCode, country: t.country, invite });
+      return c.json({ orderId: order.externalOrderId, redirectUrl: order.redirectUrl });
+    } catch (e) {
+      return providerError(e);
+    }
+  });
+
+  app.get("/v1/topup/orders/:orderId", async (c) => {
+    if (!d.ramp) return bad("Adding money isn't available right now.", 503);
+    if (!readLimit(clientKey((n) => c.req.header(n)))) return bad("Too many requests. Wait a minute.", 429);
+    const id = c.req.param("orderId");
+    if (!ORDER_ID.test(id)) return bad("That order number isn't valid.");
+    if (await notYours(id, c.get("invite"))) return bad("Order not found.", 404);
+    try {
+      const s = await d.ramp.api.getOrder(id);
+      if (!s) return c.json({ orderId: id, state: "awaiting_payment", payoutAmount: null, transactionHash: null });
+      await d.ops?.setState(id, rampToOps(s.state), now());
+      return c.json({ orderId: id, state: s.state, payoutAmount: s.payoutAmount, transactionHash: s.transactionHash });
+    } catch (e) {
+      return providerError(e);
+    }
+  });
+
+  // Changelly signs {"orderId": ...} with its key; anything else is ignored.
+  app.post("/v1/webhooks/changelly", async (c) => {
+    if (!d.ramp) return bad("Not found.", 404);
+    const raw = await c.req.text();
+    const s = d.ramp.api.readCallback({ apiKey: c.req.header("x-callback-api-key"), signature: c.req.header("x-callback-signature") }, raw);
+    if (!s || !ORDER_ID.test(s.externalOrderId)) return bad("Bad signature.", 400);
+    await d.ops?.setState(s.externalOrderId, rampToOps(s.state), now());
+    log("topup webhook", { orderId: s.externalOrderId, status: s.status });
+    if (s.state === "hold") {
+      await d.alert?.(`TOPUP ON HOLD: the provider needs the user to act (often an ID check): topup ${s.externalOrderId}`).catch(() => undefined);
+    }
+    return c.json({ ok: true });
   });
 
   const airtimeCountry = (c: string | undefined): CountryCode | null =>

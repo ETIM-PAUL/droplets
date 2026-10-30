@@ -1,10 +1,11 @@
 import { serve } from "@hono/node-server";
 import { createBitrefillApi, createMavapayApi, ProviderError } from "@railkit/adapters";
+import { createChangellyFiatApi } from "@railkit/adapters/server";
 import pg from "pg";
 import { openAiExtractor, openAiQrExtractor } from "@railkit/agent";
 import { createApp } from "./app";
 import { parseInvites, type BetaConfig } from "./ops/beta";
-import { airtimeToOps, payoutToOps } from "./ops/map";
+import { airtimeToOps, payoutToOps, rampToOps } from "./ops/map";
 import { MemoryOpsStore, PgOpsStore, type OpsStore } from "./ops/store";
 import { watchOnce, webhookAlerter } from "./ops/watcher";
 
@@ -23,6 +24,16 @@ const bitrefill = process.env.BITREFILL_API_KEY
       apiKey: process.env.BITREFILL_API_KEY,
       baseUrl: process.env.BITREFILL_BASE_URL ?? "https://api.bitrefill.com/v2",
       webhookUrl: publicUrl && bitrefillToken ? `${publicUrl}/v1/webhooks/bitrefill/${bitrefillToken}` : undefined,
+    })
+  : undefined;
+
+// Add money: Changelly's Fiat API. Off until its keys are set.
+const ramp = process.env.CHANGELLY_FIAT_PUBLIC_KEY && process.env.CHANGELLY_FIAT_PRIVATE_KEY
+  ? createChangellyFiatApi({
+      publicKey: process.env.CHANGELLY_FIAT_PUBLIC_KEY,
+      privateKey: process.env.CHANGELLY_FIAT_PRIVATE_KEY,
+      callbackPublicKey: process.env.CHANGELLY_CALLBACK_PUBLIC_KEY || undefined,
+      baseUrl: process.env.CHANGELLY_FIAT_BASE_URL || undefined,
     })
   : undefined;
 
@@ -82,6 +93,7 @@ const app = createApp({
   corridors: new Set(list(process.env.CORRIDORS)),
   allowedOrigins: list(process.env.ALLOWED_ORIGINS),
   webhookSecret: process.env.MAVAPAY_WEBHOOK_SECRET || undefined,
+  ramp: ramp ? { api: ramp, countries: new Set(list(process.env.TOPUP_COUNTRIES)), nimTicker: process.env.CHANGELLY_NIM_TICKER || "NIM" } : undefined,
   agent: {
     model: process.env.OPENAI_API_KEY ? openAiExtractor({ apiKey: process.env.OPENAI_API_KEY, model: process.env.OPENAI_MODEL || undefined }) : undefined,
     qrModel: process.env.OPENAI_API_KEY ? openAiQrExtractor({ apiKey: process.env.OPENAI_API_KEY, model: process.env.OPENAI_MODEL || undefined }) : undefined,
@@ -102,8 +114,12 @@ setInterval(() => {
     refresh: async (o) =>
       o.kind === "payout"
         ? payoutToOps((await mavapay.getOrder(o.id)).state)
-        : bitrefill
-          ? airtimeToOps((await bitrefill.status(o.id)).state)
-          : null,
+        : o.kind === "airtime"
+          ? bitrefill
+            ? airtimeToOps((await bitrefill.status(o.id)).state)
+            : null
+          : ramp
+            ? rampToOps((await ramp.getOrder(o.id))?.state ?? "awaiting_payment")
+            : null,
   }).catch((e) => console.error(JSON.stringify({ msg: "watcher failed", error: String(e) })));
 }, 120_000);

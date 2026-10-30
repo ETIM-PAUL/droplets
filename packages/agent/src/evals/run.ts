@@ -32,6 +32,20 @@ export async function runEval(cases: EvalCase[], deps: { enabled: ReadonlySet<Co
   for (const c of cases) {
     const r = await understand({ text: c.text, draft: c.draft, expecting: c.expecting }, deps);
     const res: CaseResult = { text: c.text, tags: c.tags, hits: 0, expected: 0, wrong: [], missed: [] };
+    // Reading a send as a top-up, or a top-up as a send, is always wrong.
+    const gotIntent = r.intent ?? "send";
+    const wantIntent = c.intent ?? "send";
+    if (gotIntent !== wantIntent) res.wrong.push(`intent: got ${gotIntent}, want ${wantIntent}`);
+    for (const [k, want] of Object.entries(c.topup ?? {})) {
+      res.expected++;
+      const got = (r.topup as Record<string, string> | undefined)?.[k];
+      if (got === want) res.hits++;
+      else if (got === undefined) res.missed.push(`topup.${k}`);
+      else res.wrong.push(`topup.${k}: got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
+    }
+    if (c.intent === "topup" && r.topup) {
+      for (const [k, got] of Object.entries(r.topup)) if (!(k in (c.topup ?? {}))) res.wrong.push(`topup.${k}: should be empty, got ${JSON.stringify(got)}`);
+    }
     for (const [k, want] of Object.entries(c.expect)) {
       res.expected++;
       const got = value(r.draft, k);

@@ -370,3 +370,70 @@ describe("agent replies carry nothing payable", () => {
     expect(body).not.toMatch(/"(steps|quoteId|orderId)"/);
   });
 });
+
+describe("add money (Changelly)", () => {
+  const ADDR = "NQ07 0000 0000 0000 0000 0000 0000 0000 0000";
+  function rampSetup(over: Partial<Parameters<typeof setup>[0]> = {}) {
+    const created: Record<string, unknown>[] = [];
+    let status = "pending";
+    const api = {
+      offers: async () => ({ offers: [{ providerCode: "moonpay", amountExpectedTo: "2100000", fee: "300", rate: "0.0002", methods: [] }], errors: [] }),
+      validateAddress: async (_t: string, a: string) => a === ADDR,
+      createOrder: async (q: Record<string, unknown>) => (created.push(q), { orderId: "chg-1", externalOrderId: String(q.externalOrderId), redirectUrl: "https://buy.moonpay.example/o" }),
+      getOrder: async (id: string) => ({ orderId: "chg-1", externalOrderId: id, state: (status === "completed" ? "completed" : "processing") as "completed" | "processing", status, payoutAmount: status === "completed" ? "2100000" : null, transactionHash: null }),
+      readCallback: (h: { apiKey?: string }, raw: string) => (h.apiKey === "pk" ? { orderId: "chg-1", externalOrderId: JSON.parse(raw).externalOrderId as string, state: "hold" as const, status: "hold", payoutAmount: null, transactionHash: null } : null),
+    };
+    const ops = new MemoryOpsStore();
+    const alerts: string[] = [];
+    const s = setup({ ramp: { api, countries: new Set(["NG"]), nimTicker: "NIM" }, ops, alert: async (t) => void alerts.push(t), ...over });
+    return { ...s, created, ops, alerts, setStatus: (x: string) => (status = x) };
+  }
+
+  it("lists only the switched-on countries", async () => {
+    const { app } = rampSetup();
+    expect(await (await app.request("/v1/topup/options")).json()).toEqual({ countries: [{ country: "NG", currency: "NGN" }] });
+  });
+
+  it("gets offers for a checked amount and Nimiq address", async () => {
+    const { app } = rampSetup();
+    const res = await app.request("/v1/topup/offers", post({ country: "NG", amount: "10000", walletAddress: ADDR.replace(/ /g, "").toLowerCase() }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ currency: "NGN", offers: [{ providerCode: "moonpay" }] });
+  });
+
+  it("refuses switched-off countries, bad amounts and mistyped addresses", async () => {
+    const { app } = rampSetup();
+    expect((await app.request("/v1/topup/offers", post({ country: "KE", amount: "1000", walletAddress: ADDR }))).status).toBe(403);
+    expect((await app.request("/v1/topup/offers", post({ country: "NG", amount: "-5", walletAddress: ADDR }))).status).toBe(400);
+    const typo = await app.request("/v1/topup/offers", post({ country: "NG", amount: "10000", walletAddress: ADDR.replace("NQ07", "NQ08") }));
+    expect(typo.status).toBe(400);
+    expect(((await typo.json()) as { error: { message: string } }).error.message).toMatch(/typo/);
+  });
+
+  it("creates an order sending NIM straight to the user's address, logs it, and returns the payment page", async () => {
+    const { app, created, ops } = rampSetup();
+    const res = await app.request("/v1/topup/orders", post({ country: "NG", amount: "10000", walletAddress: ADDR, providerCode: "moonpay", paymentMethod: "card" }));
+    const j = (await res.json()) as { orderId: string; redirectUrl: string };
+    expect(j.redirectUrl).toBe("https://buy.moonpay.example/o");
+    expect(created[0]).toMatchObject({ walletAddress: ADDR, currencyFrom: "NGN", currencyTo: "NIM", amountFrom: "10000", country: "NG", providerCode: "moonpay" });
+    expect((await ops.get(j.orderId))?.kind).toBe("topup");
+  });
+
+  it("tracks the order and moves our log on", async () => {
+    const { app, ops, setStatus } = rampSetup();
+    const { orderId } = (await (await app.request("/v1/topup/orders", post({ country: "NG", amount: "10000", walletAddress: ADDR, providerCode: "moonpay" }))).json()) as { orderId: string };
+    setStatus("completed");
+    expect(await (await app.request(`/v1/topup/orders/${orderId}`)).json()).toMatchObject({ state: "completed", payoutAmount: "2100000" });
+    expect((await ops.get(orderId))?.state).toBe("done");
+  });
+
+  it("accepts only signed webhooks, and alerts when a provider holds an order", async () => {
+    const { app, ops, alerts } = rampSetup();
+    const { orderId } = (await (await app.request("/v1/topup/orders", post({ country: "NG", amount: "10000", walletAddress: ADDR, providerCode: "moonpay" }))).json()) as { orderId: string };
+    const body = JSON.stringify({ orderId: "chg-1", externalOrderId: orderId, status: "hold" });
+    expect((await app.request("/v1/webhooks/changelly", { method: "POST", headers: { "x-callback-api-key": "nope" }, body })).status).toBe(400);
+    expect((await app.request("/v1/webhooks/changelly", { method: "POST", headers: { "x-callback-api-key": "pk", "x-callback-signature": "s" }, body })).status).toBe(200);
+    expect((await ops.get(orderId))?.state).toBe("paid");
+    expect(alerts.join(" ")).toMatch(/ON HOLD/);
+  });
+});

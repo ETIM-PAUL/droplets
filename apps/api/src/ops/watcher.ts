@@ -12,7 +12,8 @@ export interface WatchDeps {
   maxRefreshes?: number;
 }
 
-const DEFAULT_STUCK = { payout: 30 * 60_000, airtime: 15 * 60_000 };
+// Card and bank top-ups can sit in the provider's checks for a while before NIM is sent.
+const DEFAULT_STUCK = { payout: 30 * 60_000, airtime: 15 * 60_000, topup: 90 * 60_000 };
 
 const describe = (o: OpsOrder) =>
   `${o.kind} ${o.id} (${o.receiveAmount} ${o.receiveCurrency}, ${o.sats} sats, ${o.product}, invite ${o.invite ?? "none"})`;

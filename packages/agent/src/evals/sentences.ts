@@ -8,7 +8,10 @@ import type { Draft } from "../intent";
  */
 export interface EvalCase {
   text: string;
-  tags: ("ke" | "ng" | "slang" | "typo" | "partial" | "trap" | "follow-up")[];
+  /** "topup" when the sentence asks to add money to the user's own wallet. Absent means a send. */
+  intent?: "topup";
+  topup?: { amount?: string; currency?: string; nim?: string };
+  tags: ("ke" | "ng" | "slang" | "typo" | "partial" | "trap" | "follow-up" | "topup")[];
   expect: Partial<Record<"corridor" | "amount" | "phone" | "accountNumber" | "bank" | "name", string>>;
   never?: (keyof Draft)[];
   /** For follow-ups: the draft before this message and the question it answers. */
@@ -85,4 +88,20 @@ export const EVAL_CASES: EvalCase[] = [
   { text: "Kenya: M-Pesa", tags: ["follow-up"], draft: { amount: "2000", number: "0712345678" }, expecting: "corridor", expect: { corridor: "ke-mpesa", phone: "+254712345678" } },
   { text: "actually make it 3000", tags: ["follow-up"], draft: { corridor: "ke-mpesa", amount: "2500", phone: "+254712345678" }, expecting: "name", expect: { amount: "3000", phone: "+254712345678" }, never: ["name"] },
   { text: "0123456789", tags: ["follow-up"], draft: { corridor: "ng-bank", amount: "5000", bank: { name: "ZENITH BANK", code: ZENITH } }, expecting: "account", expect: { accountNumber: "0123456789", bank: ZENITH } },
+
+  // Adding money to the user's own wallet (goes to Add money, never to a payout)
+  { text: "buy 100 NIM", tags: ["topup"], intent: "topup", topup: { nim: "100" }, expect: {} },
+  { text: "Buy 5,000 NIM", tags: ["topup"], intent: "topup", topup: { nim: "5000" }, expect: {} },
+  { text: "add ₦10,000 to my wallet", tags: ["topup", "ng"], intent: "topup", topup: { amount: "10000", currency: "NGN" }, expect: {} },
+  { text: "top up 5000 naira", tags: ["topup", "ng"], intent: "topup", topup: { amount: "5000", currency: "NGN" }, expect: {} },
+  { text: "fund my wallet with 20k naira", tags: ["topup", "ng", "slang"], intent: "topup", topup: { amount: "20000", currency: "NGN" }, expect: {} },
+  { text: "load 2000 KES into my Nimiq", tags: ["topup", "ke"], intent: "topup", topup: { amount: "2000", currency: "KES" }, expect: {} },
+  { text: "buy NIM for 5000 naira", tags: ["topup", "ng"], intent: "topup", topup: { amount: "5000", currency: "NGN" }, expect: {} },
+  { text: "I want to buy NIM", tags: ["topup"], intent: "topup", topup: {}, expect: {} },
+  // ...and sends that look a bit like top-ups must stay sends
+  { text: "add 5000 naira to 0123456789 gtbank", tags: ["trap", "ng"], expect: { corridor: "ng-bank", amount: "5000", accountNumber: "0123456789" } },
+  { text: "top up my mum's phone with 500 naira", tags: ["trap"], expect: {} },
+  { text: "buy airtime for 1000 naira", tags: ["trap"], expect: {} },
+  { text: "send 5000 naira to my brother's account", tags: ["trap", "ng"], expect: { corridor: "ng-bank", amount: "5000" } },
+  { text: "top up Grace with 2000 KES on mpesa", tags: ["trap", "ke"], expect: { corridor: "ke-mpesa", amount: "2000", name: "Grace" } },
 ];

@@ -15,7 +15,7 @@ const WELL_KNOWN = new Set([
 
 /** What people say, rewritten to how the provider's list names the bank. */
 const ALIASES: [RegExp, string][] = [
-  [/ (gt bank|gtb|gtco|guaranty trust|guaranty trust bank) /g, " gtbank "],
+  [/ (gt bank|gt|gtb|gtco|guaranty trust|guaranty trust bank|guaranty) /g, " gtbank "],
   [/ firstbank /g, " first bank "],
   [/ stanbic /g, " stanbic ibtc "],
   [/ moniepoint mfb /g, " moniepoint "],
@@ -68,4 +68,43 @@ export function matchBank(text: string, banks: readonly Bank[], o: { answer?: bo
   if (hits.size === 0) return {};
   if (hits.size === 1) return { bank: [...hits.values()][0] };
   return { choices: [...hits.values()].slice(0, 5) };
+}
+
+function distance(a: string, b: string): number {
+  const row = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = row[0]!;
+    row[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const cur = row[j]!;
+      row[j] = Math.min(row[j]! + 1, row[j - 1]! + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = cur;
+    }
+  }
+  return row[b.length]!;
+}
+
+/**
+ * When nothing matches outright ("GT", "zenit", "first monument"), the closest banks to offer as choices:
+ * names or initials that start with what was typed, then near-misses in spelling. Big banks come first.
+ */
+export function suggestBanks(query: string, banks: readonly Bank[], limit = 5): Bank[] {
+  const q = words(query).filter((w) => !FILLER.has(w) && !["my", "to", "send", "account"].includes(w));
+  if (!q.length) return [];
+  const scored = new Map<string, { bank: Bank; score: number; len: number }>();
+  for (const b of banks) {
+    const name = core(b.name);
+    const nws = name.split(" ").filter(Boolean);
+    const ini = initials(b.name);
+    let score = 0;
+    for (const w of q) {
+      if (nws.some((n) => n.startsWith(w)) || (w.length >= 2 && ini.startsWith(w))) score += 3;
+      else if (w.length >= 4 && nws.some((n) => distance(n, w) <= (w.length > 6 ? 2 : 1))) score += 2;
+    }
+    if (!score) continue;
+    if (WELL_KNOWN.has(nws[0] ?? "") || WELL_KNOWN.has(ini)) score += 1;
+    const prev = scored.get(b.code);
+    if (!prev || prev.score < score) scored.set(b.code, { bank: { name: b.name.trim(), code: b.code }, score, len: name.length });
+  }
+  return [...scored.values()].sort((a, b) => b.score - a.score || a.len - b.len).slice(0, limit).map((x) => x.bank);
 }

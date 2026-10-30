@@ -1,6 +1,6 @@
 import type { CorridorId } from "@railkit/core";
 import { describe, expect, it, vi } from "vitest";
-import { matchBank } from "./banks";
+import { matchBank, suggestBanks } from "./banks";
 import banksJson from "./fixtures/banks-ng.json";
 import { checkDraft, type Bank } from "./intent";
 import { readFields, recheck, type ModelFields } from "./model";
@@ -43,6 +43,12 @@ describe("matchBank", () => {
     expect(matchBank("lagos", two, { answer: true }).choices?.map((b) => b.code)).toEqual(["1", "2"]);
   });
 
+  it("offers the nearest banks when nothing matches outright", () => {
+    expect(suggestBanks("zenit", BANKS)[0]?.name).toBe("ZENITH BANK");
+    expect(suggestBanks("first monument", BANKS)[0]?.name).toBe("FIRST CITY MONUMENT BANK");
+    expect(suggestBanks("GT", BANKS)[0]?.name).toBe("GTBANK PLC");
+  });
+
   it("finds nothing in an ordinary sentence", () => {
     expect(matchBank("send money to my mum today please", BANKS)).toEqual({});
   });
@@ -56,6 +62,7 @@ describe("parseSentence", () => {
     ["2.5k bob to +254 712 345 678", { corridor: "ke-mpesa", amount: "2500", phone: "+254712345678" }],
     ["Send ₦5,000 to 0123456789 GTBank", { corridor: "ng-bank", amount: "5000", currency: "NGN", accountNumber: "0123456789" }],
     ["send 20k naira to my brother, access bank 0690000031", { corridor: "ng-bank", amount: "20000", accountNumber: "0690000031" }],
+    ["Send 2000 to my GT 2847264861", { corridor: "ng-bank", amount: "2000", accountNumber: "2847264861" }],
     ["N10000 to Opay 8012345678", { corridor: "ng-bank", amount: "10000", accountNumber: "8012345678" }],
     ["Send money to Nigeria", { corridor: "ng-bank" }],
     ["pay 3000", { amount: "3000" }],
@@ -168,6 +175,12 @@ describe("understand", () => {
     const r = await understand({ text: "Send ₦5,000 to 0123456789 GTBank" }, deps);
     expect(r.missing).toEqual([]);
     expect(r.draft.bank?.name).toBe("GTBANK PLC");
+  });
+
+  it("offers close bank names when the words match none", async () => {
+    const r = await understand({ text: "zenit", expecting: "bank", draft: { corridor: "ng-bank", amount: "5000", accountNumber: "0123456789" } }, deps);
+    expect(r.question).toBe("Which of these banks is it?");
+    expect(r.bankChoices?.[0]?.name).toBe("ZENITH BANK");
   });
 
   it("asks the user to pick when the bank words fit several", async () => {

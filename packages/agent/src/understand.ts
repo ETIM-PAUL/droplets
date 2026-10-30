@@ -1,5 +1,5 @@
 import type { CorridorId } from "@railkit/core";
-import { matchBank } from "./banks";
+import { matchBank, suggestBanks } from "./banks";
 import { checkDraft, mergeDrafts, missingFields, questionFor, type Bank, type Draft, type Missing, type Understood } from "./intent";
 import { recheck, type Extractor, type ModelFields } from "./model";
 import { parseAnswer, parseSentence } from "./rules";
@@ -72,10 +72,12 @@ export async function understand(input: UnderstandInput, deps: UnderstandDeps): 
   }
 
   // A bank named in words (by the user or the model) is matched against the provider's list here.
-  if (!draft.bank && draft.bankQuery && !bankChoices) {
-    const m = matchBank(draft.bankQuery, deps.banks, { answer: true });
+  const query = draft.bankQuery;
+  if (!draft.bank && query && !bankChoices) {
+    const m = matchBank(query, deps.banks, { answer: true });
     if (m.bank) draft = mergeDrafts(draft, { bank: m.bank });
-    bankChoices = m.choices;
+    // No outright match: offer the nearest names rather than asking the user to guess the list's spelling.
+    bankChoices = m.choices ?? (m.bank ? undefined : suggestBanks(query, deps.banks));
   }
 
   const checked = checkDraft(draft, deps.enabled, deps.banks);

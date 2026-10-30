@@ -91,6 +91,13 @@ export function readFields(x: unknown): ModelFields {
 }
 
 const digits = (s: string) => s.replace(/\D/g, "");
+
+/** Words that describe someone without naming them: "my mum" is not a name the bank or M-Pesa will match. */
+const NOT_A_NAME = new Set(
+  ("my our his her their the a to for and mum mom mother mama mummy dad father baba daddy papa sister sis brother bro wife husband " +
+    "aunt aunty auntie uncle cousin friend son daughter grandma granny grandpa grandmother grandfather family wife's boss landlord " +
+    "people person someone somebody them him her me you today tomorrow").split(" "),
+);
 const lowerWords = (s: string) => s.toLowerCase().normalize("NFKC").split(/[^\p{L}\p{N}]+/u).filter(Boolean);
 
 /**
@@ -135,7 +142,8 @@ export function recheck(f: ModelFields, text: string): { draft: Draft; dropped: 
     const v = f[k];
     if (!v) continue;
     const ws = lowerWords(v);
-    if (ws.length && ws.every((w) => textWords.has(w))) {
+    const isName = k !== "name" || ws.some((w) => !NOT_A_NAME.has(w));
+    if (ws.length && isName && ws.every((w) => textWords.has(w))) {
       if (k === "name") d.name = v;
       else d.bankQuery = v;
     } else dropped.push(k);

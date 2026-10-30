@@ -90,6 +90,9 @@ export function parseSentence(input: string, enabled: ReadonlySet<CorridorId>, b
   if (/\bm-?pesa\b/i.test(text)) candidates.push(["ke-mpesa"]);
   if (/\bairtel\b/i.test(text)) candidates.push(["ke-airtel"]);
   if (/\b(mtn|momo)\b/i.test(text)) candidates.push(["gh-mtn"]);
+  // Networks and countries the user named outright; the rest (currency, calling code, "bank") are hints.
+  const named = new Set(candidates);
+  for (const [re, ids] of COUNTRY_WORDS) if (re.test(text)) named.add(ids);
   if (d.currency && CURRENCY_CORRIDOR[d.currency]) candidates.push(CURRENCY_CORRIDOR[d.currency]!);
   for (const [re, ids] of COUNTRY_WORDS) if (re.test(text)) candidates.push(ids);
   for (const n of longNumbers) for (const [code, ids] of CALLING) if (n.replace("+", "").startsWith(code) && n.replace("+", "").length >= code.length + 9) candidates.push(ids);
@@ -99,8 +102,14 @@ export function parseSentence(input: string, enabled: ReadonlySet<CorridorId>, b
   if (mentionsBank) candidates.push(["ng-bank", "za-bank"]);
 
   // The first candidate set that names exactly one enabled corridor wins; with one corridor live, it's that one.
-  for (const ids of candidates) {
+  const ordered = [...candidates.filter((c) => named.has(c)), ...candidates.filter((c) => !named.has(c))];
+  for (const ids of ordered) {
     const live = ids.filter((id) => enabled.has(id));
+    if (live.length === 0 && named.has(ids)) {
+      // They named somewhere Errand doesn't send to: say so (checkDraft explains), never switch countries.
+      d.corridor = ids[0];
+      break;
+    }
     if (live.length === 1) {
       d.corridor = live[0];
       break;
@@ -115,7 +124,7 @@ export function parseSentence(input: string, enabled: ReadonlySet<CorridorId>, b
 
   const number = ambiguous.includes("number") ? undefined : longNumbers[0];
   if (number) d.number = number;
-  if (d.corridor && number) {
+  if (d.corridor && enabled.has(d.corridor) && number) {
     if (CORRIDORS[d.corridor].recipientType === "mobile-money") d.phone = number;
     else d.accountNumber = number;
     delete d.number;
@@ -143,7 +152,8 @@ export function parseAnswer(text: string, expecting: Missing, enabled: ReadonlyS
   const t = text.trim().slice(0, 120);
   switch (expecting) {
     case "name":
-      return { draft: /^[\p{L}][\p{L}' .-]{0,59}$/u.test(t) ? { name: t } : {} };
+      if (/^[\p{L}][\p{L}' .-]{0,59}$/u.test(t) && t.split(/\s+/).length <= 4) return { draft: { name: t } };
+      break;
     case "phone":
     case "account": {
       const digits = t.replace(/[\s-]/g, "");

@@ -348,3 +348,25 @@ describe("QR", () => {
     expect((await app.request("/v1/agent/qr", post({ text: "x".repeat(4097) }))).status).toBe(400);
   });
 });
+
+describe("agent replies carry nothing payable", () => {
+  // The chat and QR endpoints describe; only the quote endpoints return invoices, and only after the user asks for a price.
+  const PAYABLE = /"(steps|invoice|pr|paymentRequest|quoteId|orderId)"/;
+
+  it("chat replies hold a draft and a question, never an invoice or steps", async () => {
+    const qrModel = async () => ({ candidate: null, what: null });
+    const model = async () => ({ corridor: "ng-bank", amount: "5000", currency: "NGN", phone: null, name: null, bank: "GTBank", accountNumber: "0123456789" });
+    const { app } = setup({ agent: { model, qrModel } });
+    for (const text of ["Send ₦5,000 to 0123456789 GTBank", "send money", "pay the invoice now"]) {
+      const body = await (await app.request("/v1/agent/understand", post({ text }))).text();
+      expect(Object.keys(JSON.parse(body)).sort()).toEqual(expect.arrayContaining(["draft", "missing", "notes", "question", "source"]));
+      expect(body).not.toMatch(PAYABLE);
+    }
+  });
+
+  it("QR replies describe the request but never wrap it in steps or a quote", async () => {
+    const { app } = setup();
+    const body = await (await app.request("/v1/agent/qr", post({ text: "lightning:lnbc1invalid", network: "mainnet" }))).text();
+    expect(body).not.toMatch(/"(steps|quoteId|orderId)"/);
+  });
+});

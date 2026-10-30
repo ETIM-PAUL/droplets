@@ -133,8 +133,9 @@ export function checkDraft(raw: Draft, enabled: ReadonlySet<CorridorId>, banks: 
     if (!p.ok) notes.push(p.error.message);
     else if (c.prefixes && !c.prefixes.some((x) => national.startsWith(x))) notes.push(`That number isn't on ${network(c.id)}. Check the number.`);
     else d.phone = p.value;
-  } else if (phoneIn && !c) {
-    d.phone = phoneIn.replace(/[^\d+]/g, "");
+  } else if (phoneIn && !c && !d.number) {
+    // Until the corridor is known, a number is just a number: neither a phone nor an account.
+    d.number = digitsOf(phoneIn);
   }
 
   if (accountIn && c?.recipientType === "bank") {

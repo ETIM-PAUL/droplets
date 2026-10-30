@@ -34,6 +34,9 @@ const STATUS: Record<Order["state"], [string, "ok" | "bad" | ""]> = {
 
 const book = recipientBook();
 
+/** The developer test page can make real payments, so it only exists in dev or when VITE_TEST_PAGE=true. */
+const TEST_PAGE = import.meta.env.DEV || import.meta.env.VITE_TEST_PAGE === "true";
+
 function App() {
   const [host, setHost] = useState<HostState | null>(null);
   const [corridors, setCorridors] = useState<Corridor[] | null>(null);
@@ -220,7 +223,7 @@ function App() {
         )}
         <div className="grow" />
         <ReportProblem />
-        {import.meta.env.DEV && <a className="hint" href="#spike">Test page (developers only)</a>}
+        {TEST_PAGE && <a className="hint" href="#spike">Test page (developers only)</a>}
       </div>
     </div>
   );
@@ -241,7 +244,7 @@ function Root() {
   return (
     <>
       <PracticeBanner />
-      {hash === "#spike" ? <Spike /> : <App />}
+      {TEST_PAGE && hash === "#spike" ? <Spike /> : <App />}
     </>
   );
 }

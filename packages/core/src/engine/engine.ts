@@ -153,7 +153,7 @@ export class Engine {
     if (!order.quote.providerRef) return order;
 
     const route = this.routes.find((r) => r.id === order.quote.routeId)!;
-    const s = await route.poll(order.quote.providerRef);
+    const s = await route.poll(order.quote.providerRef, { walletSucceeded: order.state === "processing" });
     if (s.status === "completed") {
       if (order.state === "outcome_unknown") order = transition(order, "processing", this.now(), "provider confirmed payment");
       const verified = s.verified !== false;

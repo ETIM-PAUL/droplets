@@ -176,3 +176,11 @@ button, input, select { font: inherit; color: inherit; }
 }
 .composer input:focus { border-color: var(--slot); outline: none; }
 .composer .primary { width: auto; padding-left: 20px; padding-right: 20px; }
+
+/* Pay a code */
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 6px; }
+.code-input {
+  font: 14px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 12px; padding: 12px; resize: vertical; overflow-wrap: anywhere;
+}
+.code-input:focus { border-color: var(--slot); outline: none; }

@@ -15,3 +15,5 @@ export * from "./engine/receipt";
 export * from "./phone";
 export * from "./corridors";
 export * from "./airtime";
+export * from "./qr";
+export * from "./describe";

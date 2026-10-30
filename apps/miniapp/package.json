@@ -14,13 +14,14 @@
     "@fontsource-variable/bricolage-grotesque": "5.3.0",
     "@nimiq/mini-app-sdk": "^0.2.4",
     "@railkit/adapters": "workspace:*",
+    "@railkit/agent": "workspace:*",
     "@railkit/client": "workspace:*",
     "@railkit/core": "workspace:*",
     "@railkit/wallet-nimiq": "workspace:*",
     "@satora/swap": "^1.7.1",
+    "qr-scanner": "1.4.2",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "@railkit/agent": "workspace:*"
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",

@@ -1,6 +1,8 @@
 import { bech32 } from "@scure/base";
-import { buildReceipt, Engine, MemoryOrderStore, receiptText, parsePaymentInput, type PayIntent, type Step, type WalletExecutor } from "@railkit/core";
+import { buildReceipt, Engine, MemoryOrderStore, receiptText, parsePaymentInput, WalletError, type PayIntent, type Step, type WalletExecutor } from "@railkit/core";
+import { BITREFILL_500_KES as BITREFILL_INVOICE } from "@railkit/core/src/fixtures";
 import { describe, expect, it } from "vitest";
+import { bolt11Route } from "./bolt11-route";
 import { lnurlPayRoute } from "./lnurl-pay-route";
 
 const T0 = 1_800_000_000_000;
@@ -188,5 +190,43 @@ describe("refusing bad services, before any money moves", () => {
 
   it("refuses fractional sats", async () => {
     expect(await quoteError({}, "1.5")).toMatch(/whole sats/);
+  });
+});
+
+describe("bolt11Route", () => {
+  const invoice = parsePaymentInput(BITREFILL_INVOICE);
+  if (!invoice.ok || invoice.value.kind !== "bolt11") throw new Error("fixture");
+  const inv = invoice.value;
+  const at = inv.timestamp * 1000 + 60_000;
+  const intent: PayIntent = { kind: "pay", destination: inv, sourceAsset: "NIM" };
+
+  it("quotes the invoice as it stands and pays it in one step", async () => {
+    const q = await bolt11Route({ network: "mainnet", now: () => at }).quote(intent);
+    expect(q.send).toEqual({ amount: "4834", currency: "SAT" });
+    expect(q.steps).toEqual([{ kind: "pay-lightning-invoice", invoice: inv.raw }]);
+    expect(q.expiresAt).toBeLessThanOrEqual(inv.expiresAt * 1000 - 30_000);
+  });
+
+  it("refuses the wrong network and expired invoices, saying what to do", async () => {
+    await expect(bolt11Route({ network: "testnet", now: () => at }).quote(intent)).rejects.toThrow(/Ask for a testnet invoice/);
+    await expect(bolt11Route({ network: "mainnet", now: () => inv.expiresAt * 1000 + 1 }).quote(intent)).rejects.toThrow(/expired/);
+  });
+
+  it("counts as sent only when Nimiq Pay said it succeeded", async () => {
+    const r = bolt11Route({ network: "mainnet" });
+    expect(await r.poll("bolt11:x", { walletSucceeded: true })).toEqual({ status: "completed", verified: false });
+    expect(await r.poll("bolt11:x", { walletSucceeded: false })).toEqual({ status: "pending" });
+  });
+
+  it("leaves an unknown wallet outcome unknown through the engine", async () => {
+    const store = new MemoryOrderStore();
+    const engine = new Engine({ routes: [bolt11Route({ network: "mainnet", now: () => at })], store, network: "mainnet", now: () => at });
+    const q = await engine.quote(intent);
+    if (!q.ok) throw new Error(q.error.message);
+    const o = await engine.createOrder(q.value[0]!);
+    if (!o.ok) throw new Error(o.error.message);
+    const wallet: WalletExecutor = { execute: async () => { throw new WalletError("unknown", "timed out"); } };
+    expect((await engine.approve(o.value.id, wallet)).state).toBe("outcome_unknown");
+    expect((await engine.poll(o.value.id)).state).toBe("outcome_unknown");
   });
 });

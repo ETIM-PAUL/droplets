@@ -1,5 +1,5 @@
 import { init } from "@nimiq/mini-app-sdk";
-import { CORRIDORS, validatePayoutAmount, validateRecipient, type Corridor, type CorridorId, type PayoutRecipient, type Quote } from "@railkit/core";
+import { CORRIDORS, explainRoute, validatePayoutAmount, validateRecipient, type Corridor, type CorridorId, type PayoutRecipient, type Quote } from "@railkit/core";
 import { createNimiqExecutor } from "@railkit/wallet-nimiq";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatCountdown, formatMoney } from "../format";
@@ -242,7 +242,11 @@ export function SendHome({ enabled, start, autoQuote, onDone, onCancel }: Props)
                   <dd>{expiresIn > 0 ? formatCountdown(expiresIn) : "expired"}</dd>
                 </dl>
                 {requoted && <p className="hint" role="status">This is a new price. Check it before you send.</p>}
-                <p className="note">Nimiq Pay shows what this costs in NIM or USDT, including its swap fee, before you approve. Errand never holds your money.</p>
+                <section>
+                  <h2 className="section-title">How it gets there</h2>
+                  {explainRoute(quote).map((l) => <p key={l} className="note">{l}</p>)}
+                  <p className="note">Nimiq Pay shows what this costs in NIM or USDT, including its swap fee, before you approve.</p>
+                </section>
               </>
             )}
             {error && <p className="alert" role="alert">{error}</p>}

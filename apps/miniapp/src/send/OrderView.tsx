@@ -1,4 +1,4 @@
-import { buildReceipt, receiptText, stuckReason, type Order } from "@railkit/core";
+import { buildReceipt, destinationLabel, receiptText, stuckReason, type Order } from "@railkit/core";
 import { useEffect, useState } from "react";
 import { formatMoney } from "../format";
 import { ReportProblem } from "../ReportProblem";
@@ -35,7 +35,7 @@ export function OrderView({ orderId, enabled, onHome, onRetry }: Props) {
   if (!order) return <div className="screen"><p className="hint">Loading your payment…</p></div>;
 
   const d = order.quote.intent.destination;
-  const who = d.kind === "fiat-payout" ? (d.recipient.type === "mobile-money" ? d.recipient.name : d.recipient.accountName) : "The recipient";
+  const who = destinationLabel(d);
   const gets = formatMoney(order.quote.receive.amount, order.quote.receive.currency);
   const receipt = buildReceipt(order);
   const reached = (s: Order["state"]) => order.timeline.some((t) => t.to === s);

@@ -146,10 +146,11 @@ export function lnurlPayRoute(o: LnurlPayOptions): RouteAdapter {
       return { providerRef: quote.providerRef ?? "" };
     },
 
-    async poll(providerRef): Promise<ProviderStatus> {
+    async poll(providerRef, ctx): Promise<ProviderStatus> {
       const [, paymentHash = "", ...rest] = providerRef.split(":");
       const verifyUrl = rest.join(":");
-      if (!verifyUrl) return { status: "completed", verified: false };
+      // No way to check: only Nimiq Pay's own success counts, never an unknown outcome.
+      if (!verifyUrl) return ctx?.walletSucceeded === false ? { status: "pending" } : { status: "completed", verified: false };
 
       let j: Json;
       try {

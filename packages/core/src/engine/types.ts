@@ -86,7 +86,11 @@ export interface RouteAdapter {
   quote(intent: PayIntent): Promise<Omit<Quote, "id" | "routeId" | "intent">>;
   /** Called once, when the user approves; lets the provider reserve the order. */
   open(quote: Quote): Promise<{ providerRef: string }>;
-  poll(providerRef: string): Promise<ProviderStatus>;
+  /**
+   * `walletSucceeded` is false when the wallet's result was unknown. A route that can't check settlement
+   * itself must then say "pending" rather than "completed".
+   */
+  poll(providerRef: string, ctx?: { walletSucceeded: boolean }): Promise<ProviderStatus>;
 }
 
 /** An error whose message is safe and useful to show the user as written. */

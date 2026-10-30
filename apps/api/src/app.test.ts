@@ -330,3 +330,21 @@ describe("chat", () => {
     expect((await app.request("/v1/agent/understand", say({ text: "send 2500" }))).status).toBe(401);
   });
 });
+
+describe("QR", () => {
+  it("reads a QR the phone couldn't and reports what kind it is, without logging its text", async () => {
+    const lines: string[] = [];
+    const qrModel = async () => ({ candidate: "me@walletofsatoshi.com", what: null });
+    const { app } = setup({ agent: { qrModel }, log: (m, data) => lines.push(m + JSON.stringify(data)) });
+    const res = await app.request("/v1/agent/qr", post({ text: "tips go to me@walletofsatoshi.com please", network: "mainnet" }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ status: "found", source: "model", payment: { kind: "lightning-address" } });
+    expect(lines.join(" ")).not.toMatch(/walletofsatoshi/);
+  });
+
+  it("refuses empty and oversized QR text", async () => {
+    const { app } = setup();
+    expect((await app.request("/v1/agent/qr", post({ text: "" }))).status).toBe(400);
+    expect((await app.request("/v1/agent/qr", post({ text: "x".repeat(4097) }))).status).toBe(400);
+  });
+});

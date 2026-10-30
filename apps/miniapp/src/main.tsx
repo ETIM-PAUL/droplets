@@ -1,4 +1,4 @@
-import { CORRIDORS, type Corridor, type Order } from "@railkit/core";
+import { CORRIDORS, destinationLabel, type Corridor, type Order } from "@railkit/core";
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { formatMoney } from "./format";
@@ -8,6 +8,7 @@ import { ReportProblem } from "./ReportProblem";
 import { api, orderStore, PRACTICE, SIGNED_OUT } from "./send/engine";
 import { Chat } from "./send/Chat";
 import { OrderView } from "./send/OrderView";
+import { Scan } from "./send/Scan";
 import { SendHome } from "./send/SendHome";
 import { Spike } from "./spike";
 import { recipientBook, sessionToken, type SavedRecipient } from "./storage";
@@ -16,6 +17,7 @@ import "./styles.css";
 type View =
   | { name: "home" }
   | { name: "chat"; text: string }
+  | { name: "scan" }
   | { name: "send"; start?: SavedRecipient; autoQuote?: boolean }
   | { name: "order"; id: string };
 
@@ -117,6 +119,9 @@ function App() {
       />
     );
   }
+  if (view.name === "scan") {
+    return <Scan enabled={enabled} onDone={(id) => setView({ name: "order", id })} onCancel={() => setView({ name: "home" })} />;
+  }
   if (view.name === "order") {
     return (
       <OrderView
@@ -171,6 +176,7 @@ function App() {
         <button className="secondary" disabled={!corridors || corridors.length === 0} onClick={() => setView({ name: "send" })}>
           {corridors ? "Fill it in step by step" : "Loading…"}
         </button>
+        <button className="secondary" onClick={() => setView({ name: "scan" })}>Pay a code (QR or Lightning)</button>
 
         {saved.length > 0 && (
           <section>
@@ -198,7 +204,7 @@ function App() {
             <ul className="list">
               {orders.slice(0, 8).map((o) => {
                 const d = o.quote.intent.destination;
-                const who = d.kind === "fiat-payout" ? (d.recipient.type === "mobile-money" ? d.recipient.name : d.recipient.accountName) : "Payment";
+                const who = destinationLabel(d);
                 const [label, tone] = STATUS[o.state];
                 return (
                   <li key={o.id}>

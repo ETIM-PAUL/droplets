@@ -1,5 +1,5 @@
 import { getHostNetwork } from "@nimiq/mini-app-sdk";
-import { payoutRoute } from "@railkit/adapters";
+import { bolt11Route, lnurlPayRoute, payoutRoute } from "@railkit/adapters";
 import { createRailkitClient } from "@railkit/client";
 import { Engine, type WalletExecutor } from "@railkit/core";
 import { LocalOrderStore, sessionToken } from "../storage";
@@ -19,7 +19,11 @@ export const orderStore = new LocalOrderStore();
 /** One engine per enabled-corridor set; the store is shared so orders survive the app closing. */
 export function sendEngine(enabled: ReadonlySet<string>) {
   const network = hostNetwork();
-  return new Engine({ routes: [payoutRoute({ gateway: api.payouts, network, enabled })], store: orderStore, network });
+  return new Engine({
+    routes: [payoutRoute({ gateway: api.payouts, network, enabled }), bolt11Route({ network }), lnurlPayRoute({ network })],
+    store: orderStore,
+    network,
+  });
 }
 
 /** Practice mode: payments are simulated on Mavapay staging and no real money moves. Set VITE_PRACTICE_MODE=true. */

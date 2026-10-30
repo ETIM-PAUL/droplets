@@ -2,7 +2,7 @@ import { randomUUID, timingSafeEqual } from "node:crypto";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { ProviderError, type BitrefillApi, type MavapayApi } from "@railkit/adapters";
-import { understand, type Bank, type Draft, type Extractor, type Missing } from "@railkit/agent";
+import { understand, understandQr, type Bank, type Draft, type Extractor, type Missing, type QrExtractor } from "@railkit/agent";
 import {
   CORRIDORS,
   isCorridorId,
@@ -40,7 +40,7 @@ export interface AppDeps {
   simulatePayIn?: (orderId: string) => Promise<void>;
   alert?: (text: string) => Promise<void>;
   /** Chat: an optional model for sentences the rules can't finish, capped per UTC day. */
-  agent?: { model?: Extractor; modelCallsPerDay?: number };
+  agent?: { model?: Extractor; qrModel?: QrExtractor; modelCallsPerDay?: number };
   log?: (msg: string, data?: Record<string, unknown>) => void;
   now?: () => number;
 }
@@ -241,6 +241,19 @@ export function createApp(d: AppDeps) {
     const r = await understand({ text, draft, expecting }, { enabled, banks, model: d.agent?.model, allowModel, log });
     // The message itself is not logged: it holds names and numbers.
     log("agent turn", { source: r.source, missing: r.missing, invite: c.get("invite") });
+    return c.json(r);
+  });
+
+  /** A QR the phone's own parsers couldn't read: the rules again, then the model, re-checked by the parser. */
+  app.post("/v1/agent/qr", async (c) => {
+    if (!agentLimit(clientKey((n) => c.req.header(n)))) return bad("Too many scans in a short time. Wait a minute.", 429);
+    const body = (await c.req.json().catch(() => null)) as { text?: unknown; network?: unknown } | null;
+    const text = typeof body?.text === "string" ? body.text.trim() : "";
+    if (!text) return bad("The QR code was empty.");
+    if (text.length > 4096) return bad("That QR code holds too much text to be a payment request.");
+    const hostNetwork = body?.network === "testnet" ? "testnet" : "mainnet";
+    const r = await understandQr(text, { model: d.agent?.qrModel, allowModel, now: now(), hostNetwork, log });
+    log("agent qr", { status: r.status, source: r.source, kind: r.payment?.kind ?? null });
     return c.json(r);
   });
 

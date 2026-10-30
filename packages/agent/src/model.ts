@@ -45,32 +45,38 @@ export interface OpenAiOptions {
   timeoutMs?: number;
 }
 
-/**
- * Asks an OpenAI model to fill the fields, with a strict JSON schema. The model sees only the message
- * and the list of live corridors: no keys, no balances, no other users' data.
- */
-export function openAiExtractor(o: OpenAiOptions): Extractor {
+/** One strict-JSON call to an OpenAI chat model. The untrusted text goes in tags, inside the user turn only. */
+export function openAiJson(o: OpenAiOptions) {
   const doFetch = o.fetch ?? ((...a: Parameters<typeof fetch>) => fetch(...a));
-  return async (text, enabled) => {
+  return async (name: string, schema: object, system: string, tag: string, text: string): Promise<unknown> => {
     const res = await doFetch(`${o.baseUrl ?? "https://api.openai.com/v1"}/chat/completions`, {
       method: "POST",
       headers: { Authorization: `Bearer ${o.apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: o.model ?? "gpt-4.1-mini",
         temperature: 0,
-        max_tokens: 200,
-        response_format: { type: "json_schema", json_schema: { name: "send_money", strict: true, schema: SCHEMA } },
+        max_tokens: 300,
+        response_format: { type: "json_schema", json_schema: { name, strict: true, schema } },
         messages: [
-          { role: "system", content: instructions(enabled) },
-          { role: "user", content: `<user_message>${text.replace(/<\/?user_message>/gi, "")}</user_message>` },
+          { role: "system", content: system },
+          { role: "user", content: `<${tag}>${text.replace(new RegExp(`</?${tag}>`, "gi"), "")}</${tag}>` },
         ],
       }),
       signal: AbortSignal.timeout(o.timeoutMs ?? 8_000),
     });
     if (!res.ok) throw new Error(`model call failed: ${res.status}`);
     const j = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-    return readFields(JSON.parse(j.choices?.[0]?.message?.content ?? "null"));
+    return JSON.parse(j.choices?.[0]?.message?.content ?? "null");
   };
+}
+
+/**
+ * Asks an OpenAI model to fill the fields, with a strict JSON schema. The model sees only the message
+ * and the list of live corridors: no keys, no balances, no other users' data.
+ */
+export function openAiExtractor(o: OpenAiOptions): Extractor {
+  const ask = openAiJson(o);
+  return async (text, enabled) => readFields(await ask("send_money", SCHEMA, instructions(enabled), "user_message", text));
 }
 
 /** Anything not exactly the schema becomes all-null rather than an error. */

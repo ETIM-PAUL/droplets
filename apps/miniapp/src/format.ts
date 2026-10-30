@@ -8,7 +8,9 @@ export function formatAmount(amount: string, decimals = 2): string {
 
 /** Whole-number currencies don't need ".00" on screen. */
 export const formatMoney = (amount: string, currency: string): string =>
-  `${formatAmount(amount, amount.includes(".") ? 2 : 0)} ${currency}`;
+  currency === "SAT" || currency === "sats"
+    ? `${formatAmount(amount.split(".")[0]!, 0)} sats`
+    : `${formatAmount(amount, amount.includes(".") ? 2 : 0)} ${currency}`;
 
 /** Seconds as "4:05". */
 export function formatCountdown(ms: number): string {

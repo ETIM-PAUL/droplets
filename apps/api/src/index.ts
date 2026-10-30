@@ -1,7 +1,7 @@
 import { serve } from "@hono/node-server";
 import { createBitrefillApi, createMavapayApi, ProviderError } from "@railkit/adapters";
 import pg from "pg";
-import { openAiExtractor } from "@railkit/agent";
+import { openAiExtractor, openAiQrExtractor } from "@railkit/agent";
 import { createApp } from "./app";
 import { parseInvites, type BetaConfig } from "./ops/beta";
 import { airtimeToOps, payoutToOps } from "./ops/map";
@@ -84,6 +84,7 @@ const app = createApp({
   webhookSecret: process.env.MAVAPAY_WEBHOOK_SECRET || undefined,
   agent: {
     model: process.env.OPENAI_API_KEY ? openAiExtractor({ apiKey: process.env.OPENAI_API_KEY, model: process.env.OPENAI_MODEL || undefined }) : undefined,
+    qrModel: process.env.OPENAI_API_KEY ? openAiQrExtractor({ apiKey: process.env.OPENAI_API_KEY, model: process.env.OPENAI_MODEL || undefined }) : undefined,
     modelCallsPerDay: Number(process.env.AGENT_MODEL_CALLS_PER_DAY ?? 300),
   },
 });

@@ -277,4 +277,13 @@ describe("practice mode", () => {
     expect(seen).toEqual(["261026-AAAAA-BBBBB"]);
     expect((await app.request("/v1/dev/simulate-payment/..%2Fx", post({}))).status).toBe(400);
   });
+  it("refuses to simulate payment of an expired price", async () => {
+    const ops = new MemoryOpsStore();
+    await ops.recordQuote({ id: "261026-AAAAA-BBBBB", kind: "payout", invite: null, product: "ng-bank", receiveAmount: "2000", receiveCurrency: "NGN", sats: "2000", createdAt: 0, expiresAt: 1_000 });
+    const seen: string[] = [];
+    const { app } = setup({ ops, now: () => 2_000, simulatePayIn: async (id) => void seen.push(id) });
+    const r = await app.request("/v1/dev/simulate-payment/261026-AAAAA-BBBBB", post({}));
+    expect(r.status).toBe(400);
+    expect(seen).toEqual([]);
+  });
 });

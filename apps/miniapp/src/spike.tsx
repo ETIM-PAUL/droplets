@@ -176,6 +176,7 @@ export function Spike() {
 
   return (
     <main>
+      <a href="#">Back to Errand</a>
       <h1>Device checks</h1>
 
       <h2>Send money home (Mavapay)</h2>

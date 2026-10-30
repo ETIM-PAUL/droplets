@@ -31,6 +31,9 @@ export function SendHome({ enabled, start, onDone, onCancel }: Props) {
   const [quote, setQuote] = useState<Quote | null>(null);
   const [now, setNow] = useState(Date.now());
   const [banks, setBanks] = useState<{ name: string; code: string }[]>([]);
+  // After a price appears, Send stays off briefly so a tap meant for something else can't send it.
+  const [armedAt, setArmedAt] = useState(0);
+  const [requoted, setRequoted] = useState(false);
   const nameChecked = useRef("");
 
   const corridor = corridorId ? CORRIDORS[corridorId] : null;
@@ -48,16 +51,22 @@ export function SendHome({ enabled, start, onDone, onCancel }: Props) {
     if (corridor?.country === "NG" && banks.length === 0) api.banks().then(setBanks, () => setError("Couldn't load the list of banks. Check your connection."));
   }, [corridor, banks.length]);
   useEffect(() => {
+    if (corridor?.country !== "NG") return;
     const key = `${bank?.code}:${account}`;
-    if (corridor?.country !== "NG" || !bank || !/^\d{10}$/.test(account) || nameChecked.current === key) return;
+    if (nameChecked.current === key) return;
+    // Any change to the bank or number makes the old name wrong: clear it before anything else.
     nameChecked.current = key;
     setName("");
-    api.nameEnquiry(account, bank.code).then((r) => setName(r.accountName), (e: Error) => setError(e.message));
+    if (!bank?.code || !/^\d{10}$/.test(account)) return;
+    api.nameEnquiry(account, bank.code).then(
+      (r) => nameChecked.current === key && setName(r.accountName),
+      (e: Error) => nameChecked.current === key && setError(e.message),
+    );
   }, [corridor, bank, account]);
 
   useEffect(() => {
     if (!quote) return;
-    const t = setInterval(() => setNow(Date.now()), 1000);
+    const t = setInterval(() => setNow(Date.now()), 250);
     return () => clearInterval(t);
   }, [quote]);
 
@@ -82,6 +91,8 @@ export function SendHome({ enabled, start, onDone, onCancel }: Props) {
     if (!a.ok) return setError(a.error.message);
     setBusy(true);
     setError(null);
+    setRequoted(quote !== null);
+    setQuote(null);
     setStep("review");
     const r = await engine.quote({ kind: "pay", destination: { kind: "fiat-payout", corridor: corridorId, recipient: recipient()! }, sourceAsset: "NIM", amount: a.value });
     setBusy(false);
@@ -90,11 +101,16 @@ export function SendHome({ enabled, start, onDone, onCancel }: Props) {
       return setError(r.error.message);
     }
     setNow(Date.now());
+    setArmedAt(Date.now() + 1_500);
     setQuote(r.value[0]!);
   }
 
   async function send() {
-    if (!quote || !corridorId) return;
+    if (!quote || !corridorId || Date.now() < armedAt) return;
+    if (Date.now() >= quote.expiresAt) {
+      setError("This price has expired. Get a new price to see the current one.");
+      return;
+    }
     setBusy(true);
     setError(null);
     const created = await engine.createOrder(quote);
@@ -213,17 +229,18 @@ export function SendHome({ enabled, start, onDone, onCancel }: Props) {
                   <dt>Price holds for</dt>
                   <dd>{expiresIn > 0 ? formatCountdown(expiresIn) : "expired"}</dd>
                 </dl>
+                {requoted && <p className="hint" role="status">This is a new price. Check it before you send.</p>}
                 <p className="note">Nimiq Pay shows what this costs in NIM or USDT, including its swap fee, before you approve. Errand never holds your money.</p>
               </>
             )}
             {error && <p className="alert" role="alert">{error}</p>}
             <div className="grow" />
             {quote && expiresIn > 0 ? (
-              <button className="primary" disabled={busy} onClick={() => void send()}>
+              <button className="primary" disabled={busy || now < armedAt} onClick={() => void send()}>
                 {busy ? (PRACTICE ? "Practising…" : "Opening Nimiq Pay…") : `${PRACTICE ? "Practise sending" : "Send"} ${formatMoney(quote.receive.amount, quote.receive.currency)}`}
               </button>
             ) : (
-              quote && <button className="primary" onClick={() => void getQuote()}>Get a new price</button>
+              quote && !busy && <button className="secondary" onClick={() => void getQuote()}>Get a new price</button>
             )}
           </>
         )}

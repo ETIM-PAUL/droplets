@@ -168,6 +168,7 @@ function App() {
         )}
         <div className="grow" />
         <ReportProblem />
+        {import.meta.env.DEV && <a className="hint" href="#spike">Test page (developers only)</a>}
       </div>
     </div>
   );
@@ -178,9 +179,23 @@ function PracticeBanner() {
   return PRACTICE ? <p className="practice" role="status">Practice mode: no real money moves.</p> : null;
 }
 
+function Root() {
+  const [hash, setHash] = useState(location.hash);
+  useEffect(() => {
+    const on = () => setHash(location.hash);
+    window.addEventListener("hashchange", on);
+    return () => window.removeEventListener("hashchange", on);
+  }, []);
+  return (
+    <>
+      <PracticeBanner />
+      {hash === "#spike" ? <Spike /> : <App />}
+    </>
+  );
+}
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <PracticeBanner />
-    {location.hash === "#spike" ? <Spike /> : <App />}
+    <Root />
   </StrictMode>,
 );

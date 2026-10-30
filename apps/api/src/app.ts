@@ -297,6 +297,8 @@ export function createApp(d: AppDeps) {
     if (!d.simulatePayIn) return bad("Not found.", 404);
     const id = c.req.param("orderId");
     if (!ORDER_ID.test(id)) return bad("That order number isn't valid.");
+    const known = await d.ops?.get(id);
+    if (known && now() >= known.expiresAt) return bad("This price has expired. Get a new price to see the current one.");
     try {
       await d.simulatePayIn(id);
       log("practice payment", { orderId: id });

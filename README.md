@@ -45,3 +45,17 @@ The model never sees keys or balances, and its output can't send anything: only 
   - a wallet executor is created anywhere other than the Send/Pay tap handlers;
   - the developer test page is reachable without `VITE_TEST_PAGE=true`.
 - Add every real misread from the beta to the eval set.
+
+## Deploy (Render)
+
+[render.yaml](render.yaml) deploys the API (`errand-api`), the Mini App (`errand-miniapp`) and Postgres (`errand-db`) from this repo.
+
+1. Push the repo to GitHub. `.env` is gitignored and never leaves your machine.
+2. In Render: **New > Blueprint** and pick the repo. Render asks once for each secret (`sync: false`). Paste the same values as in your `.env`.
+3. After the first deploy, fill the addresses in:
+   - `errand-api`: `ALLOWED_ORIGINS` = the Mini App's URL, and `PUBLIC_API_URL` = the API's URL.
+   - `errand-miniapp`: `VITE_RAILKIT_API_URL` = the API's URL. Saving this rebuilds the app.
+4. Give testers invite codes (`node scripts/new-invites.mjs`, then put the output in `BETA_INVITES`). They open the Mini App URL inside Nimiq Pay.
+5. Provider IP allow-lists (Changelly): `errand-api` > **Connect** > **Outbound** lists the IPs the API calls from.
+
+The free plan sleeps after about 15 minutes idle (the first request then takes about a minute), and free Postgres is time-limited. Move to a paid plan or a VPS before the public beta.

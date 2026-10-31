@@ -1,0 +1,103 @@
+# Render Blueprint: the RailKit API and the Errand Mini App, from this repo.
+# In Render: New > Blueprint > pick this repo. Secrets (sync: false) are asked for once and never stored here.
+services:
+  - type: web
+    name: errand-api
+    runtime: node
+    plan: free
+    buildCommand: corepack enable && pnpm install --frozen-lockfile
+    startCommand: pnpm --filter @railkit/api start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # Providers (secrets: paste the same values as your local .env)
+      - key: MAVAPAY_API_KEY
+        sync: false
+      - key: MAVAPAY_BASE_URL
+        value: https://staging.api.mavapay.co/api/v1
+      - key: MAVAPAY_WEBHOOK_SECRET
+        sync: false
+      - key: BITREFILL_API_KEY
+        sync: false
+      - key: BITREFILL_BASE_URL
+        value: https://api.bitrefill.com/v2
+      - key: BITREFILL_WEBHOOK_TOKEN
+        generateValue: true
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4.1-mini
+      - key: AGENT_MODEL_CALLS_PER_DAY
+        value: "300"
+      - key: CHANGELLY_FIAT_PUBLIC_KEY
+        sync: false
+      - key: CHANGELLY_FIAT_PRIVATE_KEY
+        sync: false
+      - key: CHANGELLY_CALLBACK_PUBLIC_KEY
+        sync: false
+      - key: CHANGELLY_FIAT_BASE_URL
+        sync: false
+      - key: CHANGELLY_NIM_TICKER
+        value: NIM
+      # Kill switches
+      - key: CORRIDORS
+        value: ke-mpesa,ng-bank
+      - key: AIRTIME_COUNTRIES
+        value: KE,NG
+      - key: TOPUP_COUNTRIES
+        value: NG
+      # Who may call the API: the Mini App's address (set after the first deploy)
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: PUBLIC_API_URL
+        sync: false
+      # Closed beta for friends: invite codes, signed sessions, spending caps
+      - key: BETA_REQUIRED
+        value: "true"
+      - key: BETA_INVITES
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: BETA_MAX_SATS_PER_ORDER
+        value: "150000"
+      - key: BETA_MAX_SATS_PER_DAY
+        value: "300000"
+      - key: ADMIN_TOKEN
+        generateValue: true
+      - key: ALERT_WEBHOOK_URL
+        sync: false
+      # Practice mode: true only while MAVAPAY_BASE_URL is staging
+      - key: PRACTICE_MODE
+        value: "true"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: errand-db
+          property: connectionString
+
+  - type: web
+    name: errand-miniapp
+    runtime: static
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @railkit/miniapp build
+    staticPublishPath: apps/miniapp/dist
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # The API's public address (set after the first deploy), e.g. https://errand-api.onrender.com
+      - key: VITE_RAILKIT_API_URL
+        sync: false
+      - key: VITE_PRACTICE_MODE
+        value: "true"
+      # The developer test page can make real payments: keep it off for friends.
+      - key: VITE_TEST_PAGE
+        value: "false"
+    headers:
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+
+databases:
+  - name: errand-db
+    plan: free

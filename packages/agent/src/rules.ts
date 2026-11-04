@@ -1,6 +1,6 @@
 import { CORRIDORS, type CorridorId } from "@railkit/core";
 import { matchBank } from "./banks";
-import type { Bank, Draft, Missing, SaveIntent, TopupIntent } from "./intent";
+import type { Bank, Draft, Missing, SaveIntent, SavePeriod, SaveQuestion, TopupIntent } from "./intent";
 
 /** Words for money, rewritten to ISO codes before anything else reads the sentence. */
 const CURRENCY_WORDS: [RegExp, string][] = [
@@ -228,6 +228,23 @@ const SAVE_PERCENT = /(\d{1,3}(?:\.\d+)?)\s*(?:%|per\s?cent\b)/i;
 const SAVE_WITHDRAW = /\b(withdraw|unstake|cash\s?out|(?:take|pull|get)\s+(?:[\w,.]+\s+){0,5}?(?:out|back))\b/i;
 const SAVE_ADD = /\b(put|add|move|send|transfer|deposit|stake|top\s?up|save)\b/i;
 const SAVE_AMOUNT = /(\d{1,3}(?:,\d{3})+|\d+)(\.\d{1,5})?\s*(k|thousand)?\b/gi;
+const SAVE_QUESTION = /\?\s*$|^(how|when|why|what|what'?s|which|where|who|is|are|did|do|does|can|have|has)\b/i;
+const SAVE_WHEN_MONEY = /\b(when|how\s+long)\b[^?]*\b(get|withdraw(al|ing)?|released?|ready|available)\b/i;
+const SAVE_WHY_WALLET = /\bwhy\b[^?]*\b(wallet|didn'?t|did\s+not|wasn'?t|was\s+not|not|no)\b/i;
+
+/** Which question it is. Order matters: the most specific words win. */
+function classifyQuestion(text: string): { question: SaveQuestion; period?: SavePeriod } {
+  if (/\b(rewards?|interest|earn(ed|ing|s)?|yield|profit|apy|apr)\b/i.test(text)) return { question: "rewards" };
+  if (SAVE_WHEN_MONEY.test(text) || /\bhow\s+long\b|\b(withdrawal|released?)\b/i.test(text)) return { question: "release" };
+  if (/\bwhy\b/i.test(text)) return { question: "why-wallet" };
+  if (/\b(save\s?code|my\s+code)\b/i.test(text)) return { question: "code" };
+  if (/\b(percent|share|how\s+much\s+of)\b|%/i.test(text)) return { question: "share" };
+  if (/\b(which|what|who)\b[^?]*\b(apps?|paid|pays|paying)\b/i.test(text)) return { question: "apps" };
+  const period: SavePeriod | undefined = /\btoday\b/i.test(text) ? "today" : /\bthis\s+week\b/i.test(text) ? "week" : /\blast\s+month\b/i.test(text) ? "last-month" : /\bthis\s+month\b/i.test(text) ? "month" : undefined;
+  if (period) return { question: "period", period };
+  if (/\b(how\s+much|total|balance|have\s+i\s+saved)\b/i.test(text)) return { question: "balance" };
+  return { question: "other" };
+}
 
 /**
  * Spots a request about the user's own savings: set the share ("save 30%"), add ("put 500 NIM in Grow"),
@@ -237,7 +254,10 @@ const SAVE_AMOUNT = /(\d{1,3}(?:,\d{3})+|\d+)(\.\d{1,5})?\s*(k|thousand)?\b/gi;
 export function parseSave(input: string): { save: SaveIntent; notes: string[] } | null {
   const text = ` ${input.normalize("NFKC").slice(0, 300)} `;
   const noun = SAVE_NOUN.test(text);
-  if (!noun && !SAVE_VERB.test(text)) return null;
+  const asking = SAVE_QUESTION.test(input.trim());
+  // Two questions about savings that don't say "savings": "when can I get my money?", "why did it go to my wallet?"
+  const savingsQuestion = asking && (SAVE_WHEN_MONEY.test(text) || (SAVE_WHY_WALLET.test(text) && /\b(pay|paid|payment|money|went|go|gone)\b/i.test(text)));
+  if (!noun && !SAVE_VERB.test(text) && !savingsQuestion) return null;
   if (NOT_SAVE.test(text) || /\+?\d(?:[ -]?\d){8,14}/.test(text)) return null;
   // Buying NIM is a top-up, even when it's for savings: Add money first, then savings.
   if (/\bbuy\b/i.test(text)) return null;
@@ -245,6 +265,8 @@ export function parseSave(input: string): { save: SaveIntent; notes: string[] } 
   if (/\b(for|to)\s+[A-Z][a-z]/.test(others) || new RegExp(`\\b(for|to)\\s+my\\s+(${RELATIONS})\\b`, "i").test(text)) return null;
 
   const notes: string[] = [];
+  // A question with no amount or share in it is answered, not acted on. "Can I withdraw 200 NIM?" is still a withdrawal.
+  if (asking && !SAVE_PERCENT.test(text) && ![...text.matchAll(SAVE_AMOUNT)].length) return { save: { action: "ask", ...classifyQuestion(text) }, notes };
   if (SAVE_REVOKE.test(text)) return { save: { action: "revoke" }, notes };
 
   const pct = SAVE_PERCENT.exec(text);

@@ -54,10 +54,13 @@ export function createSaveApi(o: SaveApiOptions) {
   }
 
   return {
-    /** How to split `luna` for this code. Throws SaveApiError 404 when the code isn't active. */
-    async split(code: string, luna: bigint): Promise<SaveSplit> {
+    /**
+     * How to split `luna` for this code. Throws SaveApiError 404 when the code isn't active.
+     * Pass the payoutId: Errand keeps the split, so the user can ask why a payment went to their wallet.
+     */
+    async split(code: string, luna: bigint, payoutId?: string): Promise<SaveSplit> {
       const r = await call<{ code: string; address: string; savePercent: number; wallet: { luna: string }; grow: { luna: string; staker: string } | null; reason: SaveSplit["reason"] }>(
-        `/v1/save/split?code=${encodeURIComponent(code)}&luna=${luna}`,
+        `/v1/save/split?code=${encodeURIComponent(code)}&luna=${luna}${payoutId ? `&payoutId=${encodeURIComponent(payoutId)}` : ""}`,
       );
       return {
         code: r.code, address: r.address, savePercent: r.savePercent, walletLuna: BigInt(r.wallet.luna),

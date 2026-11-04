@@ -3,7 +3,7 @@ import { createBitrefillApi, createMavapayApi, ProviderError } from "@railkit/ad
 import { createNimiqRpc, parseNimiqAddress } from "@railkit/core";
 import { createChangellyFiatApi } from "@railkit/adapters/server";
 import pg from "pg";
-import { openAiExtractor, openAiQrExtractor } from "@railkit/agent";
+import { openAiExtractor, openAiQrExtractor, openAiSavingsClassifier, openAiSavingsPhraser } from "@railkit/agent";
 import { createApp } from "./app";
 import { parseInvites, type BetaConfig } from "./ops/beta";
 import { airtimeToOps, payoutToOps, rampToOps } from "./ops/map";
@@ -127,6 +127,8 @@ const app = createApp({
   agent: {
     model: process.env.OPENAI_API_KEY ? openAiExtractor({ apiKey: process.env.OPENAI_API_KEY, model: process.env.OPENAI_MODEL || undefined }) : undefined,
     qrModel: process.env.OPENAI_API_KEY ? openAiQrExtractor({ apiKey: process.env.OPENAI_API_KEY, model: process.env.OPENAI_MODEL || undefined }) : undefined,
+    savingsPhraser: process.env.OPENAI_API_KEY ? openAiSavingsPhraser({ apiKey: process.env.OPENAI_API_KEY, model: process.env.OPENAI_MODEL || undefined }) : undefined,
+    savingsClassifier: process.env.OPENAI_API_KEY ? openAiSavingsClassifier({ apiKey: process.env.OPENAI_API_KEY, model: process.env.OPENAI_MODEL || undefined }) : undefined,
     modelCallsPerDay: Number(process.env.AGENT_MODEL_CALLS_PER_DAY ?? 300),
   },
 });

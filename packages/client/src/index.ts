@@ -1,5 +1,5 @@
 import { UserFacingError, type AirtimeOperator, type Corridor, type CountryCode } from "@railkit/core";
-import type { Draft, Missing, QrUnderstood, Understood } from "@railkit/agent";
+import type { Draft, Missing, QrUnderstood, SavePeriod, SaveQuestion, Understood } from "@railkit/agent";
 import type { RampOffer, RampOfferError, RampState } from "@railkit/adapters/server";
 import type { AirtimeGateway, AirtimeQuote, AirtimeState, PayoutGateway, PayoutOrderStatus, PayoutQuote } from "@railkit/adapters";
 
@@ -30,6 +30,8 @@ export interface SaveMe {
   /** Why Grow isn't open: no stake yet, or the validator it was delegated to is gone. */
   growClosed: null | "no-stake" | "validator-gone";
   receipts: { txHash: string; app: string; kind: "wallet" | "grow"; luna: string; at: number }[];
+  /** How recent payouts were split, when the paying app said which payout it was. */
+  splits: { payoutId: string; app: string; walletLuna: string; growLuna: string; reason: null | "no-stake" | "validator-gone" | "below-minimum"; savePercent: number; at: number }[];
 }
 
 export interface SaveValidator {
@@ -112,6 +114,9 @@ export function createRailkitClient(o: RailkitClientOptions) {
     saveRule: (signed: { message: string; publicKey: string; signature: string }) =>
       call<{ code: string; address: string; savePercent: number } | { revoked: true }>("/v1/save/rule", json(signed)),
     saveValidators: async () => (await call<{ validators: SaveValidator[] }>("/v1/save/validators")).validators,
+    /** A question about the user's own savings, answered from their data. `kind` is what the chat already worked out. */
+    saveAsk: (req: { address: string; question: string; kind?: SaveQuestion; period?: SavePeriod; tzOffsetMinutes: number }) =>
+      call<{ answer: string; question: SaveQuestion; source: "rules" | "model" }>("/v1/save/ask", json(req)),
     banks: async () => (await call<{ banks: { name: string; code: string }[] }>("/v1/payouts/banks?country=NG")).banks,
     nameEnquiry: (accountNumber: string, bankCode: string) =>
       call<{ accountName: string }>(`/v1/payouts/name-enquiry?accountNumber=${encodeURIComponent(accountNumber)}&bankCode=${encodeURIComponent(bankCode)}`),

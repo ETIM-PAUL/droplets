@@ -17,6 +17,7 @@ import {
   type NimiqRpc,
   type StakerState,
 } from "@railkit/core";
+import { answerSavingsQuestion, looksEnglish, parseSave, phraseSavingsAnswer, type SavePeriod, type SaveQuestion, type SavingsClassifier, type SavingsFacts, type SavingsPhraser } from "@railkit/agent";
 import { rateLimiter } from "../rate-limit";
 import type { SaveApp, SaveStore } from "./store";
 
@@ -36,7 +37,16 @@ interface Helpers {
   admin: (authorization: string | undefined) => boolean;
   now: () => number;
   log: (msg: string, data?: Record<string, unknown>) => void;
+  /** Rewords answers to questions not in English. Optional; without it, answers stay in English. */
+  phraser?: SavingsPhraser;
+  /** Picks the kind of question for messages that aren't English. Optional. */
+  classifier?: SavingsClassifier;
+  /** The chat's shared daily budget for model calls. */
+  allowModel?: () => boolean;
 }
+
+const QUESTION_KINDS: SaveQuestion[] = ["balance", "period", "release", "why-wallet", "code", "share", "apps", "rewards", "other"];
+const PERIOD_KINDS: SavePeriod[] = ["today", "week", "month", "last-month"];
 
 const SPKI_ED25519 = Buffer.from("302a300506032b6570032100", "hex");
 
@@ -79,6 +89,7 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
   const ruleLimit = rateLimiter(20, 60_000, now);
   const readLimit = rateLimiter(120, 60_000, now);
   const appLimit = rateLimiter(600, 60_000, now);
+  const askLimit = rateLimiter(30, 60_000, now);
   const stakers = cache<StakerState | null>(60_000, now);
   const validators = cache<{ jailedFrom: number | null } | null>(10 * 60_000, now);
   const validatorList = cache<{ address: string; stakeLuna: string; numStakers: number }[]>(10 * 60_000, now);
@@ -158,37 +169,92 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
     return bad("Couldn't make a save code just now. Try again.", 503);
   });
 
+  /** One user's savings: the code and rule from our records, Grow from the chain, payments in and how they split. */
+  async function loadSavings(address: string, fresh: boolean) {
+    const [code, { grow, jailedFrom }, blockNumber, receipts, splits, apps] = await Promise.all([
+      s.store.activeCodeByAddress(address),
+      growState(address, fresh),
+      s.chain.blockNumber(),
+      s.store.receiptsForAddress(address, 50),
+      s.store.splitsForAddress(address, 20),
+      s.store.listApps(),
+    ]);
+    const names = new Map(apps.map((a) => [a.id, a.name]));
+    const staker = grow.open ? grow.staker : null;
+    return {
+      code, grow, staker, jailedFrom, blockNumber, receipts, splits,
+      appName: (id: string) => names.get(id) ?? "An app",
+      release: staker && staker.inactive > 0n && staker.inactiveFrom !== null ? releaseBlock(staker.inactiveFrom, jailedFrom) : null,
+    };
+  }
+
   /** Everything the savings screen shows: the code and rule, Grow from the chain, and verified payments in. */
   app.get("/v1/save/me", async (c) => {
     if (!readLimit(ip(c))) return bad("Too many requests. Wait a minute.", 429);
     const addr = parseNimiqAddress(c.req.query("address") ?? "");
     if (!addr.ok) return bad(addr.error.message);
     try {
-      const [code, { grow, jailedFrom }, blockNumber, receipts, apps] = await Promise.all([
-        s.store.activeCodeByAddress(addr.value),
-        growState(addr.value, c.req.query("fresh") === "1"),
-        s.chain.blockNumber(),
-        s.store.receiptsForAddress(addr.value, 50),
-        s.store.listApps(),
-      ]);
-      const names = new Map(apps.map((a) => [a.id, a.name]));
-      const staker = grow.open ? grow.staker : null;
+      const x = await loadSavings(addr.value, c.req.query("fresh") === "1");
       return c.json({
         network: s.network,
         address: addr.value,
-        code: code ? formatSaveCode(code.code) : null,
-        savePercent: code?.savePercent ?? null,
-        blockNumber,
-        grow: staker && {
-          ...lunaJson(staker),
-          releaseBlock: staker.inactive > 0n && staker.inactiveFrom !== null ? releaseBlock(staker.inactiveFrom, jailedFrom) : null,
-          validatorJailed: jailedFrom !== null,
-        },
-        growClosed: grow.open ? null : grow.reason,
-        receipts: receipts.map((r) => ({ txHash: r.txHash, app: names.get(r.appId) ?? "An app", kind: r.kind, luna: r.luna, at: r.createdAt })),
+        code: x.code ? formatSaveCode(x.code.code) : null,
+        savePercent: x.code?.savePercent ?? null,
+        blockNumber: x.blockNumber,
+        grow: x.staker && { ...lunaJson(x.staker), releaseBlock: x.release, validatorJailed: x.jailedFrom !== null },
+        growClosed: x.grow.open ? null : x.grow.reason,
+        receipts: x.receipts.map((r) => ({ txHash: r.txHash, app: x.appName(r.appId), kind: r.kind, luna: r.luna, at: r.createdAt })),
+        splits: x.splits.map((r) => ({ payoutId: r.payoutId, app: x.appName(r.appId), walletLuna: r.walletLuna, growLuna: r.growLuna, reason: r.reason, savePercent: r.savePercent, at: r.createdAt })),
       });
     } catch (e) {
       log("save me failed", { error: String(e) });
+      return bad("Couldn't reach the Nimiq network. Try again in a minute.", 502);
+    }
+  });
+
+  /**
+   * A question about the user's own savings ("when can I get my money?"). Rules decide what's being asked,
+   * code works out the answer from the user's data, and a model may only reword it into the user's language.
+   * Nothing here can move money.
+   */
+  app.post("/v1/save/ask", async (c) => {
+    if (!askLimit(ip(c))) return bad("Too many questions in a short time. Wait a minute.", 429);
+    const body = (await c.req.json().catch(() => null)) as { address?: unknown; question?: unknown; kind?: unknown; period?: unknown; tzOffsetMinutes?: unknown } | null;
+    const addr = parseNimiqAddress(typeof body?.address === "string" ? body.address : "");
+    if (!addr.ok) return bad(addr.error.message);
+    const question = typeof body?.question === "string" ? body.question.trim() : "";
+    if (!question || question.length > 300) return bad("Ask one question about your savings, under 300 characters.");
+    // Which question: the kind the chat already worked out, else the rules, else (not English) the classifier.
+    let ask: { question: SaveQuestion; period?: SavePeriod } | null = null;
+    if (QUESTION_KINDS.includes(body?.kind as SaveQuestion)) {
+      ask = { question: body!.kind as SaveQuestion, ...(PERIOD_KINDS.includes(body?.period as SavePeriod) ? { period: body!.period as SavePeriod } : {}) };
+    } else {
+      const parsed = parseSave(question);
+      if (parsed?.save.action === "ask") ask = { question: parsed.save.question ?? "other", period: parsed.save.period };
+      else if (!parsed && h.classifier && !looksEnglish(question) && (h.allowModel?.() ?? true)) ask = await h.classifier(question).catch(() => null);
+    }
+    if (!ask) return bad("Ask a question about your savings, like \u201cWhen can I get my money?\u201d");
+    const tz = body?.tzOffsetMinutes;
+    const tzOffsetMinutes = typeof tz === "number" && Number.isInteger(tz) && Math.abs(tz) <= 14 * 60 ? tz : 0;
+    try {
+      const x = await loadSavings(addr.value, false);
+      const facts: SavingsFacts = {
+        code: x.code ? formatSaveCode(x.code.code) : null,
+        savePercent: x.code?.savePercent ?? null,
+        grow: x.staker && { active: x.staker.active, inactive: x.staker.inactive, retired: x.staker.retired, releaseBlock: x.release, validatorJailed: x.jailedFrom !== null },
+        growClosed: x.grow.open ? null : x.grow.reason,
+        blockNumber: x.blockNumber,
+        receipts: x.receipts.map((r) => ({ app: x.appName(r.appId), kind: r.kind, luna: BigInt(r.luna), at: r.createdAt })),
+        splits: x.splits.map((r) => ({ app: x.appName(r.appId), walletLuna: BigInt(r.walletLuna), growLuna: BigInt(r.growLuna), reason: r.reason, savePercent: r.savePercent, at: r.createdAt })),
+      };
+      const kind = ask.question;
+      const answer = answerSavingsQuestion(ask, facts, { now: now(), tzOffsetMinutes });
+      const out = await phraseSavingsAnswer(question, answer, { phraser: h.phraser, allowModel: h.allowModel, log });
+      // What was asked is not logged: it's the user's own words. Only the kind of question is.
+      log("save question", { question: kind, source: out.source });
+      return c.json({ answer: out.text, question: kind, source: out.source });
+    } catch (e) {
+      log("save ask failed", { error: String(e) });
       return bad("Couldn't reach the Nimiq network. Try again in a minute.", 502);
     }
   });
@@ -223,11 +289,20 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
     if (!code.ok) return bad(code.error.message);
     const raw = c.req.query("luna") ?? "";
     if (!/^[1-9]\d{0,15}$/.test(raw)) return bad("luna must be a whole number above 0.");
+    // Optional: which payout this is. With it, the user can later ask why a payment went to their wallet.
+    const payoutId = c.req.query("payoutId");
+    if (payoutId !== undefined && !/^[\w:.-]{1,100}$/.test(payoutId)) return bad("payoutId: 1 to 100 letters, digits or _ : . -");
     const row = await s.store.activeCode(code.value);
     if (!row) return bad("No active save code like that. Pay the user's address instead.", 404);
     try {
       const { grow } = await growState(row.address);
       const split = splitPayout(BigInt(raw), row.savePercent, grow);
+      if (payoutId) {
+        await s.store.addSplit({
+          appId: payer.id, payoutId, code: row.code, address: row.address, walletLuna: split.wallet.toString(), growLuna: split.grow.toString(),
+          reason: split.reason, savePercent: row.savePercent, createdAt: now(),
+        });
+      }
       return c.json({
         code: formatSaveCode(row.code),
         address: row.address,

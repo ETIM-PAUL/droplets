@@ -47,7 +47,12 @@ function fakeChain() {
   return { stakers, validators, txs, chain };
 }
 
-function setup(over: { store?: SaveStore; recommended?: { address: string; name: string }[] } = {}) {
+function setup(over: {
+  store?: SaveStore;
+  recommended?: { address: string; name: string }[];
+  phraser?: (q: string, english: string) => Promise<string>;
+  classifier?: (text: string) => Promise<{ question: "code" | "balance" } | null>;
+} = {}) {
   const f = fakeChain();
   const store = over.store ?? new MemorySaveStore();
   const clock = { t: T };
@@ -60,6 +65,7 @@ function setup(over: { store?: SaveStore; recommended?: { address: string; name:
     allowedOrigins: ["https://errand.example"],
     adminToken: "admin-secret",
     save: { store, chain: f.chain, network: "mainnet", recommended: over.recommended },
+    agent: { savingsPhraser: over.phraser, savingsClassifier: over.classifier },
     log: () => undefined,
     now: () => clock.t,
   };
@@ -225,6 +231,67 @@ describe("receipts (for apps)", () => {
   });
 });
 
+describe("questions about your own savings", () => {
+  async function ready() {
+    const f = setup({ phraser: async (_q, english) => english.replace("Your save code is", "Nambari yako ya kuokoa ni") });
+    const headers = await withApp(f.app);
+    const amaka = account();
+    f.stake(amaka.address);
+    const { code } = await json(await f.app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address)))));
+    const ask = (question: string, extra: Record<string, unknown> = {}) => f.app.request("/v1/save/ask", post({ address: amaka.address, question, ...extra }));
+    return { ...f, headers, amaka, code: code as string, ask };
+  }
+
+  it("answers from the user's own data", async () => {
+    const { ask, code } = await ready();
+    expect(await json(await ask("how much have I saved?"))).toEqual({ answer: "You have 500 NIM in Grow, all of it earning staking rewards.", question: "balance", source: "rules" });
+    expect((await json(await ask("what's my save code"))).answer).toBe(`Your save code is ${code}. Apps pay 30% of what they send you into Grow.`);
+    expect((await json(await ask("when can I get my money?"))).answer).toMatch(/haven't started a withdrawal/);
+  });
+
+  it("explains why a payout went to the wallet, when the app said which payout it was", async () => {
+    const { app, ask, headers, code, stakers, amaka, clock } = await ready();
+    stakers.delete(amaka.address);
+    clock.t += 2 * 60_000; // past the stake cache
+    const split = await json(await app.request(`/v1/save/split?code=${code}&luna=${NIM(2000)}&payoutId=bounty-81`, { headers }));
+    expect(split.reason).toBe("no-stake");
+    expect((await json(await ask("why did that payment go to my wallet?"))).answer).toBe(`Your 2,000 NIM from Arcade on ${new Date(clock.t).getUTCDate()} Nov all went to your wallet because Grow wasn't open.`);
+    const me = await json(await app.request(`/v1/save/me?address=${encodeURIComponent(amaka.address)}`));
+    expect(me.splits).toEqual([expect.objectContaining({ payoutId: "bounty-81", app: "Arcade", walletLuna: NIM(2000).toString(), growLuna: "0", reason: "no-stake" })]);
+    expect((await app.request(`/v1/save/split?code=${code}&luna=1&payoutId=has spaces`, { headers })).status).toBe(400);
+  });
+
+  it("refuses things that aren't questions about savings", async () => {
+    const { ask } = await ready();
+    for (const q of ["Put 500 NIM in Grow", "send 2000 KES to Mary", ""]) expect((await ask(q)).status, q).toBe(400);
+    expect((await json(await ask("how much did I save this month?", { tzOffsetMinutes: 99_999 }))).question).toBe("period");
+  });
+
+  it("answers a question in another language, reworded only when the facts survive", async () => {
+    const swahili = "Nambari yangu ya kuokoa ni ipi?";
+    const classifier = async () => ({ question: "code" as const });
+    const f = setup({ classifier, phraser: async (_q, english) => english.replace("Your save code is", "Nambari yako ya kuokoa ni") });
+    const amaka = account();
+    f.stake(amaka.address);
+    const { code } = await json(await f.app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address)))));
+    const r = await json(await f.app.request("/v1/save/ask", post({ address: amaka.address, question: swahili })));
+    expect(r).toEqual({ answer: `Nambari yako ya kuokoa ni ${code}. Apps pay 30% of what they send you into Grow.`, question: "code", source: "model" });
+    // The chat already knows the kind: no second classification.
+    const noClassifier = setup({ phraser: async (_q, english) => english });
+    noClassifier.stake(amaka.address);
+    await noClassifier.app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address))));
+    expect((await json(await noClassifier.app.request("/v1/save/ask", post({ address: amaka.address, question: swahili, kind: "balance" })))).question).toBe("balance");
+    expect((await noClassifier.app.request("/v1/save/ask", post({ address: amaka.address, question: swahili }))).status).toBe(400);
+
+    const liar = setup({ classifier, phraser: async () => "Nambari yako ni SAVE-0000000, 90%." });
+    liar.stake(amaka.address);
+    await liar.app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address))));
+    const l = await json(await liar.app.request("/v1/save/ask", post({ address: amaka.address, question: swahili })));
+    expect(l.source).toBe("rules");
+    expect(l.answer).toMatch(/^Your save code is SAVE-/);
+  });
+});
+
 describe("the savings screen", () => {
   it("shows the code, Grow from the chain, and when inactive stake is released", async () => {
     const { app, stake } = setup();
@@ -284,6 +351,12 @@ describe("save stores", async () => {
       await store.addReceipt(r);
       await store.addReceipt({ ...r, luna: "999" }); // replay is ignored
       expect(await store.receiptsForAddress("NQ1", 10)).toEqual([r]);
+
+      const sp = { appId: "app1", payoutId: "p1", code: "AAAAAAA", address: "NQ1", walletLuna: "2000", growLuna: "0", reason: "no-stake" as const, savePercent: 30, createdAt: T };
+      await store.addSplit(sp);
+      await store.addSplit({ ...sp, growLuna: "600", reason: null }); // a retried payout keeps the first split
+      await store.addSplit({ ...sp, appId: "app2", reason: null, createdAt: T + 1 });
+      expect(await store.splitsForAddress("NQ1", 10)).toEqual([{ ...sp, appId: "app2", reason: null, createdAt: T + 1 }, sp]);
     });
   }
 });

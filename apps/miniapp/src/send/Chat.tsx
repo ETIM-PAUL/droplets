@@ -14,6 +14,8 @@ interface Props {
   onTopup: (prefill: TopupIntent) => void;
   /** "put 500 NIM in Grow": the user's own savings, so Savings takes over on the screen for it. Absent while savings is off. */
   onSave?: (intent: SaveIntent, notes: string[]) => void;
+  /** The user's Nimiq address, for questions about their savings. */
+  address?: string | null;
   onCancel: () => void;
   /** Fill it in step by step instead. */
   onManual: () => void;
@@ -30,13 +32,15 @@ interface Line {
  * checks a Nigerian account holder's name with the bank, then hands over to the confirm card.
  * Nothing here can send money; only the confirm card's Send button and Nimiq Pay's own dialog can.
  */
-export function Chat({ first, enabled, onReady, onTopup, onSave, onCancel, onManual }: Props) {
+export function Chat({ first, enabled, onReady, onTopup, onSave, address, onCancel, onManual }: Props) {
   const [lines, setLines] = useState<Line[]>([]);
   const [draft, setDraft] = useState<Draft>({});
   const [expecting, setExpecting] = useState<Missing | null>(null);
   const [bankChoices, setBankChoices] = useState<Bank[]>([]);
   const [busy, setBusy] = useState(false);
   const [reply, setReply] = useState("");
+  // After answering a savings question: a way into Savings, and the chat stays open for the next question.
+  const [savingsLink, setSavingsLink] = useState(false);
   const started = useRef(false);
   const end = useRef<HTMLDivElement>(null);
 
@@ -59,6 +63,7 @@ export function Chat({ first, enabled, onReady, onTopup, onSave, onCancel, onMan
     say({ from: "you", text });
     setBusy(true);
     setBankChoices([]);
+    setSavingsLink(false);
     try {
       const r = await api.understand(text, before, exp ?? undefined);
       if (r.intent === "topup") {
@@ -66,8 +71,21 @@ export function Chat({ first, enabled, onReady, onTopup, onSave, onCancel, onMan
         return;
       }
       if (r.intent === "save") {
-        if (onSave) return onSave(r.save ?? { action: "show" }, r.notes);
-        say({ from: "errand", text: "Savings isn't switched on in Errand yet." });
+        if (!onSave) {
+          say({ from: "errand", text: "Savings isn't switched on in Errand yet." });
+          setBusy(false);
+          return;
+        }
+        if (r.save?.action !== "ask") return onSave(r.save ?? { action: "show" }, r.notes);
+        // A question: answered here, from the user's own savings. Nothing opens and nothing moves.
+        if (!address) {
+          say({ from: "errand", text: "Open Errand inside Nimiq Pay to ask about your savings." });
+        } else {
+          const a = await api.saveAsk({ address, question: text, kind: r.save.question, period: r.save.period, tzOffsetMinutes: -new Date().getTimezoneOffset() });
+          say({ from: "errand", text: a.answer });
+          setSavingsLink(true);
+        }
+        setExpecting(null);
         setBusy(false);
         return;
       }
@@ -147,6 +165,14 @@ export function Chat({ first, enabled, onReady, onTopup, onSave, onCancel, onMan
                 <small>{c.label.split(": ")[0]}, {c.currency}</small>
               </button>
             ))}
+          </div>
+        )}
+        {!busy && savingsLink && onSave && (
+          <div className="choices">
+            <button type="button" className="choice" onClick={() => onSave({ action: "show" }, [])}>
+              Open Savings
+              <small>Your Grow balance, save code and payments in</small>
+            </button>
           </div>
         )}
         {!busy && bankChoices.length > 0 && (

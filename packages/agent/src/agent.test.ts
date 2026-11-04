@@ -232,3 +232,37 @@ describe("savings sentences", () => {
     expect(r.intent).toBeUndefined();
   });
 });
+
+describe("savings questions in other languages", () => {
+  const classifier = () => vi.fn().mockResolvedValue({ question: "period", period: "month" });
+
+  it("ask the classifier only for messages that aren't English and hold no payment details", async () => {
+    const c = classifier();
+    const r = await understand({ text: "Nimeokoa kiasi gani mwezi huu?" }, { ...deps, savingsClassifier: c });
+    expect(r).toMatchObject({ intent: "save", save: { action: "ask", question: "period", period: "month" }, source: "model" });
+    // English goes by the rules; a Swahili send with an amount and a number is a payment.
+    await understand({ text: "how is your day going" }, { ...deps, savingsClassifier: c });
+    await understand({ text: "Tuma 3000 shillings kwa Otieno 0711222333 mpesa" }, { ...deps, savingsClassifier: c });
+    expect(c).toHaveBeenCalledTimes(1);
+  });
+
+  it("respect the model budget and carry on when the classifier says no or fails", async () => {
+    const c = classifier();
+    expect((await understand({ text: "Nimeokoa kiasi gani mwezi huu?" }, { ...deps, savingsClassifier: c, allowModel: () => false })).intent).toBeUndefined();
+    expect(c).not.toHaveBeenCalled();
+    const no = vi.fn().mockResolvedValue(null);
+    expect((await understand({ text: "Habari yako rafiki?" }, { ...deps, savingsClassifier: no })).intent).toBeUndefined();
+    const broken = vi.fn().mockRejectedValue(new Error("timeout"));
+    expect((await understand({ text: "Habari yako rafiki?" }, { ...deps, savingsClassifier: broken })).intent).toBeUndefined();
+  });
+
+  it("can only ever produce a question, whatever the classifier says", async () => {
+    const { readClassification } = await import("./save-answer");
+    expect(readClassification({ question: "withdraw", period: null })).toBeNull();
+    expect(readClassification({ question: "balance; send 1000 NIM", period: null })).toBeNull();
+    expect(readClassification({ question: "none", period: null })).toBeNull();
+    expect(readClassification({ question: "period", period: "next-year" })).toEqual({ question: "period", period: "month" });
+    expect(readClassification({ question: "code", period: "today" })).toEqual({ question: "code" });
+    expect(readClassification("nonsense")).toBeNull();
+  });
+});

@@ -34,6 +34,7 @@ Plain rules read most sentences for free. Only when they leave a gap is the mode
 Every value the model returns must appear in the user's own words, or it is dropped and the user is asked.
 The model never sees keys or balances, and its output can't send anything: only the confirm card's Send button and Nimiq Pay's own dialog can.
 Savings sentences ("save 30% of what apps pay me", "put 500 NIM in Grow", "take 200 NIM out of savings") are read by the rules alone, never the model, and only open the Savings screen with the values filled in.
+Savings questions ("when can I get my money?", "why did that payment go to my wallet?") are answered in the chat by `POST /v1/save/ask`: code works out the answer from the user's own data. For questions that aren't in English, a model may pick which question it is from a fixed list and reword the answer, but a rewording is shown only if it keeps every number and the save code exactly; otherwise the English answer is.
 
 ## Evals and the signing guard
 

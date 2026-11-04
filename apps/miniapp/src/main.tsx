@@ -193,6 +193,7 @@ function App() {
         enabled={corridors}
         onReady={(start) => setView({ name: "send", start, autoQuote: true })}
         onTopup={(prefill) => setView({ name: "topup", prefill })}
+        address={host?.status === "ready" ? host.address : null}
         onSave={SAVE ? (intent, notes) => {
           setSaveStart({ intent, notes });
           setTab("savings");

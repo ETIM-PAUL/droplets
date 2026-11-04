@@ -47,10 +47,12 @@ function fakeRpc() {
 
 function fakeApi(split: { walletLuna: bigint; growLuna: bigint; reason?: string | null }, receiptAnswers: Record<string, string>[] = [{}]) {
   const receipts: unknown[] = [];
+  const splitCalls: (string | undefined)[] = [];
   return {
     receipts,
+    splitCalls,
     api: {
-      split: async (code: string) => ({ code: `SAVE-${code}`, address: USER, savePercent: 30, staker: USER, reason: null, ...split }) as never,
+      split: async (code: string, _luna: bigint, payoutId?: string) => (splitCalls.push(payoutId), { code: `SAVE-${code}`, address: USER, savePercent: 30, staker: USER, reason: null, ...split }) as never,
       receipt: async (r: unknown) => (receipts.push(r), (receiptAnswers.shift() ?? { growTx: "recorded" }) as never),
     },
   };
@@ -68,9 +70,10 @@ describe("createSavePayer", () => {
   it("pays a save code in two parts: a normal payment and an add-stake into the user's Grow", async () => {
     const { nimiq, built } = fakeNimiq();
     const { rpc, sent } = fakeRpc();
-    const { api, receipts } = fakeApi({ walletLuna: NIM(1400), growLuna: NIM(600) });
+    const { api, receipts, splitCalls } = fakeApi({ walletLuna: NIM(1400), growLuna: NIM(600) });
     const code = await realCode();
     const r = await createSavePayer({ api, rpc, nimiq, keyPair: KEYPAIR, network: "main" }).pay({ to: `SAVE-${code}`, luna: NIM(2000), payoutId: "bounty-81" });
+    expect(splitCalls).toEqual(["bounty-81"]);
     expect(built).toEqual([
       ["basic", `addr(${PAYOUT})`, `addr(${USER})`, NIM(1400), 0n, 1_000, 24],
       ["addStake", `addr(${PAYOUT})`, `addr(${USER})`, NIM(600), 0n, 1_000, 24],
@@ -146,6 +149,8 @@ describe("createSaveApi", () => {
     });
     expect(await api.split("7KQ2XMP", NIM(2000))).toEqual({ code: "SAVE-7KQ2XMP", address: USER, savePercent: 30, walletLuna: NIM(1400), growLuna: NIM(600), staker: USER, reason: null });
     expect(seen).toEqual({ url: "https://api.errand.example/v1/save/split?code=7KQ2XMP&luna=200000000", auth: "Bearer rk_save_x" });
+    await api.split("7KQ2XMP", NIM(2000), "bounty-81");
+    expect(seen?.url).toBe("https://api.errand.example/v1/save/split?code=7KQ2XMP&luna=200000000&payoutId=bounty-81");
   });
 
   it("turns API errors into SaveApiError with the status", async () => {

@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { ProviderError, type BitrefillApi, type MavapayApi } from "@railkit/adapters";
 import type { ChangellyFiatApi } from "@railkit/adapters/server";
-import { understand, understandQr, type Bank, type Draft, type Extractor, type Missing, type QrExtractor } from "@railkit/agent";
+import { understand, understandQr, type Bank, type Draft, type Extractor, type Missing, type QrExtractor, type SavingsClassifier, type SavingsPhraser } from "@railkit/agent";
 import {
   CORRIDORS,
   isCorridorId,
@@ -45,7 +45,7 @@ export interface AppDeps {
   /** Add money: Changelly's fiat on-ramp, the countries it's switched on for, and NIM's ticker there. */
   ramp?: { api: Pick<ChangellyFiatApi, "offers" | "validateAddress" | "createOrder" | "getOrder" | "readCallback">; countries: ReadonlySet<string>; nimTicker: string };
   /** Chat: an optional model for sentences the rules can't finish, capped per UTC day. */
-  agent?: { model?: Extractor; qrModel?: QrExtractor; modelCallsPerDay?: number };
+  agent?: { model?: Extractor; qrModel?: QrExtractor; savingsPhraser?: SavingsPhraser; savingsClassifier?: SavingsClassifier; modelCallsPerDay?: number };
   /** Errand Save, phase 1: save codes and Grow. Off when undefined. */
   save?: SaveDeps;
   log?: (msg: string, data?: Record<string, unknown>) => void;
@@ -245,7 +245,7 @@ export function createApp(d: AppDeps) {
       }
     }
     const enabled = new Set([...d.corridors].filter(isCorridorId));
-    const r = await understand({ text, draft, expecting }, { enabled, banks, model: d.agent?.model, allowModel, log });
+    const r = await understand({ text, draft, expecting }, { enabled, banks, model: d.agent?.model, savingsClassifier: d.agent?.savingsClassifier, allowModel, log });
     // The message itself is not logged: it holds names and numbers.
     log("agent turn", { intent: r.intent ?? "send", source: r.source, missing: r.missing, invite: c.get("invite") });
     return c.json(r);
@@ -507,7 +507,7 @@ export function createApp(d: AppDeps) {
     return c.json({ feedback: await d.ops.listFeedback(now() - 30 * 86_400_000) });
   });
 
-  if (d.save) mountSaveRoutes(app, d.save, { bad, clientKey, admin, now, log });
+  if (d.save) mountSaveRoutes(app, d.save, { bad, clientKey, admin, now, log, phraser: d.agent?.savingsPhraser, classifier: d.agent?.savingsClassifier, allowModel });
 
   return app;
 }

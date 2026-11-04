@@ -33,6 +33,19 @@ export interface SaveReceipt {
   createdAt: number;
 }
 
+/** How one payout was split, recorded when the paying app says which payout it is. It answers "why did that go to my wallet?". */
+export interface SaveSplitRow {
+  appId: string;
+  payoutId: string;
+  code: string;
+  address: string;
+  walletLuna: string;
+  growLuna: string;
+  reason: null | "no-stake" | "validator-gone" | "below-minimum";
+  savePercent: number;
+  createdAt: number;
+}
+
 export interface SaveStore {
   activeCodeByAddress(address: string): Promise<SaveCodeRow | undefined>;
   activeCode(code: string): Promise<SaveCodeRow | undefined>;
@@ -48,6 +61,9 @@ export interface SaveStore {
   /** Ignores a receipt it already has. */
   addReceipt(r: SaveReceipt): Promise<void>;
   receiptsForAddress(address: string, limit: number): Promise<SaveReceipt[]>;
+  /** Keeps the first split for each app and payout: a retried payout looks its split up again. */
+  addSplit(r: SaveSplitRow): Promise<void>;
+  splitsForAddress(address: string, limit: number): Promise<SaveSplitRow[]>;
 }
 
 const NONCE_TTL_MS = 86_400_000;
@@ -57,6 +73,7 @@ export class MemorySaveStore implements SaveStore {
   private nonces = new Map<string, number>();
   private apps = new Map<string, SaveApp>();
   private receipts = new Map<string, SaveReceipt>();
+  private splits = new Map<string, SaveSplitRow>();
 
   async activeCodeByAddress(address: string) {
     return [...this.codes.values()].find((c) => c.address === address && c.revokedAt === null);
@@ -99,6 +116,13 @@ export class MemorySaveStore implements SaveStore {
   async receiptsForAddress(address: string, limit: number) {
     return [...this.receipts.values()].filter((r) => r.address === address).sort((a, b) => b.createdAt - a.createdAt).slice(0, limit);
   }
+  async addSplit(r: SaveSplitRow) {
+    const k = `${r.appId}\u0000${r.payoutId}`;
+    if (!this.splits.has(k)) this.splits.set(k, { ...r });
+  }
+  async splitsForAddress(address: string, limit: number) {
+    return [...this.splits.values()].filter((r) => r.address === address).sort((a, b) => b.createdAt - a.createdAt).slice(0, limit);
+  }
 }
 
 const SCHEMA = `
@@ -133,11 +157,25 @@ CREATE TABLE IF NOT EXISTS save_receipts (
   block_number BIGINT NOT NULL,
   created_at BIGINT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS save_receipts_address ON save_receipts (address, created_at);`;
+CREATE INDEX IF NOT EXISTS save_receipts_address ON save_receipts (address, created_at);
+CREATE TABLE IF NOT EXISTS save_splits (
+  app_id TEXT NOT NULL,
+  payout_id TEXT NOT NULL,
+  code TEXT NOT NULL,
+  address TEXT NOT NULL,
+  wallet_luna TEXT NOT NULL,
+  grow_luna TEXT NOT NULL,
+  reason TEXT,
+  save_percent INTEGER NOT NULL,
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY (app_id, payout_id)
+);
+CREATE INDEX IF NOT EXISTS save_splits_address ON save_splits (address, created_at);`;
 
 type Num = string | number;
 interface CodeRow { code: string; address: string; save_percent: Num; created_at: Num; updated_at: Num; revoked_at: Num | null }
 interface AppRow { id: string; name: string; key_hash: string; payout_addresses: string; created_at: Num }
+interface SplitRow { app_id: string; payout_id: string; code: string; address: string; wallet_luna: string; grow_luna: string; reason: SaveSplitRow["reason"]; save_percent: Num; created_at: Num }
 interface ReceiptRow { tx_hash: string; code: string; address: string; app_id: string; kind: "wallet" | "grow"; luna: string; payout_id: string; block_number: Num; created_at: Num }
 
 const code = (r: CodeRow): SaveCodeRow => ({
@@ -148,6 +186,11 @@ const app = (r: AppRow): SaveApp => ({ id: r.id, name: r.name, keyHash: r.key_ha
 const receipt = (r: ReceiptRow): SaveReceipt => ({
   txHash: r.tx_hash, code: r.code, address: r.address, appId: r.app_id, kind: r.kind, luna: r.luna, payoutId: r.payout_id,
   blockNumber: Number(r.block_number), createdAt: Number(r.created_at),
+});
+
+const split = (r: SplitRow): SaveSplitRow => ({
+  appId: r.app_id, payoutId: r.payout_id, code: r.code, address: r.address, walletLuna: r.wallet_luna, growLuna: r.grow_luna,
+  reason: r.reason, savePercent: Number(r.save_percent), createdAt: Number(r.created_at),
 });
 
 /** Postgres-backed store, alongside the order log. Luna stays a decimal string; times are epoch ms. */
@@ -220,5 +263,17 @@ export class PgSaveStore implements SaveStore {
   async receiptsForAddress(address: string, limit: number) {
     const r = await this.pool.query<ReceiptRow>(`SELECT * FROM save_receipts WHERE address = $1 ORDER BY created_at DESC LIMIT $2`, [address, limit]);
     return r.rows.map(receipt);
+  }
+  async addSplit(x: SaveSplitRow) {
+    await this.insertOnce(
+      `INSERT INTO save_splits (app_id, payout_id, code, address, wallet_luna, grow_luna, reason, save_percent, created_at)
+       SELECT $1::text, $2::text, $3::text, $4::text, $5::text, $6::text, $7::text, $8::integer, $9::bigint
+       WHERE NOT EXISTS (SELECT 1 FROM save_splits WHERE app_id = $1 AND payout_id = $2) RETURNING payout_id`,
+      [x.appId, x.payoutId, x.code, x.address, x.walletLuna, x.growLuna, x.reason, x.savePercent, x.createdAt],
+    );
+  }
+  async splitsForAddress(address: string, limit: number) {
+    const r = await this.pool.query<SplitRow>(`SELECT * FROM save_splits WHERE address = $1 ORDER BY created_at DESC LIMIT $2`, [address, limit]);
+    return r.rows.map(split);
   }
 }

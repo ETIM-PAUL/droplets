@@ -46,8 +46,15 @@ export interface TopupIntent {
  * "save 30% of what apps pay me", "put 500 NIM in Grow": the user's own savings (Errand Save).
  * Only ever read by the rules, never the model: it acts on the user's own money, so it comes from their words alone.
  */
+/** What a savings question asks about. Each is answered from the user's own data, worked out in code. */
+export type SaveQuestion = "balance" | "period" | "release" | "why-wallet" | "code" | "share" | "apps" | "rewards" | "other";
+export type SavePeriod = "today" | "week" | "month" | "last-month";
+
 export interface SaveIntent {
-  action: "rule" | "add" | "withdraw" | "revoke" | "show";
+  /** "ask" is a question ("when can I get my money?"): answered in the chat, nothing opens or moves. */
+  action: "rule" | "add" | "withdraw" | "revoke" | "show" | "ask";
+  question?: SaveQuestion;
+  period?: SavePeriod;
   /** Whole percent of each payment to save, for "rule". */
   savePercent?: number;
   /** NIM as typed, e.g. "500" or "2.5", for "add" and "withdraw". */

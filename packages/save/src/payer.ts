@@ -151,7 +151,7 @@ export function createSavePayer(o: SavePayerOptions) {
       const asCode = parseSaveCode(p.to);
       if (asCode.ok) {
         if (!o.api) throw new SaveApiError("Paying a save code needs the Errand API (pass `api`).", 0);
-        const split = await o.api.split(asCode.value, p.luna);
+        const split = await o.api.split(asCode.value, p.luna, p.payoutId);
         code = asCode.value;
         address = split.address;
         walletLuna = split.walletLuna;

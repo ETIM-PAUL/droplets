@@ -3,6 +3,7 @@ import { matchBank, suggestBanks } from "./banks";
 import { checkDraft, mergeDrafts, missingFields, questionFor, type Bank, type Draft, type Missing, type Understood } from "./intent";
 import { recheck, type Extractor, type ModelFields } from "./model";
 import { parseAnswer, parseSave, parseSentence, parseTopup } from "./rules";
+import { looksEnglish, type SavingsClassifier } from "./save-answer";
 
 export interface UnderstandInput {
   text: string;
@@ -17,6 +18,8 @@ export interface UnderstandDeps {
   banks: readonly Bank[];
   /** Optional. Without it Errand still understands most sentences and asks for the rest. */
   model?: Extractor;
+  /** Optional. Spots savings questions that aren't in English; it may only pick a kind of question. */
+  savingsClassifier?: SavingsClassifier;
   /** Called before each model call; false skips the model (budget spent). */
   allowModel?: () => boolean;
   log?: (msg: string, data?: Record<string, unknown>) => void;
@@ -51,6 +54,20 @@ export async function understand(input: UnderstandInput, deps: UnderstandDeps): 
   const rules = input.expecting
     ? parseAnswer(text, input.expecting, deps.enabled, deps.banks, before)
     : parseSentence(text, deps.enabled, deps.banks);
+
+  // A message that isn't English and that the rules can't read as a payment may be a savings question.
+  // The classifier only picks which question; the answer is worked out from the user's data, and nothing moves.
+  const d0 = rules.draft;
+  const nothingFound = !d0.amount && !d0.number && !d0.phone && !d0.accountNumber && !d0.corridor && !d0.bank && !d0.bankQuery && !d0.name;
+  if (!input.expecting && nothingFound && deps.savingsClassifier && !looksEnglish(text) && (deps.allowModel?.() ?? true)) {
+    try {
+      const q = await deps.savingsClassifier(text);
+      deps.log?.("agent savings classifier used", { question: q?.question ?? "none" });
+      if (q) return { intent: "save", save: { action: "ask", ...q }, draft: {}, missing: [], question: null, notes: [], source: "model" };
+    } catch (e) {
+      deps.log?.("agent savings classifier failed", { error: String(e) });
+    }
+  }
 
   let draft = mergeDrafts(before, rules.draft);
   let bankChoices = rules.bankChoices;

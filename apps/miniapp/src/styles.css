@@ -321,3 +321,6 @@ button { cursor: pointer; }
 .save-points svg { flex: none; color: var(--slot); margin-top: 1px; }
 .code-card .save-code { margin: 0; font-size: 28px; font-weight: 700; letter-spacing: 0.06em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .row-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
+.qr-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 8px 0 4px; text-align: center; }
+.qr { display: block; max-width: 100%; height: auto; border-radius: var(--radius-sm); }
+.code-card .text-button { align-self: flex-start; padding-left: 0; }

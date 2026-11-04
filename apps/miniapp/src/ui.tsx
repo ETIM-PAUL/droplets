@@ -1,4 +1,5 @@
-import { useLayoutEffect, useRef, type ReactNode } from "react";
+import { useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
+import { qrModules, qrPath } from "./qr-code";
 
 /** The few icons Errand uses, drawn inline on a 24px grid so they inherit text colour. */
 const PATHS = {
@@ -64,6 +65,20 @@ export function TabBar({ tab, onTab, savings = false }: { tab: Tab; onTab: (t: T
         </button>
       ))}
     </nav>
+  );
+}
+
+/** A QR code, always black on white: scanners need that contrast whatever the app's theme. */
+export function QrCode({ text, label, size = 200 }: { text: string; label: string; size?: number }) {
+  const { n, d } = useMemo(() => {
+    const { size: modules, dark } = qrModules(text);
+    return { n: modules, d: qrPath(dark) };
+  }, [text]);
+  return (
+    <svg className="qr" width={size} height={size} viewBox={`0 0 ${n} ${n}`} role="img" aria-label={label} shapeRendering="crispEdges">
+      <rect width={n} height={n} fill="#fff" />
+      <path d={d} fill="#000" />
+    </svg>
   );
 }
 

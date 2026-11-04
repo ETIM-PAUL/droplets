@@ -5,7 +5,7 @@ import { createNimiqSaver } from "@railkit/wallet-nimiq";
 import { useEffect, useState } from "react";
 import { formatMoney } from "../format";
 import { api, hostNetwork } from "../send/engine";
-import { AppBar, Icon } from "../ui";
+import { AppBar, Icon, QrCode } from "../ui";
 
 type Mode = "home" | "rule" | "open" | "add" | "withdraw";
 
@@ -48,6 +48,7 @@ export function SaveHome({ address }: { address: string | null }) {
   const [validators, setValidators] = useState<SaveValidator[] | null>(null);
   const [validator, setValidator] = useState<string | null>(null);
   const [confirmRevoke, setConfirmRevoke] = useState(false);
+  const [showQr, setShowQr] = useState(false);
 
   const self = address ? parseNimiqAddress(address) : null;
   const load = async (fresh = false) => {
@@ -377,10 +378,17 @@ export function SaveHome({ address }: { address: string | null }) {
         <span className="hint">Your save code</span>
         <p className="save-code">{me.code}</p>
         <p className="hint">Apps pay {me.savePercent}% of what they send you into Grow{g ? "" : " once it's open"}. Give this code wherever an app asks for your address.</p>
+        {showQr && (
+          <div className="qr-wrap">
+            <QrCode text={me.code} label={`QR code for ${me.code}`} />
+            <p className="hint">An app that pays you can scan this instead of typing your code.</p>
+          </div>
+        )}
         <div className="row-buttons">
           <button type="button" className="secondary" onClick={() => void navigator.clipboard?.writeText(me.code!).then(() => setInfo("Code copied."), () => setInfo(`Your code is ${me.code}.`))}>Copy code</button>
           <button type="button" className="secondary" onClick={() => go("rule")}>Change {me.savePercent}%</button>
         </div>
+        <button type="button" className="text-button" aria-expanded={showQr} onClick={() => setShowQr((v) => !v)}>{showQr ? "Hide QR code" : "Show QR code"}</button>
       </section>
 
       {!g && me.growClosed === "no-stake" && (

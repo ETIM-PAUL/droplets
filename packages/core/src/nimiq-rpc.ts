@@ -1,0 +1,105 @@
+import type { StakerState } from "./save";
+
+/** A JSON-RPC error from the Nimiq node. `data` carries the node's own words, e.g. "No staker with address: …". */
+export class NimiqRpcError extends Error {
+  constructor(message: string, readonly code: number | null, readonly data: string | null) {
+    super(message);
+  }
+}
+
+export interface NimiqRpcOptions {
+  /** e.g. https://rpc.nimiqwatch.com (mainnet) or https://rpc.testnet.nimiqwatch.com. */
+  url: string;
+  fetch?: typeof fetch;
+  timeoutMs?: number;
+}
+
+export interface NimiqValidator {
+  address: string;
+  /** Luna staked with it, its own deposit included. */
+  balance: bigint;
+  numStakers: number;
+  jailedFrom: number | null;
+  retired: boolean;
+}
+
+export interface NimiqTransaction {
+  hash: string;
+  blockNumber: number;
+  from: string;
+  to: string;
+  value: bigint;
+  /** Hex. An add-stake starts with 06 followed by the staker's 20 address bytes. */
+  recipientData: string;
+  executionResult: boolean;
+  confirmations: number;
+}
+
+interface RawStaker { balance: number; inactiveBalance: number; inactiveFrom: number | null; retiredBalance: number; delegation: string }
+interface RawValidator { address: string; balance: number; numStakers: number; jailedFrom: number | null; retired: boolean }
+interface RawTx { hash: string; blockNumber: number; from: string; to: string; value: number; recipientData: string | null; executionResult: boolean; confirmations: number }
+
+const toBig = (n: number | string) => BigInt(n);
+
+/** The few calls Errand Save needs from a Nimiq PoS node. Read-only, plus sending transactions that are already signed. */
+export function createNimiqRpc(o: NimiqRpcOptions) {
+  const doFetch = o.fetch ?? ((...a: Parameters<typeof fetch>) => fetch(...a));
+  let id = 0;
+
+  async function call<T>(method: string, params: unknown[]): Promise<T> {
+    let res: Response;
+    try {
+      res = await doFetch(o.url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: ++id, method, params }),
+        signal: AbortSignal.timeout(o.timeoutMs ?? 15_000),
+      });
+    } catch {
+      throw new NimiqRpcError("Couldn't reach the Nimiq network. Try again in a minute.", null, null);
+    }
+    const j = (await res.json().catch(() => null)) as { result?: { data: T }; error?: { code?: number; message?: string; data?: string } } | null;
+    if (j?.error) throw new NimiqRpcError(j.error.message ?? "Nimiq node error", j.error.code ?? null, typeof j.error.data === "string" ? j.error.data : null);
+    if (!res.ok || !j?.result) throw new NimiqRpcError(`Nimiq node answered ${res.status}`, null, null);
+    return j.result.data;
+  }
+
+  /** null when the node says the thing doesn't exist; other errors are thrown. */
+  const orNull = async <T>(p: Promise<T>, notFound: RegExp): Promise<T | null> => {
+    try {
+      return await p;
+    } catch (e) {
+      if (e instanceof NimiqRpcError && notFound.test(e.data ?? "")) return null;
+      throw e;
+    }
+  };
+
+  return {
+    blockNumber: () => call<number>("getBlockNumber", []),
+
+    async staker(address: string): Promise<StakerState | null> {
+      const s = await orNull(call<RawStaker>("getStakerByAddress", [address]), /^No staker/i);
+      return s && { active: toBig(s.balance), inactive: toBig(s.inactiveBalance), inactiveFrom: s.inactiveFrom, retired: toBig(s.retiredBalance), delegation: s.delegation };
+    },
+
+    async validator(address: string): Promise<NimiqValidator | null> {
+      const v = await orNull(call<RawValidator>("getValidatorByAddress", [address]), /^No validator/i);
+      return v && { address: v.address, balance: toBig(v.balance), numStakers: v.numStakers, jailedFrom: v.jailedFrom, retired: v.retired };
+    },
+
+    async activeValidators(): Promise<NimiqValidator[]> {
+      const list = await call<RawValidator[]>("getActiveValidators", []);
+      return list.map((v) => ({ address: v.address, balance: toBig(v.balance), numStakers: v.numStakers, jailedFrom: v.jailedFrom, retired: v.retired }));
+    },
+
+    async transaction(hash: string): Promise<NimiqTransaction | null> {
+      const t = await orNull(call<RawTx>("getTransactionByHash", [hash]), /^Transaction not found/i);
+      return t && { hash: t.hash, blockNumber: t.blockNumber, from: t.from, to: t.to, value: toBig(t.value), recipientData: t.recipientData ?? "", executionResult: t.executionResult, confirmations: t.confirmations };
+    },
+
+    /** Sends a signed transaction (hex). Returns its hash. */
+    sendRawTransaction: (hex: string) => call<string>("sendRawTransaction", [hex]),
+  };
+}
+
+export type NimiqRpc = ReturnType<typeof createNimiqRpc>;

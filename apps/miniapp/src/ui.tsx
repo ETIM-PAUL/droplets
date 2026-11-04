@@ -18,6 +18,7 @@ const PATHS = {
   clock: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2",
   close: "M6 6l12 12M18 6L6 18",
   down: "M12 5v14M5 12l7 7 7-7",
+  jar: "M8 3h8M9 3v3L7 8.5V19a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V8.5L15 6V3M7 12h10",
 } as const;
 
 export type IconName = keyof typeof PATHS;
@@ -45,11 +46,12 @@ export function AppBar({ title, onBack, backLabel = "Back", right }: { title: st
   );
 }
 
-export type Tab = "home" | "activity" | "help";
+export type Tab = "home" | "savings" | "activity" | "help";
 
-export function TabBar({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
+export function TabBar({ tab, onTab, savings = false }: { tab: Tab; onTab: (t: Tab) => void; savings?: boolean }) {
   const items: { id: Tab; label: string; icon: IconName }[] = [
     { id: "home", label: "Home", icon: "home" },
+    ...(savings ? [{ id: "savings" as const, label: "Savings", icon: "jar" as const }] : []),
     { id: "activity", label: "Activity", icon: "list" },
     { id: "help", label: "Help", icon: "help" },
   ];

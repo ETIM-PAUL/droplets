@@ -1,0 +1,449 @@
+import { init } from "@nimiq/mini-app-sdk";
+import type { SaveMe, SaveValidator } from "@railkit/client";
+import { checkWithdrawal, formatSaveMessage, lunaToNimString, MIN_STAKE_LUNA, nimStringToLuna, parseNimiqAddress, WalletError, type StakerState } from "@railkit/core";
+import { createNimiqSaver } from "@railkit/wallet-nimiq";
+import { useEffect, useState } from "react";
+import { formatMoney } from "../format";
+import { api, hostNetwork } from "../send/engine";
+import { AppBar, Icon } from "../ui";
+
+type Mode = "home" | "rule" | "open" | "add" | "withdraw";
+
+const PRESETS = [10, 30, 50, 100];
+const nim = (luna: string | bigint) => formatMoney(lunaToNimString(BigInt(luna)), "NIM");
+const shortAddress = (a: string) => `${a.slice(0, 4)} … ${a.slice(-4)}`;
+const newNonce = () => Array.from(globalThis.crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
+const stakerOf = (g: NonNullable<SaveMe["grow"]>): StakerState => ({
+  active: BigInt(g.active), inactive: BigInt(g.inactive), inactiveFrom: g.inactiveFrom, retired: BigInt(g.retired), delegation: g.delegation,
+});
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/** Blocks are one second apart, so a block count reads as time. */
+const roughly = (blocks: number) => {
+  const minutes = Math.ceil(Math.max(0, blocks) / 60);
+  if (minutes <= 1) return "about a minute";
+  if (minutes < 90) return `about ${minutes} minutes`;
+  return `about ${Math.round(minutes / 60)} hours`;
+};
+
+/** What went wrong, in words the person can act on. */
+const errorText = (e: unknown) => {
+  if (e instanceof WalletError) {
+    if (e.kind === "rejected") return "You cancelled in Nimiq Pay. Nothing changed.";
+    if (e.kind === "unknown") return "Nimiq Pay didn't confirm. Check its history before trying again.";
+    return e.message;
+  }
+  return e instanceof Error ? e.message : "Something went wrong. Try again.";
+};
+
+export function SaveHome({ address }: { address: string | null }) {
+  const [me, setMe] = useState<SaveMe | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [mode, setMode] = useState<Mode>("home");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const [percent, setPercent] = useState(30);
+  const [amount, setAmount] = useState("");
+  const [validators, setValidators] = useState<SaveValidator[] | null>(null);
+  const [validator, setValidator] = useState<string | null>(null);
+  const [confirmRevoke, setConfirmRevoke] = useState(false);
+
+  const self = address ? parseNimiqAddress(address) : null;
+  const load = async (fresh = false) => {
+    if (!self?.ok) return;
+    try {
+      const m = await api.saveMe(self.value, fresh);
+      setMe(m);
+      setLoadError(null);
+      if (m.savePercent !== null) setPercent(m.savePercent);
+      return m;
+    } catch (e) {
+      setLoadError(errorText(e));
+    }
+  };
+  /** After a staking transaction: the chain shows it within seconds; check a few times. */
+  const waitFor = async (done: (m: SaveMe) => boolean) => {
+    for (let i = 0; i < 10; i++) {
+      await sleep(3_000);
+      const m = await load(true);
+      if (m && done(m)) return true;
+    }
+    return false;
+  };
+
+  useEffect(() => {
+    void load();
+    // Reload when the account changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [address]);
+
+  useEffect(() => {
+    if (mode !== "open" || validators) return;
+    api.saveValidators().then(
+      (v) => {
+        setValidators(v);
+        setValidator((cur) => cur ?? v[0]?.address ?? null);
+      },
+      (e) => setError(errorText(e)),
+    );
+  }, [mode, validators]);
+
+  const go = (m: Mode) => {
+    setError(null);
+    setInfo(null);
+    setAmount(m === "open" ? "100" : "");
+    setMode(m);
+  };
+
+  // ---- Tap handlers. Each opens Nimiq Pay's own dialog; the signing guard checks they stay that way.
+
+  async function saveRule(savePercent: number) {
+    if (!self?.ok) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const message = formatSaveMessage({ action: "set", address: self.value, savePercent, time: new Date().toISOString(), nonce: newNonce() });
+      const saver = createNimiqSaver(await init({ timeout: 5_000 }));
+      const signed = await saver.signRule(message);
+      await api.saveRule({ message, ...signed });
+      await load(true);
+      setMode("home");
+      setInfo(`Apps now pay ${savePercent}% of what they send you into Grow.`);
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function openGrow() {
+    const luna = nimStringToLuna(amount);
+    if (!luna.ok) return setError(luna.error.message);
+    if (luna.value < MIN_STAKE_LUNA) return setError("Open Grow with at least 100 NIM. That's Nimiq's minimum for staking.");
+    if (!validator) return setError("Choose a validator first.");
+    setBusy(true);
+    setError(null);
+    try {
+      const saver = createNimiqSaver(await init({ timeout: 5_000 }));
+      await saver.openGrow(validator, luna.value);
+      setInfo("Grow is opening. It shows here within a minute.");
+      setMode("home");
+      await waitFor((m) => m.grow !== null);
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addToGrow() {
+    const luna = nimStringToLuna(amount);
+    if (!luna.ok) return setError(luna.error.message);
+    if (luna.value <= 0n) return setError("Enter an amount to add.");
+    const before = me?.grow ? BigInt(me.grow.active) : 0n;
+    setBusy(true);
+    setError(null);
+    try {
+      const saver = createNimiqSaver(await init({ timeout: 5_000 }));
+      await saver.addToGrow(luna.value);
+      setInfo(`Adding ${nim(luna.value)} to Grow.`);
+      setMode("home");
+      await waitFor((m) => !!m.grow && BigInt(m.grow.active) > before);
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function startWithdrawal() {
+    if (!me?.grow) return;
+    const luna = nimStringToLuna(amount);
+    if (!luna.ok) return setError(luna.error.message);
+    const check = checkWithdrawal(stakerOf(me.grow), luna.value);
+    if (!check.ok) return setError(check.error.message);
+    setBusy(true);
+    setError(null);
+    try {
+      const saver = createNimiqSaver(await init({ timeout: 5_000 }));
+      await saver.startWithdrawal(check.value.newActive);
+      setInfo(`Withdrawing ${nim(luna.value)}. It's ready in 12 to 24 hours; finish it here then.`);
+      setMode("home");
+      await waitFor((m) => !!m.grow && BigInt(m.grow.inactive) > 0n);
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function finishWithdrawal() {
+    if (!me?.grow) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const saver = createNimiqSaver(await init({ timeout: 5_000 }));
+      let retired = BigInt(me.grow.retired);
+      if (retired === 0n) {
+        // Two Nimiq Pay approvals: retire the released stake, then take it back to the wallet.
+        await saver.retire(BigInt(me.grow.inactive));
+        setInfo("Released. Approve once more to move it to your wallet.");
+        await waitFor((m) => !!m.grow && BigInt(m.grow.retired) > 0n);
+        const now = await load(true);
+        retired = now?.grow ? BigInt(now.grow.retired) : 0n;
+        if (retired === 0n) return setInfo("Released. Tap Finish withdrawal again in a minute to move it to your wallet.");
+      }
+      await saver.remove(retired);
+      setInfo(`${nim(retired)} is on its way to your wallet.`);
+      await waitFor((m) => !m.grow || BigInt(m.grow.retired) === 0n);
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revokeCode() {
+    if (!self?.ok) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const message = formatSaveMessage({ action: "revoke", address: self.value, time: new Date().toISOString(), nonce: newNonce() });
+      const saver = createNimiqSaver(await init({ timeout: 5_000 }));
+      const signed = await saver.signRule(message);
+      await api.saveRule({ message, ...signed });
+      setConfirmRevoke(false);
+      await load(true);
+      setInfo("Your save code is off. Apps that have it now pay your wallet.");
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // ---- Screens.
+
+  if (!self?.ok) return <p className="hint">Connecting to Nimiq Pay…</p>;
+  if (!me) {
+    return (
+      <>
+        <header className="home-head"><h1>Savings</h1></header>
+        {loadError ? (
+          <>
+            <p className="alert" role="alert">{loadError}</p>
+            <button type="button" className="secondary" onClick={() => void load()}>Try again</button>
+          </>
+        ) : <p className="hint">Loading your savings…</p>}
+      </>
+    );
+  }
+
+  const wrongNetwork = me.network !== hostNetwork();
+  const messages = (
+    <>
+      {wrongNetwork && <p className="notice" role="status">Errand Save is on Nimiq {me.network}, but Nimiq Pay is on {hostNetwork()}. Switch networks in Nimiq Pay to use savings.</p>}
+      {error && <p className="alert" role="alert">{error}</p>}
+      {info && <p className="note" role="status">{info}</p>}
+    </>
+  );
+  const example = (p: number) => `If an app pays you 1,000 NIM: ${(p * 10).toLocaleString()} NIM to Grow, ${((100 - p) * 10).toLocaleString()} NIM to your wallet.`;
+  const picker = (
+    <div className="field">
+      <span className="field-label">How much of each payment to save</span>
+      <div className="presets" role="group" aria-label="Share to save">
+        {PRESETS.map((p) => (
+          <button key={p} type="button" className="preset" aria-pressed={percent === p} onClick={() => setPercent(p)}>{p}%</button>
+        ))}
+      </div>
+      <p className="hint">{example(percent)}</p>
+    </div>
+  );
+
+  if (mode === "rule") {
+    return (
+      <div className="grow">
+        <AppBar title="Change your share" onBack={() => go("home")} />
+        {picker}
+        {messages}
+        <div className="bottom">
+          <button type="button" className="primary" disabled={busy || wrongNetwork} onClick={() => void saveRule(percent)}>{busy ? "Opening Nimiq Pay…" : `Save ${percent}%`}</button>
+          <p className="note">Nimiq Pay asks you to sign, so only you can change your share. It costs nothing.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (mode === "open") {
+    return (
+      <div className="grow">
+        <AppBar title="Open Grow" onBack={() => go("home")} />
+        <p className="hint">Grow is NIM you stake from your own account. It earns staking rewards from the validator you pick, and stays yours.</p>
+        <div className="field">
+          <span className="field-label">Validator</span>
+          {validators === null ? <p className="hint">Loading validators…</p> : (
+            <div className="choices">
+              {validators.slice(0, 8).map((v) => (
+                <button key={v.address} type="button" className="choice" aria-pressed={validator === v.address} onClick={() => setValidator(v.address)}>
+                  <strong>{v.name ?? shortAddress(v.address)}</strong>
+                  <small>{v.numStakers} stakers · {nim(v.stakeLuna)} staked</small>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="field">
+          <label htmlFor="save-open-amount">Amount</label>
+          <input id="save-open-amount" className="amount-input" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          <p className="hint">At least 100 NIM. You can add more any time.</p>
+        </div>
+        {messages}
+        <div className="bottom">
+          <button type="button" className="primary" disabled={busy || wrongNetwork || !validator} onClick={() => void openGrow()}>{busy ? "Opening Nimiq Pay…" : `Open Grow with ${amount || "0"} NIM`}</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (mode === "add" || mode === "withdraw") {
+    const adding = mode === "add";
+    const max = me.grow ? BigInt(me.grow.active) : 0n;
+    return (
+      <div className="grow">
+        <AppBar title={adding ? "Add to Grow" : "Withdraw from Grow"} onBack={() => go("home")} />
+        <div className="field">
+          <label htmlFor="save-amount">Amount in NIM</label>
+          <input id="save-amount" className="amount-input" inputMode="decimal" value={amount} placeholder="0" onChange={(e) => setAmount(e.target.value)} />
+          {!adding && (
+            <p className="hint">
+              You have {nim(max)} in Grow. <button type="button" className="text-button" onClick={() => setAmount(lunaToNimString(max))}>Withdraw all</button>
+            </p>
+          )}
+        </div>
+        {!adding && <p className="notice">Withdrawing takes 12 to 24 hours: Nimiq releases staked NIM at the end of an epoch. You finish it here after that, with two approvals in Nimiq Pay.</p>}
+        {messages}
+        <div className="bottom">
+          <button type="button" className="primary" disabled={busy || wrongNetwork || !amount.trim()} onClick={() => void (adding ? addToGrow() : startWithdrawal())}>
+            {busy ? "Opening Nimiq Pay…" : adding ? `Add ${amount || "0"} NIM` : `Withdraw ${amount || "0"} NIM`}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ---- Home.
+  const g = me.grow;
+  const total = g ? BigInt(g.active) + BigInt(g.inactive) + BigInt(g.retired) : 0n;
+  const released = !!g && BigInt(g.inactive) > 0n && g.releaseBlock !== null && me.blockNumber >= g.releaseBlock;
+  const leaving = !!g && BigInt(g.inactive) > 0n && !released;
+
+  if (me.code === null) {
+    return (
+      <>
+        <header className="home-head"><h1>Savings</h1></header>
+        <section className="card save-intro">
+          <h2>Save a share of every payment</h2>
+          <p>Games, bounties and shops that pay you NIM can put part of it straight into your savings. You choose how much.</p>
+          <ul className="save-points">
+            <li><Icon name="check" size={18} /> Your savings stay in your own Nimiq account, staked so they earn rewards.</li>
+            <li><Icon name="check" size={18} /> Apps pay you directly. Errand never holds your money.</li>
+            <li><Icon name="clock" size={18} /> Taking money out takes 12 to 24 hours, so it's never one tap from being spent.</li>
+          </ul>
+        </section>
+        {picker}
+        {messages}
+        <button type="button" className="primary" disabled={busy || wrongNetwork} onClick={() => void saveRule(percent)}>{busy ? "Opening Nimiq Pay…" : "Get my save code"}</button>
+        <p className="note">Nimiq Pay asks you to sign your choice. Signing costs nothing.</p>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <header className="home-head"><h1>Savings</h1></header>
+
+      <section className="balance-card" aria-label="Your Grow savings">
+        <span className="label"><Icon name="jar" size={18} /> Grow savings</span>
+        <p className="balance-amount">{formatMoney(lunaToNimString(total), "NIM").replace(/ NIM$/, "")}<small>NIM</small></p>
+        <p className="sub">
+          {g ? (g.validatorJailed ? "Your validator is paused, so rewards and withdrawals wait" : "Staked from your own account, earning rewards") : me.growClosed === "validator-gone" ? "Your validator has closed. Move your stake in Nimiq Pay." : "Not open yet"}
+        </p>
+      </section>
+
+      {messages}
+
+      <section className="card code-card" aria-label="Your save code">
+        <span className="hint">Your save code</span>
+        <p className="save-code">{me.code}</p>
+        <p className="hint">Apps pay {me.savePercent}% of what they send you into Grow{g ? "" : " once it's open"}. Give this code wherever an app asks for your address.</p>
+        <div className="row-buttons">
+          <button type="button" className="secondary" onClick={() => void navigator.clipboard?.writeText(me.code!).then(() => setInfo("Code copied."), () => setInfo(`Your code is ${me.code}.`))}>Copy code</button>
+          <button type="button" className="secondary" onClick={() => go("rule")}>Change {me.savePercent}%</button>
+        </div>
+      </section>
+
+      {!g && me.growClosed === "no-stake" && (
+        <section className="card">
+          <strong>Open Grow to start saving</strong>
+          <p className="hint">Until then, apps pay your whole amount to your wallet. Grow needs at least 100 NIM to open.</p>
+          <button type="button" className="primary" disabled={wrongNetwork} onClick={() => go("open")}>Open Grow</button>
+        </section>
+      )}
+
+      {g && (
+        <nav className="actions" aria-label="Savings actions" style={{ gridTemplateColumns: "repeat(2, 1fr)" }}>
+          <button type="button" className="action" disabled={wrongNetwork || busy} onClick={() => go("add")}><span className="disc"><Icon name="plus" /></span>Add NIM</button>
+          <button type="button" className="action" disabled={wrongNetwork || busy || BigInt(g.active) === 0n} onClick={() => go("withdraw")}><span className="disc"><Icon name="down" /></span>Withdraw</button>
+        </nav>
+      )}
+
+      {g && leaving && (
+        <p className="notice" role="status">{nim(g.inactive)} is on its way out. It's ready in {roughly((g.releaseBlock ?? me.blockNumber) - me.blockNumber)}.</p>
+      )}
+      {g && (released || BigInt(g.retired) > 0n) && (
+        <section className="card">
+          <strong>{nim(BigInt(g.inactive) + BigInt(g.retired))} is ready to withdraw</strong>
+          <button type="button" className="primary" disabled={busy || wrongNetwork} onClick={() => void finishWithdrawal()}>{busy ? "Opening Nimiq Pay…" : "Finish withdrawal"}</button>
+        </section>
+      )}
+
+      <section className="section">
+        <h2 className="section-title">Paid in with your code</h2>
+        {me.receipts.length === 0 ? (
+          <p className="empty">Nothing yet. When an app pays you with your code, it shows here.</p>
+        ) : (
+          <ul className="list">
+            {me.receipts.map((r) => (
+              <li key={r.txHash}>
+                <div className="row">
+                  <span className="row-icon in"><Icon name={r.kind === "grow" ? "jar" : "down"} size={20} /></span>
+                  <span className="row-main">
+                    <strong>{r.app}</strong>
+                    <span>{new Date(r.at).toLocaleDateString(undefined, { day: "numeric", month: "short" })} · {r.kind === "grow" ? "to Grow" : "to your wallet"}</span>
+                  </span>
+                  <span className="row-end"><span className="row-amount">+{nim(r.luna)}</span></span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="section">
+        {confirmRevoke ? (
+          <div className="card">
+            <strong>Turn off your save code?</strong>
+            <p className="hint">Apps that have it will pay your wallet instead. Your Grow savings stay where they are.</p>
+            <div className="row-buttons">
+              <button type="button" className="secondary" onClick={() => setConfirmRevoke(false)}>Keep it</button>
+              <button type="button" className="primary" disabled={busy || wrongNetwork} onClick={() => void revokeCode()}>Turn off</button>
+            </div>
+          </div>
+        ) : (
+          <button type="button" className="text-button" onClick={() => setConfirmRevoke(true)}>Turn off my save code</button>
+        )}
+      </section>
+    </>
+  );
+}

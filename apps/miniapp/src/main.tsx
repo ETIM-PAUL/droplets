@@ -11,6 +11,7 @@ import { api, orderStore, PRACTICE, SIGNED_OUT } from "./send/engine";
 import { OrderView } from "./send/OrderView";
 import { Scan } from "./send/Scan";
 import { SendHome } from "./send/SendHome";
+import { SaveHome } from "./save/SaveHome";
 import { Spike } from "./spike";
 import { recipientBook, sessionToken, topupBook, type LocalTopup, type SavedRecipient } from "./storage";
 import { AddMoney } from "./topup/AddMoney";
@@ -46,6 +47,9 @@ const TOPUP_STATUS: Record<string, [string, "ok" | "bad" | ""]> = {
 
 const book = recipientBook();
 const topups = topupBook();
+
+/** Errand Save (save codes and Grow): its tab only shows when the API has it switched on too. */
+const SAVE = import.meta.env.VITE_SAVE_ENABLED === "true";
 
 /** The developer test page can make real payments, so it only exists in dev or when VITE_TEST_PAGE=true. */
 const TEST_PAGE = import.meta.env.DEV || import.meta.env.VITE_TEST_PAGE === "true";
@@ -307,6 +311,8 @@ function App() {
         </>
       )}
 
+      {tab === "savings" && SAVE && <SaveHome address={host?.status === "ready" ? host.address : null} />}
+
       {tab === "activity" && (
         <>
           <header className="home-head"><h1>Activity</h1></header>
@@ -343,7 +349,7 @@ function App() {
         </>
       )}
 
-      <TabBar tab={tab} onTab={setTab} />
+      <TabBar tab={tab} onTab={setTab} savings={SAVE} />
     </div>
   );
 }

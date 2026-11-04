@@ -5,7 +5,7 @@ Ramp, Lightning and x402 SDK, and the engine behind the Errand Mini App. MIT lic
 ## Layout
 
 - `apps/` miniapp, api, dashboard, docs
-- `packages/` core, client, wallet-nimiq, wallet-evm, adapters, widgets, x402, agent
+- `packages/` core, client, wallet-nimiq, wallet-evm, adapters, widgets, x402, agent, save
 
 ## Develop
 
@@ -43,8 +43,18 @@ The model never sees keys or balances, and its output can't send anything: only 
   - code uses a raw signing or key API;
   - server or untrusted-input code imports a wallet;
   - a wallet executor is created anywhere other than the Send/Pay tap handlers;
+  - a savings action (`createNimiqSaver`) is created anywhere other than the Savings tap handlers;
+  - a key pair appears anywhere but the server payout SDK (`packages/save/src/payer.ts`), or the phone or the API imports it;
   - the developer test page is reachable without `VITE_TEST_PAGE=true`.
 - Add every real misread from the beta to the eval set.
+
+## Errand Save (phase 1)
+
+Save codes and Grow: users choose a share of every NIM payment to save, signed once in Nimiq Pay. Apps that pay rewards look up the split with the user's save code and pay the user directly: part as a normal payment, part as an add-stake into the user's own stake. Errand never holds the money.
+
+- Plan: [Errand Save — Product Plan.md](Errand%20Save%20—%20Product%20Plan.md). Guide for paying apps: [docs/save-codes.md](docs/save-codes.md).
+- Switch it on with `SAVE_ENABLED=true`, `SAVE_NETWORK` (start with `testnet`) and `VITE_SAVE_ENABLED=true`. Register paying apps with `POST /v1/admin/save/apps`.
+- Code: `packages/core/src/save.ts` (codes, signed rules, splits), `apps/api/src/save/`, `packages/save` (SDK for paying apps), `apps/miniapp/src/save/SaveHome.tsx`.
 
 ## Deploy (Render)
 

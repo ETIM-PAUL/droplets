@@ -1,6 +1,6 @@
 import { WalletError } from "@railkit/core";
 import { describe, expect, it } from "vitest";
-import { classifyNimiqError, createNimiqExecutor, nimToLuna, type NimiqProviderLike } from "./index";
+import { classifyNimiqError, createNimiqExecutor, createNimiqSaver, nimToLuna, type NimiqProviderLike, type NimiqSaverProvider } from "./index";
 
 const INVOICE = "lnbc1...";
 const provider = (over: Partial<NimiqProviderLike> = {}): NimiqProviderLike => ({
@@ -99,5 +99,67 @@ describe("classifyNimiqError", () => {
     const e = classifyNimiqError(err("DUPLICATE_PAYMENT"));
     expect(e.kind).toBe("unknown");
     expect(e.message).toMatch(/wallet history/);
+  });
+});
+
+describe("createNimiqSaver", () => {
+  const saverProvider = (over: Partial<NimiqSaverProvider> = {}) => {
+    const calls: [string, unknown][] = [];
+    const p: NimiqSaverProvider = {
+      sign: async (m) => (calls.push(["sign", m]), { publicKey: "ab".repeat(32), signature: "cd".repeat(64) }),
+      sendNewStakerTransaction: async (tx) => (calls.push(["newStaker", tx]), "tx1"),
+      sendStakeTransaction: async (tx) => (calls.push(["stake", tx]), "tx2"),
+      sendSetActiveStakeTransaction: async (tx) => (calls.push(["setActive", tx]), "tx3"),
+      sendRetireStakeTransaction: async (tx) => (calls.push(["retire", tx]), "tx4"),
+      sendRemoveStakeTransaction: async (tx) => (calls.push(["remove", tx]), "tx5"),
+      ...over,
+    };
+    return { p, calls };
+  };
+
+  it("passes luna straight through to each staking call", async () => {
+    const { p, calls } = saverProvider();
+    const s = createNimiqSaver(p);
+    await s.openGrow("NQ26 0000 0000 02A5 YAK7 4QNF 9MH0 TE2B GVRU", 10_000_000n);
+    await s.addToGrow(250_000n);
+    await s.startWithdrawal(0n);
+    await s.retire(10_250_000n);
+    await s.remove(10_250_000n);
+    expect(calls).toEqual([
+      ["newStaker", { delegation: "NQ26 0000 0000 02A5 YAK7 4QNF 9MH0 TE2B GVRU", value: 10_000_000 }],
+      ["stake", { value: 250_000 }],
+      ["setActive", { newActiveBalance: 0 }],
+      ["retire", { retireStake: 10_250_000 }],
+      ["remove", { value: 10_250_000 }],
+    ]);
+  });
+
+  it("signs the rule without waiting for the network", async () => {
+    let asked = 0;
+    const { p, calls } = saverProvider({ isConsensusEstablished: async () => (asked++, false) });
+    const r = await createNimiqSaver(p).signRule("Errand save code\n…");
+    expect(r.publicKey).toHaveLength(64);
+    expect(calls).toEqual([["sign", "Errand save code\n…"]]);
+    expect(asked).toBe(0);
+  });
+
+  it("waits for Nimiq Pay to connect before staking, and sends nothing if it never does", async () => {
+    const { p, calls } = saverProvider({ isConsensusEstablished: async () => false });
+    const s = createNimiqSaver(p, { consensusWaitMs: 2, pollMs: 1, sleep: async () => undefined });
+    await expect(s.addToGrow(1n)).rejects.toMatchObject({ kind: "failed" });
+    expect(calls).toEqual([]);
+  });
+
+  it("refuses zero or out-of-range amounts before calling Nimiq Pay", async () => {
+    const { p, calls } = saverProvider();
+    const s = createNimiqSaver(p);
+    await expect(s.addToGrow(0n)).rejects.toBeInstanceOf(WalletError);
+    await expect(s.retire(2n ** 60n)).rejects.toBeInstanceOf(WalletError);
+    expect(calls).toEqual([]);
+  });
+
+  it("classifies a refusal in Nimiq Pay as rejected", async () => {
+    const { p } = saverProvider({ sign: async () => { throw err("PERMISSION_DENIED", "User rejected"); } });
+    await expect(createNimiqSaver(p).signRule("x")).rejects.toMatchObject({ kind: "rejected" });
   });
 });

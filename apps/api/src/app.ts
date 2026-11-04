@@ -20,6 +20,7 @@ import { airtimeToOps, payoutToOps, rampToOps } from "./ops/map";
 import { betaMetrics } from "./ops/metrics";
 import type { OpsStore } from "./ops/store";
 import { rateLimiter } from "./rate-limit";
+import { mountSaveRoutes, type SaveDeps } from "./save/routes";
 import { verifyMavapaySignature } from "./webhook";
 
 export interface AppDeps {
@@ -45,6 +46,8 @@ export interface AppDeps {
   ramp?: { api: Pick<ChangellyFiatApi, "offers" | "validateAddress" | "createOrder" | "getOrder" | "readCallback">; countries: ReadonlySet<string>; nimTicker: string };
   /** Chat: an optional model for sentences the rules can't finish, capped per UTC day. */
   agent?: { model?: Extractor; qrModel?: QrExtractor; modelCallsPerDay?: number };
+  /** Errand Save, phase 1: save codes and Grow. Off when undefined. */
+  save?: SaveDeps;
   log?: (msg: string, data?: Record<string, unknown>) => void;
   now?: () => number;
 }
@@ -503,6 +506,8 @@ export function createApp(d: AppDeps) {
     if (!admin(c.req.header("authorization")) || !d.ops) return bad("Not found.", 404);
     return c.json({ feedback: await d.ops.listFeedback(now() - 30 * 86_400_000) });
   });
+
+  if (d.save) mountSaveRoutes(app, d.save, { bad, clientKey, admin, now, log });
 
   return app;
 }

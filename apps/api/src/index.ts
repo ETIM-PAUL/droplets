@@ -1,5 +1,6 @@
 import { serve } from "@hono/node-server";
 import { createBitrefillApi, createMavapayApi, ProviderError } from "@railkit/adapters";
+import { createNimiqRpc, parseNimiqAddress } from "@railkit/core";
 import { createChangellyFiatApi } from "@railkit/adapters/server";
 import pg from "pg";
 import { openAiExtractor, openAiQrExtractor } from "@railkit/agent";
@@ -7,6 +8,8 @@ import { createApp } from "./app";
 import { parseInvites, type BetaConfig } from "./ops/beta";
 import { airtimeToOps, payoutToOps, rampToOps } from "./ops/map";
 import { MemoryOpsStore, PgOpsStore, type OpsStore } from "./ops/store";
+import type { SaveDeps } from "./save/routes";
+import { MemorySaveStore, PgSaveStore, type SaveStore } from "./save/store";
 import { watchOnce, webhookAlerter } from "./ops/watcher";
 
 function required(name: string): string {
@@ -39,15 +42,41 @@ const ramp = process.env.CHANGELLY_FIAT_PUBLIC_KEY && process.env.CHANGELLY_FIAT
 
 const mavapay = createMavapayApi({ apiKey: required("MAVAPAY_API_KEY"), baseUrl: required("MAVAPAY_BASE_URL") });
 
+const pool = process.env.DATABASE_URL ? new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 5 }) : null;
+
 let ops: OpsStore;
-if (process.env.DATABASE_URL) {
-  const store = new PgOpsStore(new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 5 }));
+if (pool) {
+  const store = new PgOpsStore(pool);
   await store.migrate();
   ops = store;
 } else {
   console.warn(JSON.stringify({ msg: "DATABASE_URL not set: order log is in memory and lost on restart" }));
   ops = new MemoryOpsStore();
 }
+
+// Errand Save, phase 1 (save codes and Grow). Off unless SAVE_ENABLED=true.
+async function saveDeps(): Promise<SaveDeps | undefined> {
+  if (process.env.SAVE_ENABLED !== "true") return undefined;
+  const network = process.env.SAVE_NETWORK === "testnet" ? "testnet" : "mainnet";
+  let store: SaveStore;
+  if (pool) {
+    const pgStore = new PgSaveStore(pool);
+    await pgStore.migrate();
+    store = pgStore;
+  } else {
+    console.warn(JSON.stringify({ msg: "DATABASE_URL not set: save codes are in memory and lost on restart" }));
+    store = new MemorySaveStore();
+  }
+  // "NQ.. = Name, NQ.. = Name": validators shown first when someone opens Grow.
+  const recommended = list(process.env.SAVE_VALIDATORS).flatMap((entry) => {
+    const [address = "", name = ""] = entry.split("=").map((x) => x.trim());
+    const a = parseNimiqAddress(address);
+    return a.ok && name ? [{ address: a.value, name }] : [];
+  });
+  const url = process.env.NIMIQ_RPC_URL || (network === "testnet" ? "https://rpc.testnet.nimiqwatch.com" : "https://rpc.nimiqwatch.com");
+  return { store, chain: createNimiqRpc({ url }), network, recommended };
+}
+const save = await saveDeps();
 
 const beta: BetaConfig | undefined =
   process.env.BETA_REQUIRED === "true"
@@ -68,6 +97,7 @@ if (practice && !/staging/.test(process.env.MAVAPAY_BASE_URL ?? "")) {
 }
 
 const app = createApp({
+  save,
   simulatePayIn: practice
     ? async (orderId) => {
         const res = await fetch(`${process.env.MAVAPAY_BASE_URL}/simulation/pay-in`, {
@@ -103,7 +133,7 @@ const app = createApp({
 
 const port = Number(process.env.PORT ?? 8787);
 serve({ fetch: app.fetch, port }, () => {
-  console.log(JSON.stringify({ msg: "railkit api listening", port, corridors: list(process.env.CORRIDORS) }));
+  console.log(JSON.stringify({ msg: "railkit api listening", port, corridors: list(process.env.CORRIDORS), save: save ? save.network : "off" }));
 });
 
 // Every 2 minutes: catch payments made after the app closed, and alert on stuck or failed orders.

@@ -75,6 +75,15 @@ services:
         fromDatabase:
           name: errand-db
           property: connectionString
+      # Errand Save, phase 1. Keep on testnet until the testnet checks in the plan pass.
+      - key: SAVE_ENABLED
+        value: "false"
+      - key: SAVE_NETWORK
+        value: testnet
+      - key: NIMIQ_RPC_URL
+        sync: false
+      - key: SAVE_VALIDATORS
+        sync: false
 
   - type: web
     name: errand-miniapp
@@ -88,6 +97,9 @@ services:
       # The API's public address (set after the first deploy), e.g. https://errand-api.onrender.com
       - key: VITE_RAILKIT_API_URL
         sync: false
+      # Shows the Savings tab. Turn on together with SAVE_ENABLED on the API.
+      - key: VITE_SAVE_ENABLED
+        value: "false"
       - key: VITE_PRACTICE_MODE
         value: "true"
       # The developer test page can make real payments: keep it off for friends.

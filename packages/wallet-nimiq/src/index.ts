@@ -18,7 +18,7 @@ export interface NimiqExecutorOptions {
 const NOT_CONNECTED = "Nimiq Pay isn't connected to the Nimiq network yet, so nothing was sent. Wait a minute, check your connection, and try again.";
 
 /** Waits until Nimiq Pay reports consensus. A false answer means no payment was attempted. */
-async function waitForNetwork(provider: NimiqProviderLike, o: NimiqExecutorOptions): Promise<void> {
+async function waitForNetwork(provider: Pick<NimiqProviderLike, "isConsensusEstablished">, o: NimiqExecutorOptions): Promise<void> {
   if (!provider.isConsensusEstablished) return;
   const sleep = o.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const tries = Math.max(1, Math.ceil((o.consensusWaitMs ?? 20_000) / (o.pollMs ?? 1_000)));
@@ -65,6 +65,51 @@ export function classifyNimiqError(e: unknown): WalletError {
   }
   return new WalletError("unknown", `${type || "ERROR"}: ${message}`);
 }
+
+/** The staking and signing slice of the provider. Each call opens Nimiq Pay's own approval dialog. */
+export interface NimiqSaverProvider extends Pick<NimiqProviderLike, "isConsensusEstablished"> {
+  sign(message: string): Promise<{ publicKey: string; signature: string }>;
+  sendNewStakerTransaction(tx: { delegation: string; value: number }): Promise<string>;
+  sendStakeTransaction(tx: { value: number }): Promise<string>;
+  sendSetActiveStakeTransaction(tx: { newActiveBalance: number }): Promise<string>;
+  sendRetireStakeTransaction(tx: { retireStake: number }): Promise<string>;
+  sendRemoveStakeTransaction(tx: { value: number }): Promise<string>;
+}
+
+function toLuna(amount: bigint, allowZero = false): number {
+  if (amount < 0n || (!allowZero && amount === 0n) || amount > BigInt(Number.MAX_SAFE_INTEGER)) throw new WalletError("failed", "That NIM amount is out of range.");
+  return Number(amount);
+}
+
+/**
+ * Errand Save's actions in Nimiq Pay, all on the user's own stake (Grow). Amounts are luna.
+ * Nimiq Pay shows its approval dialog for each; nothing here can move money without it.
+ */
+export function createNimiqSaver(provider: NimiqSaverProvider, options: NimiqExecutorOptions = {}) {
+  const run = async <T>(f: () => Promise<T>, needsNetwork = true): Promise<T> => {
+    if (needsNetwork) await waitForNetwork(provider, options);
+    try {
+      return await f();
+    } catch (e) {
+      throw classifyNimiqError(e);
+    }
+  };
+  return {
+    /** Signs the save rule. Returns the key Nimiq Pay signed with, so the server can check it's this address. */
+    signRule: (message: string) => run(() => provider.sign(message), false),
+    /** Opens Grow: stakes at least 100 NIM with the chosen validator. */
+    openGrow: (validator: string, luna: bigint) => run(() => provider.sendNewStakerTransaction({ delegation: validator, value: toLuna(luna) })),
+    addToGrow: (luna: bigint) => run(() => provider.sendStakeTransaction({ value: toLuna(luna) })),
+    /** Step 1 of withdrawing: the rest of the stake becomes inactive and its lock-up starts at the next election block. */
+    startWithdrawal: (newActiveLuna: bigint) => run(() => provider.sendSetActiveStakeTransaction({ newActiveBalance: toLuna(newActiveLuna, true) })),
+    /** Step 2, once released: inactive stake becomes retired. */
+    retire: (luna: bigint) => run(() => provider.sendRetireStakeTransaction({ retireStake: toLuna(luna) })),
+    /** Step 3: the retired stake goes back to the wallet. Must be the whole retired amount. */
+    remove: (luna: bigint) => run(() => provider.sendRemoveStakeTransaction({ value: toLuna(luna) })),
+  };
+}
+
+export type NimiqSaver = ReturnType<typeof createNimiqSaver>;
 
 /** Runs pay-lightning-invoice and send-nim steps in Nimiq Pay; the host shows its native approval dialog. */
 export function createNimiqExecutor(provider: NimiqProviderLike, options: NimiqExecutorOptions = {}): WalletExecutor {

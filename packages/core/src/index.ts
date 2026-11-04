@@ -18,3 +18,5 @@ export * from "./airtime";
 export * from "./qr";
 export * from "./describe";
 export * from "./nimiq-address";
+export * from "./save";
+export * from "./nimiq-rpc";

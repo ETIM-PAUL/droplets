@@ -1,0 +1,261 @@
+import { generateKeyPairSync, sign, type KeyObject } from "node:crypto";
+import {
+  formatSaveMessage,
+  nimiqAddressBytes,
+  nimiqAddressFromPublicKey,
+  nimiqMessageHash,
+  STAKING_CONTRACT,
+  type NimiqTransaction,
+  type NimiqValidator,
+  type SaveRuleMessage,
+  type StakerState,
+} from "@railkit/core";
+import { newDb } from "pg-mem";
+import { describe, expect, it } from "vitest";
+import { createApp, type AppDeps } from "../app";
+import { MemorySaveStore, PgSaveStore, type SaveStore } from "./store";
+
+const T = 1_793_800_000_000;
+const NIM = (n: number) => BigInt(n) * 100_000n;
+const VALIDATOR = "NQ26 0000 0000 02A5 YAK7 4QNF 9MH0 TE2B GVRU";
+const APP_PAYOUT = "NQ49 N8MB XYCR XBUP 404C KXKK L49M A7BT F082";
+
+/** A Nimiq account as Nimiq Pay holds it: an Ed25519 key, its address, and sign() as Nimiq Pay does it. */
+function account() {
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  const pub = Buffer.from((publicKey as KeyObject).export({ format: "der", type: "spki" })).subarray(-32).toString("hex");
+  const address = nimiqAddressFromPublicKey(pub);
+  return { address, publicKey: pub, sign: (message: string) => sign(null, nimiqMessageHash(message), privateKey).toString("hex") };
+}
+
+let nonce = 0;
+const rule = (address: string, over: Partial<SaveRuleMessage> = {}): SaveRuleMessage => ({
+  action: "set", address, savePercent: 30, time: new Date(T).toISOString(), nonce: (++nonce).toString(16).padStart(16, "0"), ...over,
+});
+
+function fakeChain() {
+  const stakers = new Map<string, StakerState>();
+  const validators = new Map<string, NimiqValidator>([[VALIDATOR, { address: VALIDATOR, balance: NIM(1_000_000), numStakers: 9, jailedFrom: null, retired: false }]]);
+  const txs = new Map<string, NimiqTransaction>();
+  const chain = {
+    staker: async (a: string) => stakers.get(a) ?? null,
+    validator: async (a: string) => validators.get(a) ?? null,
+    activeValidators: async () => [...validators.values()],
+    transaction: async (h: string) => txs.get(h) ?? null,
+    blockNumber: async () => 65_966_500,
+  };
+  return { stakers, validators, txs, chain };
+}
+
+function setup(over: { store?: SaveStore; recommended?: { address: string; name: string }[] } = {}) {
+  const f = fakeChain();
+  const store = over.store ?? new MemorySaveStore();
+  const deps: AppDeps = {
+    mavapay: { quote: async () => { throw new Error("unused"); }, getOrder: async () => { throw new Error("unused"); }, banks: async () => [], nameEnquiry: async () => ({ accountName: "" }) },
+    corridors: new Set(),
+    allowedOrigins: ["https://errand.example"],
+    adminToken: "admin-secret",
+    save: { store, chain: f.chain, network: "mainnet", recommended: over.recommended },
+    log: () => undefined,
+    now: () => T,
+  };
+  return { app: createApp(deps), ...f, store };
+}
+
+const post = (body: unknown, headers: Record<string, string> = {}) => ({ method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
+const signed = (who: ReturnType<typeof account>, m: SaveRuleMessage) => {
+  const message = formatSaveMessage(m);
+  return { message, publicKey: who.publicKey, signature: who.sign(message) };
+};
+const json = async (r: Response) => (await r.json()) as Record<string, any>;
+const errorOf = async (r: Response) => ((await r.json()) as { error: { message: string } }).error.message;
+
+async function withApp(app: ReturnType<typeof setup>["app"]) {
+  const r = await app.request("/v1/admin/save/apps", post({ name: "Arcade", payoutAddresses: [APP_PAYOUT] }, { Authorization: "Bearer admin-secret" }));
+  const { apiKey } = await json(r);
+  return { Authorization: `Bearer ${apiKey as string}` };
+}
+
+describe("setting the rule", () => {
+  it("creates a code from a rule signed in Nimiq Pay, and keeps the same code when the rule changes", async () => {
+    const { app } = setup();
+    const amaka = account();
+    const r = await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address))));
+    expect(r.status).toBe(200);
+    const first = await json(r);
+    expect(first).toMatchObject({ address: amaka.address, savePercent: 30 });
+    expect(first.code).toMatch(/^SAVE-[0-9A-HJKMNP-TV-Z]{7}$/);
+    const again = await json(await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address, { savePercent: 50 })))));
+    expect(again).toEqual({ code: first.code, address: amaka.address, savePercent: 50 });
+  });
+
+  it("refuses a forged, foreign, stale, replayed or malformed request", async () => {
+    const { app } = setup();
+    const amaka = account();
+    const mallory = account();
+    const m = rule(amaka.address);
+    const good = signed(amaka, m);
+    expect((await app.request("/v1/save/rule", post({ ...good, signature: mallory.sign(good.message) }))).status).toBe(403);
+    // Mallory signs a rule for Amaka's address with her own key.
+    const foreign = await app.request("/v1/save/rule", post({ ...signed(mallory, rule(amaka.address)) }));
+    expect(foreign.status).toBe(403);
+    expect(await errorOf(foreign)).toMatch(/different Nimiq account/);
+    expect(await errorOf(await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address, { time: new Date(T - 11 * 60_000).toISOString() })))))).toMatch(/too old/);
+    expect((await app.request("/v1/save/rule", post(good))).status).toBe(200);
+    expect(await errorOf(await app.request("/v1/save/rule", post(good)))).toMatch(/already used/);
+    expect((await app.request("/v1/save/rule", post({ ...good, message: good.message + " " }))).status).toBe(400);
+    expect((await app.request("/v1/save/rule", post({ message: good.message }))).status).toBe(400);
+  });
+
+  it("revokes the code, after which apps can't use it", async () => {
+    const { app } = setup();
+    const headers = await withApp(app);
+    const amaka = account();
+    const { code } = await json(await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address)))));
+    expect(await json(await app.request("/v1/save/rule", post(signed(amaka, { ...rule(amaka.address), action: "revoke", savePercent: undefined }))))).toEqual({ revoked: true });
+    expect((await app.request(`/v1/save/split?code=${code as string}&luna=100000`, { headers })).status).toBe(404);
+  });
+});
+
+describe("splitting a payout (for apps)", () => {
+  it("needs a known app key", async () => {
+    const { app } = setup();
+    expect((await app.request("/v1/save/split?code=SAVE-0000000&luna=1")).status).toBe(401);
+    expect((await app.request("/v1/save/split?code=SAVE-0000000&luna=1", { headers: { Authorization: `Bearer rk_save_${"0".repeat(64)}` } })).status).toBe(401);
+    expect((await app.request("/v1/admin/save/apps", post({ name: "X", payoutAddresses: [APP_PAYOUT] }))).status).toBe(404);
+  });
+
+  it("splits into wallet and Grow when the user stakes, and falls back to the wallet when Grow can't take it", async () => {
+    const amaka = account();
+    // Each case gets its own app, because stake lookups are cached for a minute.
+    async function splitWith(prepare: (f: ReturnType<typeof setup>) => void, luna: bigint) {
+      const f = setup();
+      prepare(f);
+      const headers = await withApp(f.app);
+      const { code } = await json(await f.app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address)))));
+      return json(await f.app.request(`/v1/save/split?code=${code as string}&luna=${luna}`, { headers }));
+    }
+    const staked = (f: ReturnType<typeof setup>) => f.stakers.set(amaka.address, { active: NIM(500), inactive: 0n, inactiveFrom: null, retired: 0n, delegation: VALIDATOR });
+
+    expect(await splitWith(staked, NIM(2000))).toMatchObject({
+      address: amaka.address, savePercent: 30, wallet: { luna: NIM(1400).toString() }, grow: { luna: NIM(600).toString(), staker: amaka.address }, reason: null,
+    });
+    expect(await splitWith(() => undefined, NIM(2000))).toMatchObject({ wallet: { luna: NIM(2000).toString() }, grow: null, reason: "no-stake" });
+    expect(await splitWith((f) => (staked(f), f.validators.clear()), NIM(2000))).toMatchObject({ grow: null, reason: "validator-gone" });
+  });
+
+  it("refuses bad input", async () => {
+    const { app } = setup();
+    const headers = await withApp(app);
+    for (const q of ["code=nope&luna=1", "code=SAVE-0000000&luna=0", "code=SAVE-0000000&luna=1.5", "code=SAVE-0000000&luna=-3"]) {
+      expect((await app.request(`/v1/save/split?${q}`, { headers })).status, q).toBe(400);
+    }
+  });
+});
+
+describe("receipts (for apps)", () => {
+  it("records transactions that check out on-chain, and says pending for ones not in a block yet", async () => {
+    const { app, txs } = setup();
+    const headers = await withApp(app);
+    const amaka = account();
+    const { code } = await json(await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address)))));
+    const stakerHex = Buffer.from(nimiqAddressBytes(amaka.address)).toString("hex");
+    const tx = (hash: string, over: Partial<NimiqTransaction>): NimiqTransaction => ({
+      hash, blockNumber: 65_966_400, from: APP_PAYOUT, to: amaka.address, value: NIM(1400), recipientData: "", executionResult: true, confirmations: 3, ...over,
+    });
+    txs.set("a".repeat(64), tx("a".repeat(64), {}));
+    txs.set("b".repeat(64), tx("b".repeat(64), { to: STAKING_CONTRACT, value: NIM(600), recipientData: `06${stakerHex}` }));
+
+    const r = await app.request("/v1/save/receipts", post({ code, payoutId: "bounty-81", walletTx: "a".repeat(64), growTx: "b".repeat(64) }, headers));
+    expect(await json(r)).toEqual({ walletTx: "recorded", growTx: "recorded" });
+    expect(await json(await app.request("/v1/save/receipts", post({ code, payoutId: "bounty-82", growTx: "c".repeat(64) }, headers)))).toEqual({ growTx: "pending" });
+
+    const me = await json(await app.request(`/v1/save/me?address=${encodeURIComponent(amaka.address)}`));
+    expect(me.receipts).toEqual([
+      expect.objectContaining({ app: "Arcade", kind: "wallet", luna: NIM(1400).toString() }),
+      expect.objectContaining({ app: "Arcade", kind: "grow", luna: NIM(600).toString() }),
+    ]);
+  });
+
+  it("refuses transactions from elsewhere, to the wrong place, or that failed", async () => {
+    const { app, txs } = setup();
+    const headers = await withApp(app);
+    const amaka = account();
+    const other = account();
+    const { code } = await json(await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address)))));
+    const otherHex = Buffer.from(nimiqAddressBytes(other.address)).toString("hex");
+    const base = { blockNumber: 1, value: NIM(1), executionResult: true, confirmations: 1, recipientData: "" };
+    txs.set("1".repeat(64), { hash: "1".repeat(64), from: other.address, to: amaka.address, ...base });
+    txs.set("2".repeat(64), { hash: "2".repeat(64), from: APP_PAYOUT, to: other.address, ...base });
+    txs.set("3".repeat(64), { hash: "3".repeat(64), from: APP_PAYOUT, to: STAKING_CONTRACT, ...base, recipientData: `06${otherHex}` });
+    txs.set("4".repeat(64), { hash: "4".repeat(64), from: APP_PAYOUT, to: amaka.address, ...base, executionResult: false });
+    const send = (b: Record<string, string>) => app.request("/v1/save/receipts", post({ code, payoutId: "p1", ...b }, headers));
+    expect((await send({ walletTx: "1".repeat(64) })).status).toBe(403);
+    expect(await errorOf(await send({ walletTx: "2".repeat(64) }))).toMatch(/didn't pay this code's address/);
+    expect(await errorOf(await send({ growTx: "3".repeat(64) }))).toMatch(/isn't an add-stake/);
+    expect(await errorOf(await send({ walletTx: "4".repeat(64) }))).toMatch(/failed on-chain/);
+    expect((await send({ walletTx: "xyz" })).status).toBe(400);
+  });
+});
+
+describe("the savings screen", () => {
+  it("shows the code, Grow from the chain, and when inactive stake is released", async () => {
+    const { app, stakers } = setup();
+    const amaka = account();
+    const { code } = await json(await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address)))));
+    stakers.set(amaka.address, { active: NIM(300), inactive: NIM(200), inactiveFrom: 65_966_400, retired: 0n, delegation: VALIDATOR });
+    const me = await json(await app.request(`/v1/save/me?address=${encodeURIComponent(amaka.address)}&fresh=1`));
+    expect(me).toMatchObject({
+      network: "mainnet", code, savePercent: 30, blockNumber: 65_966_500, growClosed: null,
+      grow: { active: NIM(300).toString(), inactive: NIM(200).toString(), inactiveFrom: 65_966_400, retired: "0", delegation: VALIDATOR, releaseBlock: 65_966_400 + 43_201, validatorJailed: false },
+    });
+    const nobody = await json(await app.request(`/v1/save/me?address=${encodeURIComponent(account().address)}`));
+    expect(nobody).toMatchObject({ code: null, grow: null, growClosed: "no-stake", receipts: [] });
+    expect((await app.request("/v1/save/me?address=NQ00")).status).toBe(400);
+  });
+
+  it("lists validators, recommended ones first, without jailed or retired ones", async () => {
+    const { app, validators } = setup({ recommended: [{ address: "NQ16 085S 7JNP YJNY UA5N G5Y5 B98N 0JT7 6GKB", name: "Pool A" }] });
+    validators.set("NQ16 085S 7JNP YJNY UA5N G5Y5 B98N 0JT7 6GKB", { address: "NQ16 085S 7JNP YJNY UA5N G5Y5 B98N 0JT7 6GKB", balance: NIM(10), numStakers: 1, jailedFrom: null, retired: false });
+    validators.set("NQ61 1RMT GEPQ VA7A XDY3 NGQM 8ESG KR6B GH8M", { address: "NQ61 1RMT GEPQ VA7A XDY3 NGQM 8ESG KR6B GH8M", balance: NIM(5), numStakers: 1, jailedFrom: 100, retired: false });
+    const { validators: list } = await json(await app.request("/v1/save/validators"));
+    expect(list.map((v: { address: string; name: string | null }) => [v.address, v.name])).toEqual([
+      ["NQ16 085S 7JNP YJNY UA5N G5Y5 B98N 0JT7 6GKB", "Pool A"],
+      [VALIDATOR, null],
+    ]);
+  });
+});
+
+async function stores(): Promise<[string, SaveStore][]> {
+  const { Pool } = newDb().adapters.createPg();
+  const pg = new PgSaveStore(new Pool());
+  await pg.migrate();
+  return [["memory", new MemorySaveStore()], ["postgres (pg-mem)", pg]];
+}
+
+describe("save stores", async () => {
+  for (const [name, store] of await stores()) {
+    it(`${name}: codes, nonces, apps and receipts`, async () => {
+      expect(await store.insertCode({ code: "AAAAAAA", address: "NQ1", savePercent: 30, createdAt: T, updatedAt: T, revokedAt: null })).toBe(true);
+      expect(await store.insertCode({ code: "AAAAAAA", address: "NQ2", savePercent: 10, createdAt: T, updatedAt: T, revokedAt: null })).toBe(false);
+      await store.updatePercent("AAAAAAA", 40, T + 1);
+      expect(await store.activeCodeByAddress("NQ1")).toMatchObject({ code: "AAAAAAA", savePercent: 40, updatedAt: T + 1 });
+      await store.revoke("AAAAAAA", T + 2);
+      expect(await store.activeCode("AAAAAAA")).toBeUndefined();
+      expect(await store.activeCodeByAddress("NQ1")).toBeUndefined();
+
+      expect(await store.useNonce("n1", T)).toBe(true);
+      expect(await store.useNonce("n1", T + 1)).toBe(false);
+      expect(await store.useNonce("n1", T + 86_400_001)).toBe(true); // forgotten after a day
+
+      await store.addApp({ id: "app1", name: "Arcade", keyHash: "h1", payoutAddresses: ["NQ9", "NQ8"], createdAt: T });
+      expect(await store.appByKeyHash("h1")).toMatchObject({ id: "app1", payoutAddresses: ["NQ9", "NQ8"] });
+      expect(await store.listApps()).toHaveLength(1);
+
+      const r = { txHash: "t1", code: "AAAAAAA", address: "NQ1", appId: "app1", kind: "grow" as const, luna: "600", payoutId: "p", blockNumber: 5, createdAt: T };
+      await store.addReceipt(r);
+      await store.addReceipt({ ...r, luna: "999" }); // replay is ignored
+      expect(await store.receiptsForAddress("NQ1", 10)).toEqual([r]);
+    });
+  }
+});

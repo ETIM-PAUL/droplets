@@ -9,6 +9,36 @@ export class ApiError extends UserFacingError {
   }
 }
 
+/** Errand Save: what the savings screen shows. Luna amounts are decimal strings. */
+export interface SaveMe {
+  network: "mainnet" | "testnet";
+  address: string;
+  /** e.g. SAVE-7KQ2XMP; null before the user sets a rule. */
+  code: string | null;
+  savePercent: number | null;
+  blockNumber: number;
+  grow: {
+    active: string;
+    inactive: string;
+    inactiveFrom: number | null;
+    retired: string;
+    delegation: string;
+    /** First block the inactive stake can be retired; null when nothing is on its way out. */
+    releaseBlock: number | null;
+    validatorJailed: boolean;
+  } | null;
+  /** Why Grow isn't open: no stake yet, or the validator it was delegated to is gone. */
+  growClosed: null | "no-stake" | "validator-gone";
+  receipts: { txHash: string; app: string; kind: "wallet" | "grow"; luna: string; at: number }[];
+}
+
+export interface SaveValidator {
+  address: string;
+  name: string | null;
+  stakeLuna: string;
+  numStakers: number;
+}
+
 export interface RailkitClientOptions {
   /** e.g. "/api" behind the Mini App's dev proxy, or the deployed API's URL. */
   baseUrl: string;
@@ -76,6 +106,12 @@ export function createRailkitClient(o: RailkitClientOptions) {
     topupStatus: (orderId: string) =>
       call<{ orderId: string; state: RampState; payoutAmount: string | null; transactionHash: string | null }>(`/v1/topup/orders/${encodeURIComponent(orderId)}`),
     corridors: async () => (await call<{ corridors: Corridor[] }>("/v1/corridors")).corridors,
+    /** Errand Save: the user's code, rule, Grow balance and payments in. `fresh` skips the server's one-minute stake cache. */
+    saveMe: (address: string, fresh = false) => call<SaveMe>(`/v1/save/me?address=${encodeURIComponent(address)}${fresh ? "&fresh=1" : ""}`),
+    /** Sets or revokes the rule: the message the user signed in Nimiq Pay, with the key and signature it returned. */
+    saveRule: (signed: { message: string; publicKey: string; signature: string }) =>
+      call<{ code: string; address: string; savePercent: number } | { revoked: true }>("/v1/save/rule", json(signed)),
+    saveValidators: async () => (await call<{ validators: SaveValidator[] }>("/v1/save/validators")).validators,
     banks: async () => (await call<{ banks: { name: string; code: string }[] }>("/v1/payouts/banks?country=NG")).banks,
     nameEnquiry: (accountNumber: string, bankCode: string) =>
       call<{ accountName: string }>(`/v1/payouts/name-enquiry?accountNumber=${encodeURIComponent(accountNumber)}&bankCode=${encodeURIComponent(bankCode)}`),

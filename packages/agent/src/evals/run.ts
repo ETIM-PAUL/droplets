@@ -32,7 +32,7 @@ export async function runEval(cases: EvalCase[], deps: { enabled: ReadonlySet<Co
   for (const c of cases) {
     const r = await understand({ text: c.text, draft: c.draft, expecting: c.expecting }, deps);
     const res: CaseResult = { text: c.text, tags: c.tags, hits: 0, expected: 0, wrong: [], missed: [] };
-    // Reading a send as a top-up, or a top-up as a send, is always wrong.
+    // Reading a send as a top-up or savings, or the other way round, is always wrong.
     const gotIntent = r.intent ?? "send";
     const wantIntent = c.intent ?? "send";
     if (gotIntent !== wantIntent) res.wrong.push(`intent: got ${gotIntent}, want ${wantIntent}`);
@@ -45,6 +45,17 @@ export async function runEval(cases: EvalCase[], deps: { enabled: ReadonlySet<Co
     }
     if (c.intent === "topup" && r.topup) {
       for (const [k, got] of Object.entries(r.topup)) if (!(k in (c.topup ?? {}))) res.wrong.push(`topup.${k}: should be empty, got ${JSON.stringify(got)}`);
+    }
+    // Savings: every field must match, and none may be filled that the case doesn't list (an amount Errand guessed is wrong).
+    for (const [k, want] of Object.entries(c.save ?? {})) {
+      res.expected++;
+      const got = (r.save as Record<string, unknown> | undefined)?.[k];
+      if (got === want) res.hits++;
+      else if (got === undefined) res.missed.push(`save.${k}`);
+      else res.wrong.push(`save.${k}: got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
+    }
+    if (c.intent === "save" && r.save) {
+      for (const [k, got] of Object.entries(r.save)) if (!(k in (c.save ?? {}))) res.wrong.push(`save.${k}: should be empty, got ${JSON.stringify(got)}`);
     }
     for (const [k, want] of Object.entries(c.expect)) {
       res.expected++;

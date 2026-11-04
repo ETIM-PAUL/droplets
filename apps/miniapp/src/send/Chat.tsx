@@ -1,4 +1,4 @@
-import type { Bank, Draft, Missing, TopupIntent } from "@railkit/agent";
+import type { Bank, Draft, Missing, SaveIntent, TopupIntent } from "@railkit/agent";
 import { CORRIDORS, validateRecipient, type Corridor, type PayoutRecipient } from "@railkit/core";
 import { useEffect, useRef, useState } from "react";
 import type { SavedRecipient } from "../storage";
@@ -12,6 +12,8 @@ interface Props {
   onReady: (start: SavedRecipient) => void;
   /** "buy 100 NIM": money coming in, so Add money takes over with the amount filled in. */
   onTopup: (prefill: TopupIntent) => void;
+  /** "put 500 NIM in Grow": the user's own savings, so Savings takes over on the screen for it. Absent while savings is off. */
+  onSave?: (intent: SaveIntent, notes: string[]) => void;
   onCancel: () => void;
   /** Fill it in step by step instead. */
   onManual: () => void;
@@ -28,7 +30,7 @@ interface Line {
  * checks a Nigerian account holder's name with the bank, then hands over to the confirm card.
  * Nothing here can send money; only the confirm card's Send button and Nimiq Pay's own dialog can.
  */
-export function Chat({ first, enabled, onReady, onTopup, onCancel, onManual }: Props) {
+export function Chat({ first, enabled, onReady, onTopup, onSave, onCancel, onManual }: Props) {
   const [lines, setLines] = useState<Line[]>([]);
   const [draft, setDraft] = useState<Draft>({});
   const [expecting, setExpecting] = useState<Missing | null>(null);
@@ -61,6 +63,12 @@ export function Chat({ first, enabled, onReady, onTopup, onCancel, onManual }: P
       const r = await api.understand(text, before, exp ?? undefined);
       if (r.intent === "topup") {
         onTopup(r.topup ?? {});
+        return;
+      }
+      if (r.intent === "save") {
+        if (onSave) return onSave(r.save ?? { action: "show" }, r.notes);
+        say({ from: "errand", text: "Savings isn't switched on in Errand yet." });
+        setBusy(false);
         return;
       }
       setDraft(r.draft);

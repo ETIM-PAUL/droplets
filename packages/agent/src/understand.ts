@@ -2,7 +2,7 @@ import type { CorridorId } from "@railkit/core";
 import { matchBank, suggestBanks } from "./banks";
 import { checkDraft, mergeDrafts, missingFields, questionFor, type Bank, type Draft, type Missing, type Understood } from "./intent";
 import { recheck, type Extractor, type ModelFields } from "./model";
-import { parseAnswer, parseSentence, parseTopup } from "./rules";
+import { parseAnswer, parseSave, parseSentence, parseTopup } from "./rules";
 
 export interface UnderstandInput {
   text: string;
@@ -38,8 +38,12 @@ const DROPPED: Record<keyof ModelFields, string> = {
  */
 export async function understand(input: UnderstandInput, deps: UnderstandDeps): Promise<Understood> {
   const text = input.text.trim().slice(0, 300);
-  // A fresh sentence asking to add money to the user's own wallet goes to Add money, not the payout questions.
   if (!input.expecting) {
+    // About the user's own savings: straight to Savings. Rules only; the model is never asked.
+    // Checked before top-ups, so "add 500 NIM to my savings" isn't read as buying NIM.
+    const save = parseSave(text);
+    if (save) return { intent: "save", save: save.save, draft: {}, missing: [], question: null, notes: save.notes, source: "rules" };
+    // A fresh sentence asking to add money to the user's own wallet goes to Add money, not the payout questions.
     const topup = parseTopup(text);
     if (topup) return { intent: "topup", topup, draft: {}, missing: [], question: null, notes: [], source: "rules" };
   }

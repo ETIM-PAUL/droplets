@@ -1,4 +1,5 @@
 import { init } from "@nimiq/mini-app-sdk";
+import type { SaveIntent } from "@railkit/agent";
 import type { SaveMe, SaveValidator } from "@railkit/client";
 import { checkWithdrawal, formatSaveMessage, lunaToNimString, MIN_STAKE_LUNA, nimStringToLuna, parseNimiqAddress, WalletError, type StakerState } from "@railkit/core";
 import { createNimiqSaver } from "@railkit/wallet-nimiq";
@@ -36,7 +37,15 @@ const errorText = (e: unknown) => {
   return e instanceof Error ? e.message : "Something went wrong. Try again.";
 };
 
-export function SaveHome({ address }: { address: string | null }) {
+interface Props {
+  address: string | null;
+  /** A request from the chat ("put 500 NIM in Grow"): opens the screen for it, filled in. Nothing happens until the user taps. */
+  start?: { intent: SaveIntent; notes: string[] } | null;
+  /** Called once the request has been opened, so it isn't opened twice. */
+  onStarted?: () => void;
+}
+
+export function SaveHome({ address, start, onStarted }: Props) {
   const [me, setMe] = useState<SaveMe | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("home");
@@ -90,6 +99,54 @@ export function SaveHome({ address }: { address: string | null }) {
     );
   }, [mode, validators]);
 
+  // The chat's request, once the savings are loaded. It only opens and fills in a screen.
+  useEffect(() => {
+    if (!start || !me) return;
+    onStarted?.();
+    const { intent, notes } = start;
+    setError(null);
+    setInfo(notes[0] ?? null);
+    setConfirmRevoke(false);
+    const g = me.grow;
+    switch (intent.action) {
+      case "rule":
+        if (intent.savePercent !== undefined) setPercent(intent.savePercent);
+        // Without a code yet, Home shows the next setup step with this share picked.
+        setMode(me.code ? "rule" : "home");
+        break;
+      case "add":
+        if (g) {
+          setAmount(intent.nim ?? "");
+          setMode("add");
+        } else {
+          const enough = intent.nim !== undefined && Number(intent.nim) >= 100;
+          setAmount(enough ? intent.nim! : "100");
+          setInfo("Grow isn't open yet, so this opens it. Grow starts with at least 100 NIM.");
+          setMode("open");
+        }
+        break;
+      case "withdraw":
+        if (g && BigInt(g.active) > 0n) {
+          setAmount(intent.all ? lunaToNimString(BigInt(g.active)) : intent.nim ?? "");
+          setMode("withdraw");
+        } else {
+          setMode("home");
+          setInfo("There's nothing in Grow to withdraw right now.");
+        }
+        break;
+      case "revoke":
+        setMode("home");
+        if (me.code) setConfirmRevoke(true);
+        else setInfo("You don't have a save code to turn off.");
+        break;
+      case "show":
+        setMode("home");
+        break;
+    }
+    // Only when a new request arrives or the savings first load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [start, me]);
+
   const go = (m: Mode) => {
     setError(null);
     setInfo(null);
@@ -130,7 +187,8 @@ export function SaveHome({ address }: { address: string | null }) {
       await saver.openGrow(validator, luna.value);
       setInfo("Grow is opening. It shows here within a minute.");
       setMode("home");
-      await waitFor((m) => m.grow !== null);
+      const open = await waitFor((m) => m.grow !== null);
+      if (open && !me?.code) setInfo("Grow is open. Now choose how much to save and get your save code.");
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -254,7 +312,7 @@ export function SaveHome({ address }: { address: string | null }) {
     <div className="field">
       <span className="field-label">How much of each payment to save</span>
       <div className="presets" role="group" aria-label="Share to save">
-        {PRESETS.map((p) => (
+        {(PRESETS.includes(percent) ? PRESETS : [...PRESETS, percent].sort((a, b) => a - b)).map((p) => (
           <button key={p} type="button" className="preset" aria-pressed={percent === p} onClick={() => setPercent(p)}>{p}%</button>
         ))}
       </div>
@@ -352,10 +410,27 @@ export function SaveHome({ address }: { address: string | null }) {
             <li><Icon name="clock" size={18} /> Taking money out takes 12 to 24 hours, so it's never one tap from being spent.</li>
           </ul>
         </section>
-        {picker}
-        {messages}
-        <button type="button" className="primary" disabled={busy || wrongNetwork} onClick={() => void saveRule(percent)}>{busy ? "Opening Nimiq Pay…" : "Get my save code"}</button>
-        <p className="note">Nimiq Pay asks you to sign your choice. Signing costs nothing.</p>
+        {g ? (
+          <>
+            <p className="note">Step 2 of 2. Grow is open with {nim(BigInt(g.active) + BigInt(g.inactive))}.</p>
+            {picker}
+            {messages}
+            <button type="button" className="primary" disabled={busy || wrongNetwork} onClick={() => void saveRule(percent)}>{busy ? "Opening Nimiq Pay…" : "Get my save code"}</button>
+            <p className="note">Nimiq Pay asks you to sign your choice. Signing costs nothing.</p>
+          </>
+        ) : (
+          <>
+            {messages}
+            {me.growClosed === "validator-gone" ? (
+              <p className="notice">The validator you staked with has closed. Move your stake to another validator in Nimiq Pay, then come back for your save code.</p>
+            ) : (
+              <>
+                <p className="hint">Step 1 of 2: open Grow by staking at least 100 NIM from your own account. Then you choose how much to save and get your code.</p>
+                <button type="button" className="primary" disabled={busy || wrongNetwork} onClick={() => go("open")}>Open Grow</button>
+              </>
+            )}
+          </>
+        )}
       </>
     );
   }
@@ -377,7 +452,7 @@ export function SaveHome({ address }: { address: string | null }) {
       <section className="card code-card" aria-label="Your save code">
         <span className="hint">Your save code</span>
         <p className="save-code">{me.code}</p>
-        <p className="hint">Apps pay {me.savePercent}% of what they send you into Grow{g ? "" : " once it's open"}. Give this code wherever an app asks for your address.</p>
+        <p className="hint">Apps pay {me.savePercent}% of what they send you into Grow. Give this code wherever an app asks for your address.</p>
         {showQr && (
           <div className="qr-wrap">
             <QrCode text={me.code} label={`QR code for ${me.code}`} />
@@ -393,8 +468,8 @@ export function SaveHome({ address }: { address: string | null }) {
 
       {!g && me.growClosed === "no-stake" && (
         <section className="card">
-          <strong>Open Grow to start saving</strong>
-          <p className="hint">Until then, apps pay your whole amount to your wallet. Grow needs at least 100 NIM to open.</p>
+          <strong>Your Grow savings are closed</strong>
+          <p className="hint">Until you open Grow again, apps that pay your code send the whole amount to your wallet. Grow needs at least 100 NIM.</p>
           <button type="button" className="primary" disabled={wrongNetwork} onClick={() => go("open")}>Open Grow</button>
         </section>
       )}

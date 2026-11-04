@@ -1,6 +1,6 @@
 import { CORRIDORS, type CorridorId } from "@railkit/core";
 import { matchBank } from "./banks";
-import type { Bank, Draft, Missing, TopupIntent } from "./intent";
+import type { Bank, Draft, Missing, SaveIntent, TopupIntent } from "./intent";
 
 /** Words for money, rewritten to ISO codes before anything else reads the sentence. */
 const CURRENCY_WORDS: [RegExp, string][] = [
@@ -213,4 +213,69 @@ export function parseTopup(input: string): TopupIntent | null {
   const unit = (m[1] ?? m[5] ?? (/\bnim\b/i.test(text) && !/\b(KES|NGN|GHS|ZAR)\b/.test(text) ? "NIM" : ""))?.toUpperCase();
   if (unit === "NIM") return { nim: amount };
   return unit ? { amount, currency: unit } : { amount };
+}
+
+// ---- Errand Save: the user's own savings. Narrow on purpose, like top-ups: anything about another person,
+// a phone or account number, a bank or a fiat amount is a send, never savings.
+
+const SAVE_NOUN = /\b(savings?|grow|save\s?code|saved|saving)\b/i;
+const SAVE_VERB = /\bsave\b/i;
+const NOT_SAVE = /(₦|\b(naira|ngn|kes|ksh|shillings?|bob|ghs|cedis?|zar|rands?|m-?pesa|airtel|mtn|momo|airtime|data|bank|lightning|invoice)\b)/i;
+/** "the savings", "my Grow": nouns that look like a name after "to" but aren't one. */
+const SAVE_PLACES = /\b(to|for|into|in|from|out\s+of)\s+(my\s+|the\s+)?(grow|savings?|save\s?code|nim|nimiq|errand)\b/gi;
+const SAVE_REVOKE = /\b(turn\s+off|switch\s+off|stop|disable|cancel|delete|revoke)\b[^.!?]*\b(save\s?code|savings?|saving)\b|\bstop\s+saving\b/i;
+const SAVE_PERCENT = /(\d{1,3}(?:\.\d+)?)\s*(?:%|per\s?cent\b)/i;
+const SAVE_WITHDRAW = /\b(withdraw|unstake|cash\s?out|(?:take|pull|get)\s+(?:[\w,.]+\s+){0,5}?(?:out|back))\b/i;
+const SAVE_ADD = /\b(put|add|move|send|transfer|deposit|stake|top\s?up|save)\b/i;
+const SAVE_AMOUNT = /(\d{1,3}(?:,\d{3})+|\d+)(\.\d{1,5})?\s*(k|thousand)?\b/gi;
+
+/**
+ * Spots a request about the user's own savings: set the share ("save 30%"), add ("put 500 NIM in Grow"),
+ * withdraw ("take 200 NIM out of savings"), turn the code off, or just look ("how much have I saved?").
+ * Amounts are NIM, since savings are NIM. "buy 100 NIM to save" stays a top-up: buying comes first.
+ */
+export function parseSave(input: string): { save: SaveIntent; notes: string[] } | null {
+  const text = ` ${input.normalize("NFKC").slice(0, 300)} `;
+  const noun = SAVE_NOUN.test(text);
+  if (!noun && !SAVE_VERB.test(text)) return null;
+  if (NOT_SAVE.test(text) || /\+?\d(?:[ -]?\d){8,14}/.test(text)) return null;
+  // Buying NIM is a top-up, even when it's for savings: Add money first, then savings.
+  if (/\bbuy\b/i.test(text)) return null;
+  const others = text.replace(SAVE_PLACES, " ");
+  if (/\b(for|to)\s+[A-Z][a-z]/.test(others) || new RegExp(`\\b(for|to)\\s+my\\s+(${RELATIONS})\\b`, "i").test(text)) return null;
+
+  const notes: string[] = [];
+  if (SAVE_REVOKE.test(text)) return { save: { action: "revoke" }, notes };
+
+  const pct = SAVE_PERCENT.exec(text);
+  if (pct) {
+    const n = Number(pct[1]);
+    if (Number.isInteger(n) && n <= 100) return { save: { action: "rule", savePercent: n }, notes };
+    notes.push("The share to save is a whole percent from 0 to 100, so Errand will ask.");
+    return { save: { action: "rule" }, notes };
+  }
+
+  const seen = new Set<string>();
+  for (const m of text.matchAll(SAVE_AMOUNT)) {
+    let whole = m[1]!.replace(/,/g, "");
+    let frac = m[2] ?? "";
+    if (m[3]) {
+      whole = (BigInt(whole) * 1000n + (frac ? BigInt(frac.slice(1).padEnd(3, "0").slice(0, 3)) : 0n)).toString();
+      frac = "";
+    }
+    seen.add(whole.replace(/^0+(?=\d)/, "") + frac);
+  }
+  if (seen.size > 1) notes.push("Your message has more than one amount, so Errand will ask which one.");
+  const nim = seen.size === 1 ? [...seen][0] : undefined;
+  const amount = nim && nim.replace(/\..*/, "").length <= 12 ? { nim } : {};
+
+  // "save code" is a thing, not the verb "save".
+  const verbs = text.replace(/\bsave\s?code\b/gi, " ");
+  if (SAVE_WITHDRAW.test(verbs)) {
+    const all = !nim && /\b(all|everything|whole)\b/i.test(text);
+    return { save: { action: "withdraw", ...amount, ...(all ? { all: true } : {}) }, notes };
+  }
+  if (SAVE_ADD.test(verbs) && (noun || nim)) return { save: { action: "add", ...amount }, notes };
+  if (noun) return { save: { action: "show" }, notes };
+  return null;
 }

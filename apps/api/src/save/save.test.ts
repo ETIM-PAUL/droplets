@@ -50,6 +50,10 @@ function fakeChain() {
 function setup(over: { store?: SaveStore; recommended?: { address: string; name: string }[] } = {}) {
   const f = fakeChain();
   const store = over.store ?? new MemorySaveStore();
+  const clock = { t: T };
+  /** Opens Grow for an address: 500 NIM staked with VALIDATOR unless told otherwise. */
+  const stake = (address: string, s: Partial<StakerState> = {}) =>
+    f.stakers.set(address, { active: NIM(500), inactive: 0n, inactiveFrom: null, retired: 0n, delegation: VALIDATOR, ...s });
   const deps: AppDeps = {
     mavapay: { quote: async () => { throw new Error("unused"); }, getOrder: async () => { throw new Error("unused"); }, banks: async () => [], nameEnquiry: async () => ({ accountName: "" }) },
     corridors: new Set(),
@@ -57,9 +61,9 @@ function setup(over: { store?: SaveStore; recommended?: { address: string; name:
     adminToken: "admin-secret",
     save: { store, chain: f.chain, network: "mainnet", recommended: over.recommended },
     log: () => undefined,
-    now: () => T,
+    now: () => clock.t,
   };
-  return { app: createApp(deps), ...f, store };
+  return { app: createApp(deps), ...f, store, clock, stake };
 }
 
 const post = (body: unknown, headers: Record<string, string> = {}) => ({ method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
@@ -78,8 +82,9 @@ async function withApp(app: ReturnType<typeof setup>["app"]) {
 
 describe("setting the rule", () => {
   it("creates a code from a rule signed in Nimiq Pay, and keeps the same code when the rule changes", async () => {
-    const { app } = setup();
+    const { app, stake } = setup();
     const amaka = account();
+    stake(amaka.address);
     const r = await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address))));
     expect(r.status).toBe(200);
     const first = await json(r);
@@ -89,10 +94,26 @@ describe("setting the rule", () => {
     expect(again).toEqual({ code: first.code, address: amaka.address, savePercent: 50 });
   });
 
+  it("won't give out a code before Grow is open, but an existing code keeps working if Grow closes later", async () => {
+    const { app, stake, stakers } = setup();
+    const amaka = account();
+    const refused = await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address))));
+    expect(refused.status).toBe(403);
+    expect(await errorOf(refused)).toMatch(/Open Grow first/);
+    // A stake that's all on its way out doesn't count as open either.
+    stake(amaka.address, { active: 0n, retired: NIM(500) });
+    expect((await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address))))).status).toBe(403);
+    stake(amaka.address);
+    const { code } = await json(await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address)))));
+    stakers.delete(amaka.address);
+    expect(await json(await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address, { savePercent: 10 })))))).toEqual({ code, address: amaka.address, savePercent: 10 });
+  });
+
   it("refuses a forged, foreign, stale, replayed or malformed request", async () => {
-    const { app } = setup();
+    const { app, stake } = setup();
     const amaka = account();
     const mallory = account();
+    stake(amaka.address);
     const m = rule(amaka.address);
     const good = signed(amaka, m);
     expect((await app.request("/v1/save/rule", post({ ...good, signature: mallory.sign(good.message) }))).status).toBe(403);
@@ -108,9 +129,10 @@ describe("setting the rule", () => {
   });
 
   it("revokes the code, after which apps can't use it", async () => {
-    const { app } = setup();
+    const { app, stake } = setup();
     const headers = await withApp(app);
     const amaka = account();
+    stake(amaka.address);
     const { code } = await json(await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address)))));
     expect(await json(await app.request("/v1/save/rule", post(signed(amaka, { ...rule(amaka.address), action: "revoke", savePercent: undefined }))))).toEqual({ revoked: true });
     expect((await app.request(`/v1/save/split?code=${code as string}&luna=100000`, { headers })).status).toBe(404);
@@ -127,21 +149,24 @@ describe("splitting a payout (for apps)", () => {
 
   it("splits into wallet and Grow when the user stakes, and falls back to the wallet when Grow can't take it", async () => {
     const amaka = account();
-    // Each case gets its own app, because stake lookups are cached for a minute.
-    async function splitWith(prepare: (f: ReturnType<typeof setup>) => void, luna: bigint) {
+    /** Gets a code with Grow open, changes the chain, then asks for the split. */
+    async function splitWith(change: (f: ReturnType<typeof setup>) => void, luna: bigint) {
       const f = setup();
-      prepare(f);
+      f.stake(amaka.address);
       const headers = await withApp(f.app);
       const { code } = await json(await f.app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address)))));
+      change(f);
+      // Past the stake and validator caches (1 and 10 minutes).
+      f.clock.t += 11 * 60_000;
       return json(await f.app.request(`/v1/save/split?code=${code as string}&luna=${luna}`, { headers }));
     }
-    const staked = (f: ReturnType<typeof setup>) => f.stakers.set(amaka.address, { active: NIM(500), inactive: 0n, inactiveFrom: null, retired: 0n, delegation: VALIDATOR });
 
-    expect(await splitWith(staked, NIM(2000))).toMatchObject({
+    expect(await splitWith(() => undefined, NIM(2000))).toMatchObject({
       address: amaka.address, savePercent: 30, wallet: { luna: NIM(1400).toString() }, grow: { luna: NIM(600).toString(), staker: amaka.address }, reason: null,
     });
-    expect(await splitWith(() => undefined, NIM(2000))).toMatchObject({ wallet: { luna: NIM(2000).toString() }, grow: null, reason: "no-stake" });
-    expect(await splitWith((f) => (staked(f), f.validators.clear()), NIM(2000))).toMatchObject({ grow: null, reason: "validator-gone" });
+    expect(await splitWith((f) => f.stakers.delete(amaka.address), NIM(2000))).toMatchObject({ wallet: { luna: NIM(2000).toString() }, grow: null, reason: "no-stake" });
+    expect(await splitWith((f) => f.validators.clear(), NIM(2000))).toMatchObject({ grow: null, reason: "validator-gone" });
+    expect(await splitWith((f) => f.stake(amaka.address, { active: 0n, retired: NIM(500) }), NIM(10))).toMatchObject({ grow: null, reason: "below-minimum" });
   });
 
   it("refuses bad input", async () => {
@@ -155,9 +180,10 @@ describe("splitting a payout (for apps)", () => {
 
 describe("receipts (for apps)", () => {
   it("records transactions that check out on-chain, and says pending for ones not in a block yet", async () => {
-    const { app, txs } = setup();
+    const { app, txs, stake } = setup();
     const headers = await withApp(app);
     const amaka = account();
+    stake(amaka.address);
     const { code } = await json(await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address)))));
     const stakerHex = Buffer.from(nimiqAddressBytes(amaka.address)).toString("hex");
     const tx = (hash: string, over: Partial<NimiqTransaction>): NimiqTransaction => ({
@@ -178,9 +204,10 @@ describe("receipts (for apps)", () => {
   });
 
   it("refuses transactions from elsewhere, to the wrong place, or that failed", async () => {
-    const { app, txs } = setup();
+    const { app, txs, stake } = setup();
     const headers = await withApp(app);
     const amaka = account();
+    stake(amaka.address);
     const other = account();
     const { code } = await json(await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address)))));
     const otherHex = Buffer.from(nimiqAddressBytes(other.address)).toString("hex");
@@ -200,10 +227,11 @@ describe("receipts (for apps)", () => {
 
 describe("the savings screen", () => {
   it("shows the code, Grow from the chain, and when inactive stake is released", async () => {
-    const { app, stakers } = setup();
+    const { app, stake } = setup();
     const amaka = account();
+    stake(amaka.address);
     const { code } = await json(await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address)))));
-    stakers.set(amaka.address, { active: NIM(300), inactive: NIM(200), inactiveFrom: 65_966_400, retired: 0n, delegation: VALIDATOR });
+    stake(amaka.address, { active: NIM(300), inactive: NIM(200), inactiveFrom: 65_966_400 });
     const me = await json(await app.request(`/v1/save/me?address=${encodeURIComponent(amaka.address)}&fresh=1`));
     expect(me).toMatchObject({
       network: "mainnet", code, savePercent: 30, blockNumber: 65_966_500, growClosed: null,

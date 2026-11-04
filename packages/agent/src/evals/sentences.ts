@@ -1,4 +1,4 @@
-import type { Draft } from "../intent";
+import type { Draft, SaveIntent } from "../intent";
 
 /**
  * The eval set: what people actually type into Errand, with what it must understand.
@@ -8,10 +8,11 @@ import type { Draft } from "../intent";
  */
 export interface EvalCase {
   text: string;
-  /** "topup" when the sentence asks to add money to the user's own wallet. Absent means a send. */
-  intent?: "topup";
+  /** "topup" adds money to the user's own wallet; "save" is about their own savings. Absent means a send. */
+  intent?: "topup" | "save";
   topup?: { amount?: string; currency?: string; nim?: string };
-  tags: ("ke" | "ng" | "slang" | "typo" | "partial" | "trap" | "follow-up" | "topup")[];
+  save?: SaveIntent;
+  tags: ("ke" | "ng" | "slang" | "typo" | "partial" | "trap" | "follow-up" | "topup" | "save")[];
   expect: Partial<Record<"corridor" | "amount" | "phone" | "accountNumber" | "bank" | "name", string>>;
   never?: (keyof Draft)[];
   /** For follow-ups: the draft before this message and the question it answers. */
@@ -104,4 +105,27 @@ export const EVAL_CASES: EvalCase[] = [
   { text: "buy airtime for 1000 naira", tags: ["trap"], expect: {} },
   { text: "send 5000 naira to my brother's account", tags: ["trap", "ng"], expect: { corridor: "ng-bank", amount: "5000" } },
   { text: "top up Grace with 2000 KES on mpesa", tags: ["trap", "ke"], expect: { corridor: "ke-mpesa", amount: "2000", name: "Grace" } },
+
+  // The user's own savings (goes to Savings, never to a payout or a top-up)
+  { text: "Save 30% of what apps pay me", tags: ["save"], intent: "save", save: { action: "rule", savePercent: 30 }, expect: {} },
+  { text: "set my savings to 50 percent", tags: ["save"], intent: "save", save: { action: "rule", savePercent: 50 }, expect: {} },
+  { text: "save 10 per cent", tags: ["save"], intent: "save", save: { action: "rule", savePercent: 10 }, expect: {} },
+  { text: "save 150% of everything", tags: ["save", "trap"], intent: "save", save: { action: "rule" }, expect: {} },
+  { text: "Put 500 NIM in Grow", tags: ["save"], intent: "save", save: { action: "add", nim: "500" }, expect: {} },
+  { text: "add 1,200 NIM to my savings", tags: ["save"], intent: "save", save: { action: "add", nim: "1200" }, expect: {} },
+  { text: "save 2.5k NIM", tags: ["save", "slang"], intent: "save", save: { action: "add", nim: "2500" }, expect: {} },
+  { text: "top up my savings with 300 NIM", tags: ["save"], intent: "save", save: { action: "add", nim: "300" }, expect: {} },
+  { text: "send 50 NIM to my savings", tags: ["save"], intent: "save", save: { action: "add", nim: "50" }, expect: {} },
+  { text: "Take 200 NIM out of savings", tags: ["save"], intent: "save", save: { action: "withdraw", nim: "200" }, expect: {} },
+  { text: "withdraw all my savings", tags: ["save"], intent: "save", save: { action: "withdraw", all: true }, expect: {} },
+  { text: "take 100 NIM out of Grow and 50 more", tags: ["save", "trap"], intent: "save", save: { action: "withdraw" }, expect: {} },
+  { text: "turn off my save code", tags: ["save"], intent: "save", save: { action: "revoke" }, expect: {} },
+  { text: "stop saving", tags: ["save"], intent: "save", save: { action: "revoke" }, expect: {} },
+  { text: "how much have I saved?", tags: ["save"], intent: "save", save: { action: "show" }, expect: {} },
+  { text: "what's my save code", tags: ["save"], intent: "save", save: { action: "show" }, expect: {} },
+  // ...and sends and top-ups that mention saving must stay what they are
+  { text: "send 5000 naira to my savings account 0123456789 gtbank", tags: ["trap", "ng"], expect: { corridor: "ng-bank", amount: "5000", accountNumber: "0123456789" } },
+  { text: "send 2000 KES to Grace's savings on mpesa", tags: ["trap", "ke"], expect: { corridor: "ke-mpesa", amount: "2000" } },
+  { text: "save 500 NIM for my son", tags: ["trap"], expect: {} },
+  { text: "buy 100 NIM for my savings", tags: ["trap", "topup"], intent: "topup", topup: { nim: "100" }, expect: {} },
 ];

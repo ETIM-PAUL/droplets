@@ -210,3 +210,25 @@ describe("understand", () => {
     expect(r.notes[0]).toMatch(/smallest/);
   });
 });
+
+describe("savings sentences", () => {
+  it("never ask the model, even when one is set up", async () => {
+    const model = vi.fn().mockResolvedValue({ ...nulls, amount: "999999" });
+    for (const text of ["Put 500 NIM in Grow", "save 30%", "Take 200 NIM out of savings", "how much have I saved?"]) {
+      const r = await understand({ text }, { ...deps, model });
+      expect(r.intent, text).toBe("save");
+      expect(r.source).toBe("rules");
+    }
+    expect(model).not.toHaveBeenCalled();
+  });
+
+  it("say why they'll ask instead of guessing", async () => {
+    expect((await understand({ text: "save 150% of everything" }, deps)).notes).toEqual(["The share to save is a whole percent from 0 to 100, so Errand will ask."]);
+    expect((await understand({ text: "put 100 NIM in Grow and 50 later" }, deps)).notes[0]).toMatch(/more than one amount/);
+  });
+
+  it("only count as savings when Errand isn't in the middle of another question", async () => {
+    const r = await understand({ text: "save it", expecting: "name", draft: { corridor: "ke-mpesa", amount: "500", phone: "+254712345678" } }, deps);
+    expect(r.intent).toBeUndefined();
+  });
+});

@@ -1,4 +1,4 @@
-import type { TopupIntent } from "@railkit/agent";
+import type { SaveIntent, TopupIntent } from "@railkit/agent";
 import { CORRIDORS, destinationLabel, type Corridor, type Order } from "@railkit/core";
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -113,6 +113,8 @@ function App() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sentence, setSentence] = useState("");
+  // A savings request from the chat ("put 500 NIM in Grow"): the Savings tab opens the screen for it.
+  const [saveStart, setSaveStart] = useState<{ intent: SaveIntent; notes: string[] } | null>(null);
   // null while we ask the server whether the beta needs an invite.
   const [signedIn, setSignedIn] = useState<boolean | null>(() => (sessionToken.get() !== null ? true : null));
 
@@ -191,6 +193,11 @@ function App() {
         enabled={corridors}
         onReady={(start) => setView({ name: "send", start, autoQuote: true })}
         onTopup={(prefill) => setView({ name: "topup", prefill })}
+        onSave={SAVE ? (intent, notes) => {
+          setSaveStart({ intent, notes });
+          setTab("savings");
+          setView({ name: "tabs" });
+        } : undefined}
         onCancel={home}
         onManual={() => setView({ name: "send" })}
       />
@@ -259,7 +266,7 @@ function App() {
           <section className="ask-card" aria-label="Ask Errand">
             <ChatInput
               label="Ask Errand"
-              placeholder="Ask Errand to send or add money…"
+              placeholder={SAVE ? "Ask Errand to send, save or add money…" : "Ask Errand to send or add money…"}
               value={sentence}
               onChange={setSentence}
               disabled={!corridors}
@@ -269,7 +276,12 @@ function App() {
               }}
             />
             <div className="suggestions">
-              {(corridors?.some((c) => c.id === "ng-bank") ? ["Send ₦5,000 to 0123456789 GTBank", "Buy 100 NIM", "Add ₦10,000 to my wallet"] : ["Send 2,500 KES to Mary on M-Pesa", "Buy 100 NIM"]).map((t) => (
+              {[
+                ...(corridors?.some((c) => c.id === "ng-bank") ? ["Send ₦5,000 to 0123456789 GTBank"] : ["Send 2,500 KES to Mary on M-Pesa"]),
+                ...(SAVE ? ["Save 30% of what apps pay me", "Put 500 NIM in Grow"] : []),
+                "Buy 100 NIM",
+                ...(!SAVE && corridors?.some((c) => c.id === "ng-bank") ? ["Add ₦10,000 to my wallet"] : []),
+              ].map((t) => (
                 <button key={t} type="button" className="suggestion" onClick={() => setSentence(t)}>{t}</button>
               ))}
             </div>
@@ -311,7 +323,7 @@ function App() {
         </>
       )}
 
-      {tab === "savings" && SAVE && <SaveHome address={host?.status === "ready" ? host.address : null} />}
+      {tab === "savings" && SAVE && <SaveHome address={host?.status === "ready" ? host.address : null} start={saveStart} onStarted={() => setSaveStart(null)} />}
 
       {tab === "activity" && (
         <>

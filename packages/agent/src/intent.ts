@@ -42,10 +42,25 @@ export interface TopupIntent {
   nim?: string;
 }
 
+/**
+ * "save 30% of what apps pay me", "put 500 NIM in Grow": the user's own savings (Errand Save).
+ * Only ever read by the rules, never the model: it acts on the user's own money, so it comes from their words alone.
+ */
+export interface SaveIntent {
+  action: "rule" | "add" | "withdraw" | "revoke" | "show";
+  /** Whole percent of each payment to save, for "rule". */
+  savePercent?: number;
+  /** NIM as typed, e.g. "500" or "2.5", for "add" and "withdraw". */
+  nim?: string;
+  /** "withdraw all my savings". */
+  all?: boolean;
+}
+
 export interface Understood {
-  /** "send" (the default) asks questions until a payout can be quoted; "topup" hands over to Add money. */
-  intent?: "send" | "topup";
+  /** "send" (the default) asks questions until a payout can be quoted; "topup" hands over to Add money; "save" to Savings. */
+  intent?: "send" | "topup" | "save";
   topup?: TopupIntent;
+  save?: SaveIntent;
   draft: Draft;
   missing: Missing[];
   /** The next thing to ask, or null when the draft is ready for a quote. */

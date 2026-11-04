@@ -311,7 +311,7 @@ button { cursor: pointer; }
 
 /* Errand Save */
 .field-label { font-size: 14px; font-weight: 500; color: var(--ink-soft); }
-.presets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.presets { display: grid; grid-template-columns: repeat(auto-fit, minmax(56px, 1fr)); gap: 8px; }
 .preset { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px 0; font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .preset[aria-pressed="true"] { background: var(--slot); border-color: var(--slot); color: var(--slot-ink); }
 .save-intro h2 { margin: 0; font-size: 18px; }

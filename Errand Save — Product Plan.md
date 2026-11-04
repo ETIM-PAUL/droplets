@@ -39,7 +39,7 @@ Every payment, whether NIM from an app or sats from Lightning, is split by the s
 1. **Savings part:** `floor(amount × savePercent / 100)` in luna. The wallet gets the rest.
 2. **Within the savings part:** the Steady share goes to Steady and the rest to Grow.
 3. **Fallbacks, applied in order:**
-   - If **Grow isn't open** (no stake, or the user's validator was deleted), the Grow part goes to Steady if the user uses Steady, otherwise to the wallet.
+   - If **Grow isn't open** (no stake, or the user's validator was deleted), the Grow part goes to Steady if the user uses Steady, otherwise to the wallet. Codes are only given out once Grow is open, so this only happens if Grow closes later.
    - If **Steady is full** (Boost can't cover more, see below), the Steady part goes to Grow if it's open, otherwise to the wallet.
    - If a part comes out at 0, it isn't sent.
 
@@ -185,8 +185,8 @@ It then reports the receipts. Retrying with the same `payoutId` reuses the trans
   - the code and Lightning address card;
   - "Change rule".
 - **Set up:**
-  1. Choose how much to save and where (Grow, Steady or a mix), with an example.
-  2. Open Grow if needed.
+  1. Open Grow with at least 100 NIM, unless the user already stakes. No code is given out before Grow is open.
+  2. Choose how much to save and where (Grow, Steady or a mix), with an example.
   3. Sign.
   4. Get the code and Lightning address.
 - **Share:** the code, the Lightning address, a QR code for each, and copy and share buttons.

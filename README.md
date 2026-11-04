@@ -33,6 +33,7 @@ CI blocks GPL, AGPL and LGPL production dependencies. Every PR gets a preview de
 Plain rules read most sentences for free. Only when they leave a gap is the model (`OPENAI_API_KEY`, `OPENAI_MODEL`) asked, at most `AGENT_MODEL_CALLS_PER_DAY` times a day.
 Every value the model returns must appear in the user's own words, or it is dropped and the user is asked.
 The model never sees keys or balances, and its output can't send anything: only the confirm card's Send button and Nimiq Pay's own dialog can.
+Savings sentences ("save 30% of what apps pay me", "put 500 NIM in Grow", "take 200 NIM out of savings") are read by the rules alone, never the model, and only open the Savings screen with the values filled in.
 
 ## Evals and the signing guard
 

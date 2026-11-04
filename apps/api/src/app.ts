@@ -247,7 +247,7 @@ export function createApp(d: AppDeps) {
     const enabled = new Set([...d.corridors].filter(isCorridorId));
     const r = await understand({ text, draft, expecting }, { enabled, banks, model: d.agent?.model, allowModel, log });
     // The message itself is not logged: it holds names and numbers.
-    log("agent turn", { source: r.source, missing: r.missing, invite: c.get("invite") });
+    log("agent turn", { intent: r.intent ?? "send", source: r.source, missing: r.missing, invite: c.get("invite") });
     return c.json(r);
   });
 

@@ -31,15 +31,23 @@ export interface NimiqTransaction {
   value: bigint;
   /** Hex. An add-stake starts with 06 followed by the staker's 20 address bytes. */
   recipientData: string;
+  /** Hex. A stake leaving the staking contract (remove-stake) starts with 01. */
+  senderData: string;
   executionResult: boolean;
   confirmations: number;
+  /** Block time, ms since 1970. */
+  timestamp: number;
 }
 
 interface RawStaker { balance: number; inactiveBalance: number; inactiveFrom: number | null; retiredBalance: number; delegation: string }
 interface RawValidator { address: string; balance: number; numStakers: number; jailedFrom: number | null; retired: boolean }
-interface RawTx { hash: string; blockNumber: number; from: string; to: string; value: number; recipientData: string | null; executionResult: boolean; confirmations: number }
+interface RawTx { hash: string; blockNumber: number; from: string; to: string; value: number; recipientData: string | null; senderData: string | null; executionResult: boolean; confirmations: number; timestamp: number }
 
 const toBig = (n: number | string) => BigInt(n);
+const toTx = (t: RawTx): NimiqTransaction => ({
+  hash: t.hash, blockNumber: t.blockNumber, from: t.from, to: t.to, value: toBig(t.value), recipientData: t.recipientData ?? "",
+  senderData: t.senderData ?? "", executionResult: t.executionResult, confirmations: t.confirmations, timestamp: t.timestamp ?? 0,
+});
 
 /** The few calls Errand Save needs from a Nimiq PoS node. Read-only, plus sending transactions that are already signed. */
 export function createNimiqRpc(o: NimiqRpcOptions) {
@@ -94,13 +102,13 @@ export function createNimiqRpc(o: NimiqRpcOptions) {
 
     async transaction(hash: string): Promise<NimiqTransaction | null> {
       const t = await orNull(call<RawTx>("getTransactionByHash", [hash]), /^Transaction not found/i);
-      return t && { hash: t.hash, blockNumber: t.blockNumber, from: t.from, to: t.to, value: toBig(t.value), recipientData: t.recipientData ?? "", executionResult: t.executionResult, confirmations: t.confirmations };
+      return t && toTx(t);
     },
 
     /** The latest transactions to or from an address, newest first. */
     async transactionsByAddress(address: string, max = 100): Promise<NimiqTransaction[]> {
       const list = await call<RawTx[]>("getTransactionsByAddress", [address, max, null]);
-      return list.map((t) => ({ hash: t.hash, blockNumber: t.blockNumber, from: t.from, to: t.to, value: toBig(t.value), recipientData: t.recipientData ?? "", executionResult: t.executionResult, confirmations: t.confirmations }));
+      return list.map(toTx);
     },
 
     /** Luna held by a basic account; 0 for an address that has never received anything. */

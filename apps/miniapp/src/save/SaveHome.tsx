@@ -3,14 +3,16 @@ import type { SaveIntent } from "@railkit/agent";
 import type { SaveMe, SaveValidator } from "@railkit/client";
 import { checkWithdrawal, formatSaveMessage, lunaToNimString, MIN_STAKE_LUNA, nimStringToLuna, parseNimiqAddress, WalletError, type StakerState } from "@railkit/core";
 import { createNimiqSaver } from "@railkit/wallet-nimiq";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { formatMoney } from "../format";
-import { api, hostNetwork } from "../send/engine";
+import { api, hostNetwork } from "../api";
 import { AppBar, Icon, QrCode } from "../ui";
 
 type Mode = "home" | "rule" | "open" | "add" | "withdraw";
 
 const PRESETS = [10, 30, 50, 100];
+/** Payments in shown on Savings; Activity has the rest. */
+const PAID_IN_SHOWN = 4;
 const nim = (luna: string | bigint) => formatMoney(lunaToNimString(BigInt(luna)), "NIM");
 const shortAddress = (a: string) => `${a.slice(0, 4)} … ${a.slice(-4)}`;
 const newNonce = () => Array.from(globalThis.crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
@@ -43,9 +45,15 @@ interface Props {
   start?: { intent: SaveIntent; notes: string[] } | null;
   /** Called once the request has been opened, so it isn't opened twice. */
   onStarted?: () => void;
+  /** The page heading (and the Grow / Steady and Boost switch), on this part's main screens only. */
+  head?: ReactNode;
+  /** Ask Errand, on the main screen. */
+  ask?: ReactNode;
+  /** Opens Activity, for every payment in. */
+  onSeeAll?: () => void;
 }
 
-export function SaveHome({ address, start, onStarted }: Props) {
+export function SaveHome({ address, start, onStarted, head = <header className="home-head"><h1>Savings</h1></header>, ask, onSeeAll }: Props) {
   const [me, setMe] = useState<SaveMe | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("home");
@@ -284,11 +292,11 @@ export function SaveHome({ address, start, onStarted }: Props) {
 
   // ---- Screens.
 
-  if (!self?.ok) return <p className="hint">Connecting to Nimiq Pay…</p>;
+  if (!self?.ok) return <>{head}<p className="hint">Connecting to Nimiq Pay…</p></>;
   if (!me) {
     return (
       <>
-        <header className="home-head"><h1>Savings</h1></header>
+        {head}
         {loadError ? (
           <>
             <p className="alert" role="alert">{loadError}</p>
@@ -400,13 +408,13 @@ export function SaveHome({ address, start, onStarted }: Props) {
   if (me.code === null) {
     return (
       <>
-        <header className="home-head"><h1>Savings</h1></header>
+        {head}
         <section className="card save-intro">
           <h2>Save a share of every payment</h2>
           <p>Games, bounties and shops that pay you NIM can put part of it straight into your savings. You choose how much.</p>
           <ul className="save-points">
             <li><Icon name="check" size={18} /> Your savings stay in your own Nimiq account, staked so they earn rewards.</li>
-            <li><Icon name="check" size={18} /> Apps pay you directly. Errand never holds your money.</li>
+            <li><Icon name="check" size={18} /> Apps pay you directly, so Errand never holds your Grow savings.</li>
             <li><Icon name="clock" size={18} /> Taking money out takes 12 to 24 hours, so it's never one tap from being spent.</li>
           </ul>
         </section>
@@ -431,19 +439,20 @@ export function SaveHome({ address, start, onStarted }: Props) {
             )}
           </>
         )}
+        {ask}
       </>
     );
   }
 
   return (
     <>
-      <header className="home-head"><h1>Savings</h1></header>
+      {head}
 
       <section className="balance-card" aria-label="Your Grow savings">
         <span className="label"><Icon name="jar" size={18} /> Grow savings</span>
         <p className="balance-amount">{formatMoney(lunaToNimString(total), "NIM").replace(/ NIM$/, "")}<small>NIM</small></p>
         <p className="sub">
-          {g ? (g.validatorJailed ? "Your validator is paused, so rewards and withdrawals wait" : "Staked from your own account, earning rewards") : me.growClosed === "validator-gone" ? "Your validator has closed. Move your stake in Nimiq Pay." : "Not open yet"}
+          {g ? (g.validatorJailed ? "Your validator is paused, so rewards and withdrawals wait" : "Staked from your own account and earning rewards. Only you can move it.") : me.growClosed === "validator-gone" ? "Your validator has closed. Move your stake in Nimiq Pay." : "Not open yet"}
         </p>
       </section>
 
@@ -491,13 +500,18 @@ export function SaveHome({ address, start, onStarted }: Props) {
         </section>
       )}
 
+      {ask}
+
       <section className="section">
-        <h2 className="section-title">Paid in with your code</h2>
+        <div className="section-head">
+          <h2 className="section-title">Paid in with your code</h2>
+          {me.receipts.length > PAID_IN_SHOWN && onSeeAll && <button type="button" className="text-button" onClick={onSeeAll}>See all</button>}
+        </div>
         {me.receipts.length === 0 ? (
           <p className="empty">Nothing yet. When an app pays you with your code, it shows here.</p>
         ) : (
           <ul className="list">
-            {me.receipts.map((r) => (
+            {me.receipts.slice(0, PAID_IN_SHOWN).map((r) => (
               <li key={r.txHash}>
                 <div className="row">
                   <span className="row-icon in"><Icon name={r.kind === "grow" ? "jar" : "down"} size={20} /></span>

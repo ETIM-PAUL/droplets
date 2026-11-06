@@ -25,7 +25,7 @@ function chain() {
     confirmed,
     pay: (from: string, luna: bigint, memo: string, confirmations = 60) => {
       const hash = (++n).toString(16).padStart(64, "0");
-      txs.unshift({ hash, blockNumber: 1, from, to: POOL, value: luna, recipientData: hex(memo), executionResult: true, confirmations });
+      txs.unshift({ hash, blockNumber: 1, from, to: POOL, value: luna, recipientData: hex(memo), senderData: "", executionResult: true, confirmations, timestamp: 0 });
       return hash;
     },
     rpc: {

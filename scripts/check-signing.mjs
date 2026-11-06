@@ -27,17 +27,13 @@ const FORBIDDEN = /\b(eth_sign|personal_sign|eth_signTypedData\w*|eth_signTransa
 const PROVIDER_KEY_FILES = new Set(["packages/adapters/src/changelly/api.ts", "apps/api/src/index.ts"]);
 // 2. Only these files may create a wallet executor or saver (besides the wallet packages that define them).
 const EXECUTOR_FILES = new Map([
-  ["apps/miniapp/src/send/SendHome.tsx", ["send"]],
-  ["apps/miniapp/src/send/Scan.tsx", ["pay"]],
   // Errand Save: each savings action is a tap handler that opens Nimiq Pay's own dialog.
   ["apps/miniapp/src/save/SaveHome.tsx", ["saveRule", "openGrow", "addToGrow", "startWithdrawal", "finishWithdrawal", "revokeCode"]],
   // Steady and Boost: a deposit is a payment to the pool with its memo; a withdrawal is a signed request.
   ["apps/miniapp/src/save/PoolHome.tsx", ["depositToPool", "withdrawFromPool"]],
-  // The developer test page: only rendered when the test page is switched on (checked below).
-  ["apps/miniapp/src/spike.tsx", null],
 ]);
 // 3. Code that reads untrusted text (chat, QR, providers) or runs on the server must not touch the wallet.
-const NO_WALLET = [/^packages\/(agent|adapters|core|client|save|pool)\//, /^apps\/(api|pool-worker)\//, /^apps\/miniapp\/src\/send\/Chat\.tsx$/];
+const NO_WALLET = [/^packages\/(agent|adapters|core|client|save|pool)\//, /^apps\/(api|pool-worker)\//, /^apps\/miniapp\/src\/Chat\.tsx$/];
 const WALLET_IMPORT = /from\s+["'](@railkit\/wallet-[\w-]+|@nimiq\/mini-app-sdk)["']/;
 // 4. Wallet executors may only call methods that open the native dialog.
 // sign and the staking calls open Nimiq Pay's confirmation too (checked in Nimiq Pay's useMiniAppHost.ts).
@@ -82,7 +78,6 @@ for (const f of files) {
       continue;
     }
     const allowedFns = EXECUTOR_FILES.get(r);
-    if (!allowedFns) continue;
     // The enclosing function must be the button handler the user taps.
     const before = src.slice(0, m.index);
     const fn = [...before.matchAll(/(?:async\s+)?function\s+(\w+)\s*\(/g)].at(-1)?.[1];
@@ -94,10 +89,6 @@ for (const f of files) {
     for (const m of src.matchAll(/method:\s*"(\w+)"/g)) if (!ALLOWED_EVM_METHODS.has(m[1])) problems.push(`${r} sends ${m[1]}, which isn't on the native-dialog list`);
   }
 }
-
-// 5. The developer test page can pay too, so it must not be reachable in a normal build.
-const main = readFileSync(join(root, "apps/miniapp/src/main.tsx"), "utf8");
-if (!/TEST_PAGE\s*&&\s*hash === "#spike"/.test(main)) problems.push("apps/miniapp/src/main.tsx must only render the test page when TEST_PAGE is on");
 
 if (problems.length) {
   console.error(`Signing guard: ${problems.length} problem(s)\n- ${problems.join("\n- ")}`);

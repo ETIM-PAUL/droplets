@@ -34,6 +34,14 @@ export interface SaveMe {
   splits: { payoutId: string; app: string; walletLuna: string; growLuna: string; reason: null | "no-stake" | "validator-gone" | "below-minimum"; savePercent: number; at: number }[];
 }
 
+/** The savings history, newest first. Amounts are luna; `at` is ms since 1970. */
+export interface SaveActivity {
+  /** One row per payout an app made with the save code, as checked on-chain. */
+  payments: { payoutId: string; app: string; walletLuna: string; growLuna: string; at: number; reason: null | "no-stake" | "validator-gone" | "below-minimum" }[];
+  /** The person's own Grow transactions; null when the chain couldn't be read just now. */
+  grow: { txHash: string; kind: "opened" | "added" | "withdrawal-started" | "withdrawn"; luna: string; at: number; ok: boolean }[] | null;
+}
+
 export interface SaveValidator {
   address: string;
   name: string | null;
@@ -128,6 +136,7 @@ export function createRailkitClient(o: RailkitClientOptions) {
     corridors: async () => (await call<{ corridors: Corridor[] }>("/v1/corridors")).corridors,
     /** Errand Save: the user's code, rule, Grow balance and payments in. `fresh` skips the server's one-minute stake cache. */
     saveMe: (address: string, fresh = false) => call<SaveMe>(`/v1/save/me?address=${encodeURIComponent(address)}${fresh ? "&fresh=1" : ""}`),
+    saveActivity: (address: string) => call<SaveActivity>(`/v1/save/activity?address=${encodeURIComponent(address)}`),
     /** Sets or revokes the rule: the message the user signed in Nimiq Pay, with the key and signature it returned. */
     saveRule: (signed: { message: string; publicKey: string; signature: string }) =>
       call<{ code: string; address: string; savePercent: number } | { revoked: true }>("/v1/save/rule", json(signed)),

@@ -3,7 +3,8 @@
 // the payout SDK and the Mini App.
 import { blake2b } from "@noble/hashes/blake2.js";
 import { sha256 } from "@noble/hashes/sha2.js";
-import { formatNimiqAddress, parseNimiqAddress } from "./nimiq-address";
+import { formatNimiqAddress, nimiqAddressBytes, parseNimiqAddress } from "./nimiq-address";
+import type { NimiqTransaction } from "./nimiq-rpc";
 import { fail, ok, type Result } from "./result";
 
 // ---- Save codes: 6 random characters and a check character, written SAVE-7KQ2XMP.
@@ -178,6 +179,42 @@ export function checkWithdrawal(staker: StakerState, luna: bigint): Result<{ new
   const left = staker.active + staker.inactive - luna;
   if (left !== 0n && left < MIN_STAKE_LUNA) return fail("bad_amount", "Leave at least 100 NIM in Grow, or withdraw all of it.");
   return ok({ newActive: staker.active - luna });
+}
+
+/** Something a person did with their own Grow, read from their transactions with the staking contract. */
+export interface GrowEvent {
+  txHash: string;
+  kind: "opened" | "added" | "withdrawal-started" | "withdrawn";
+  /** Luna moved. 0 when a withdrawal starts: that transaction only signals. */
+  luna: bigint;
+  at: number;
+  /** False when the chain rejected it. */
+  ok: boolean;
+}
+
+const sameAddress = (a: string, b: string) => a.replace(/\s+/g, "").toUpperCase() === b.replace(/\s+/g, "").toUpperCase();
+
+/**
+ * Grow's history from the person's own transactions, newest first. Staking data starts with its type:
+ * 05 create-staker, 06 add-stake (then the staker's address), 08 set-active-stake; a remove-stake comes back
+ * from the staking contract with sender data 01. Add-stakes that apps pay in with a save code aren't in the
+ * person's own history: their receipts are.
+ */
+export function growEvents(address: string, txs: NimiqTransaction[]): GrowEvent[] {
+  const own = Array.from(nimiqAddressBytes(address), (b) => b.toString(16).padStart(2, "0")).join("");
+  const out: GrowEvent[] = [];
+  for (const t of txs) {
+    const base = { txHash: t.hash, at: t.timestamp, ok: t.executionResult };
+    if (sameAddress(t.from, address) && sameAddress(t.to, STAKING_CONTRACT)) {
+      const data = t.recipientData.toLowerCase();
+      if (data.startsWith("05")) out.push({ ...base, kind: "opened", luna: t.value });
+      else if (data.startsWith("06") && data.slice(2, 42) === own) out.push({ ...base, kind: "added", luna: t.value });
+      else if (data.startsWith("08")) out.push({ ...base, kind: "withdrawal-started", luna: 0n });
+    } else if (sameAddress(t.from, STAKING_CONTRACT) && sameAddress(t.to, address) && t.senderData.startsWith("01")) {
+      out.push({ ...base, kind: "withdrawn", luna: t.value });
+    }
+  }
+  return out.sort((a, b) => b.at - a.at);
 }
 
 /** Whole luna to a decimal NIM string, never through floats. */

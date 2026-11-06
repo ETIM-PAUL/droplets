@@ -2,6 +2,7 @@ import { createHash, createPublicKey, randomBytes, randomUUID, verify } from "no
 import type { Env as HonoEnv, Hono } from "hono";
 import {
   formatSaveCode,
+  growEvents,
   MIN_STAKE_LUNA,
   newSaveCode,
   nimiqAddressBytes,
@@ -23,7 +24,7 @@ import type { SaveApp, SaveStore } from "./store";
 
 export interface SaveDeps {
   store: SaveStore;
-  chain: Pick<NimiqRpc, "staker" | "validator" | "activeValidators" | "transaction" | "blockNumber">;
+  chain: Pick<NimiqRpc, "staker" | "validator" | "activeValidators" | "transaction" | "transactionsByAddress" | "blockNumber">;
   network: "mainnet" | "testnet";
   /** Validators shown first when opening Grow: address and a name people recognise. */
   recommended?: { address: string; name: string }[];
@@ -210,6 +211,41 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
       log("save me failed", { error: String(e) });
       return bad("Couldn't reach the Nimiq network. Try again in a minute.", 502);
     }
+  });
+
+  /**
+   * The savings history, newest first: each payment in with the code (its wallet and Grow parts, as checked
+   * on-chain) and the person's own Grow transactions. `grow` is null when the chain couldn't be read just now.
+   */
+  app.get("/v1/save/activity", async (c) => {
+    if (!readLimit(ip(c))) return bad("Too many requests. Wait a minute.", 429);
+    const addr = parseNimiqAddress(c.req.query("address") ?? "");
+    if (!addr.ok) return bad(addr.error.message);
+    const [receipts, splits, apps, txs] = await Promise.all([
+      s.store.receiptsForAddress(addr.value, 100),
+      s.store.splitsForAddress(addr.value, 100),
+      s.store.listApps(),
+      s.chain.transactionsByAddress(addr.value, 100).catch((e) => (log("save activity chain read failed", { error: String(e) }), null)),
+    ]);
+    const names = new Map(apps.map((a) => [a.id, a.name]));
+    const payments = new Map<string, { payoutId: string; app: string; walletLuna: bigint; growLuna: bigint; at: number; reason: string | null }>();
+    for (const r of receipts) {
+      const key = `${r.appId}:${r.payoutId}`;
+      const p = payments.get(key) ?? { payoutId: r.payoutId, app: names.get(r.appId) ?? "An app", walletLuna: 0n, growLuna: 0n, at: 0, reason: null };
+      if (r.kind === "grow") p.growLuna += BigInt(r.luna);
+      else p.walletLuna += BigInt(r.luna);
+      p.at = Math.max(p.at, r.createdAt);
+      payments.set(key, p);
+    }
+    // Why nothing went to Grow, from the split the app was given.
+    for (const sp of splits) {
+      const p = payments.get(`${sp.appId}:${sp.payoutId}`);
+      if (p && p.growLuna === 0n) p.reason = sp.reason;
+    }
+    return c.json({
+      payments: [...payments.values()].sort((a, b) => b.at - a.at).map((p) => ({ ...p, walletLuna: p.walletLuna.toString(), growLuna: p.growLuna.toString() })),
+      grow: txs && growEvents(addr.value, txs).map((e) => ({ ...e, luna: e.luna.toString() })),
+    });
   });
 
   /**

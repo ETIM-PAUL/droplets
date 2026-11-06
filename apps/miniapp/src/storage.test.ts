@@ -1,14 +1,13 @@
-import type { Order } from "@railkit/core";
 import { describe, expect, it } from "vitest";
 import { formatAmount, formatCountdown, formatMoney } from "./format";
-import { LocalOrderStore, recipientBook } from "./storage";
+import { sessionToken } from "./storage";
 
 class MemStorage {
   data = new Map<string, string>();
   getItem(k: string) { return this.data.get(k) ?? null; }
   setItem(k: string, v: string) { this.data.set(k, v); }
+  removeItem(k: string) { this.data.delete(k); }
 }
-const order = (id: string, createdAt: number) => ({ id, createdAt, state: "processing" }) as unknown as Order;
 
 describe("format", () => {
   it("groups without floats", () => {
@@ -23,33 +22,18 @@ describe("format", () => {
   });
 });
 
-describe("LocalOrderStore", () => {
-  it("survives a reload", async () => {
+describe("sessionToken", () => {
+  it("survives a reload and clears", () => {
     const s = new MemStorage() as unknown as Storage;
-    await new LocalOrderStore(s).put(order("a", 1));
-    expect((await new LocalOrderStore(s).get("a"))?.id).toBe("a");
+    sessionToken.set("tok", s);
+    expect(sessionToken.get(s)).toBe("tok");
+    sessionToken.clear(s);
+    expect(sessionToken.get(s)).toBeNull();
   });
-  it("keeps the newest orders only", async () => {
-    const store = new LocalOrderStore(new MemStorage() as unknown as Storage, "k", 2);
-    for (const [id, t] of [["a", 1], ["b", 2], ["c", 3]] as const) await store.put(order(id, t));
-    expect((await store.list()).map((o) => o.id)).toEqual(["c", "b"]);
-  });
-  it("works when storage throws", async () => {
-    const broken = { getItem() { throw new Error("denied"); }, setItem() { throw new Error("denied"); } } as unknown as Storage;
-    const store = new LocalOrderStore(broken);
-    await store.put(order("a", 1));
-    expect((await store.get("a"))?.id).toBe("a");
-  });
-});
-
-describe("recipientBook", () => {
-  it("moves a repeat recipient to the top without duplicating", () => {
-    const book = recipientBook(new MemStorage() as unknown as Storage);
-    const jane = { corridor: "ke-mpesa" as const, recipient: { type: "mobile-money" as const, phone: "+254712345678", name: "Jane", network: "mpesa" as const }, lastAmount: "2500", usedAt: 1 };
-    const tom = { ...jane, recipient: { ...jane.recipient, phone: "+254722000000", name: "Tom" }, usedAt: 2 };
-    book.remember(jane);
-    book.remember(tom);
-    book.remember({ ...jane, lastAmount: "3000", usedAt: 3 });
-    expect(book.list().map((r) => [r.recipient.type === "mobile-money" && r.recipient.name, r.lastAmount])).toEqual([["Jane", "3000"], ["Tom", "2500"]]);
+  it("works when storage throws", () => {
+    const broken = { getItem() { throw new Error("denied"); }, setItem() { throw new Error("denied"); }, removeItem() { throw new Error("denied"); } } as unknown as Storage;
+    sessionToken.set("tok", broken);
+    expect(sessionToken.get(broken)).toBeNull();
+    expect(() => sessionToken.clear(broken)).not.toThrow();
   });
 });

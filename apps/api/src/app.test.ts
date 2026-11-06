@@ -448,3 +448,22 @@ describe("add money (Changelly)", () => {
     expect(alerts.join(" ")).toMatch(/ON HOLD/);
   });
 });
+
+describe("switched off", () => {
+  it("says Savings and Steady and Boost are off when this server doesn't run them", async () => {
+    const { app } = setup();
+    const save = await app.request("/v1/save/me?address=NQ00");
+    expect(save.status).toBe(503);
+    expect(((await save.json()) as { error: { message: string } }).error.message).toMatch(/Savings is switched off/);
+    expect((await app.request("/v1/pool/state")).status).toBe(503);
+  });
+
+  it("makes no model call for a payment sentence when no corridor is served", async () => {
+    let calls = 0;
+    const model = async () => (calls++, { corridor: null, amount: null, currency: null, phone: null, name: null, bank: null, accountNumber: null });
+    const { app } = setup({ corridors: new Set(), agent: { model } });
+    const res = await app.request("/v1/agent/understand", post({ text: "send some money to my sister" }));
+    expect(res.status).toBe(200);
+    expect(calls).toBe(0);
+  });
+});

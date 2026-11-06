@@ -140,13 +140,6 @@ button { cursor: pointer; }
 .status.bad { background: var(--error-wash); color: var(--error); }
 .empty { background: var(--surface); border-radius: var(--radius); padding: 20px; text-align: center; color: var(--ink-soft); font-size: 14px; margin: 0; }
 
-/* Send again: people as a row of avatars */
-.people { display: flex; gap: 14px; overflow-x: auto; padding: 2px 2px 6px; scrollbar-width: none; }
-.person { display: flex; flex-direction: column; align-items: center; gap: 6px; border: 0; background: none; width: 64px; flex: none; font-size: 12px; }
-.person span:last-child { max-width: 64px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink-soft); }
-.avatar { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; background: var(--navy); color: #fff; font-weight: 600; font-size: 16px; flex: none; }
-.row .avatar { width: 40px; height: 40px; font-size: 14px; }
-
 /* Tab bar */
 .tabbar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 2; display: flex; justify-content: center;
@@ -235,11 +228,6 @@ button { cursor: pointer; }
 .arrived-amount { font-size: 34px; font-weight: 700; margin: 0; line-height: 1.15; letter-spacing: -0.02em; }
 .result .question { font-weight: 500; color: var(--ink-soft); }
 .receipt { background: var(--surface); border-radius: var(--radius); padding: 16px; margin: 0; white-space: pre-wrap; font: 14px/1.6 var(--text); }
-
-.practice {
-  position: sticky; top: 0; z-index: 3; margin: 0; padding: 8px var(--gutter);
-  background: #f6d365; color: #14213d; font-size: 13px; font-weight: 600; text-align: center;
-}
 
 /* Chat */
 .chat { display: flex; flex-direction: column; gap: 8px; }

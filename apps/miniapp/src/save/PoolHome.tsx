@@ -2,15 +2,15 @@ import { init } from "@nimiq/mini-app-sdk";
 import type { PoolMe, PoolStateView } from "@railkit/client";
 import { formatPoolWithdrawMessage, formatUsd, lunaToUsd, nimStringToLuna, parseNimiqAddress, parsePrice, parseUsd, WalletError } from "@railkit/core";
 import { createNimiqSaver } from "@railkit/wallet-nimiq";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { formatMoney } from "../format";
-import { api, hostNetwork } from "../send/engine";
+import { api, hostNetwork } from "../api";
 import { AppBar } from "../ui";
 
 type Side = "steady" | "boost";
 type Mode = "home" | "deposit" | "withdraw";
 
-const ORDER_STATUS: Record<PoolMe["orders"][number]["status"], string> = {
+export const ORDER_STATUS: Record<PoolMe["orders"][number]["status"], string> = {
   awaiting_payment: "Waiting for your payment",
   queued: "Waiting for the next settlement",
   filled: "Done",
@@ -18,8 +18,8 @@ const ORDER_STATUS: Record<PoolMe["orders"][number]["status"], string> = {
   rejected: "Not done",
   expired: "No payment arrived",
 };
-const PAYOUT_STATUS: Record<PoolMe["payouts"][number]["status"], string> = { pending: "Paying out soon", sent: "On its way", confirmed: "Paid", failed: "Delayed: Errand is on it" };
-const SIDE_NAME: Record<Side, string> = { steady: "Steady", boost: "Boost" };
+export const PAYOUT_STATUS: Record<PoolMe["payouts"][number]["status"], string> = { pending: "Paying out soon", sent: "On its way", confirmed: "Paid", failed: "Delayed: Errand is on it" };
+export const SIDE_NAME: Record<Side, string> = { steady: "Steady", boost: "Boost" };
 
 const newNonce = () => Array.from(globalThis.crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
 const when = (ms: number) => {
@@ -40,7 +40,7 @@ const errorText = (e: unknown) => {
  * Steady keeps its dollar value; Boost takes NIM's moves for both sides, for about twice the upside and the
  * downside. Unlike Grow, Errand holds this pool's NIM, so the screen says so, and shows the reserves.
  */
-export function PoolHome({ address }: { address: string | null }) {
+export function PoolHome({ address, head }: { address: string | null; /** The page heading and the Grow / Steady and Boost switch, on the main screen only. */ head?: ReactNode }) {
   const [st, setSt] = useState<PoolStateView | null>(null);
   const [me, setMe] = useState<PoolMe | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -125,14 +125,15 @@ export function PoolHome({ address }: { address: string | null }) {
 
   // ---- Screens.
 
-  if (!self?.ok) return <p className="hint">Connecting to Nimiq Pay…</p>;
+  if (!self?.ok) return <>{head}<p className="hint">Connecting to Nimiq Pay…</p></>;
   if (!st || !me) {
     return loadError ? (
       <>
+        {head}
         <p className="alert" role="alert">{loadError}</p>
         <button type="button" className="secondary" onClick={() => void load()}>Try again</button>
       </>
-    ) : <p className="hint">Loading Steady and Boost…</p>;
+    ) : <>{head}<p className="hint">Loading Steady and Boost…</p></>;
   }
 
   const wrongNetwork = st.network !== hostNetwork();
@@ -182,6 +183,8 @@ export function PoolHome({ address }: { address: string | null }) {
   const s = st.settlement;
   return (
     <>
+      {head}
+      <p className="notice">Unlike Grow, Errand holds the NIM you put in Steady and Boost. The reserves check below shows what the pool holds against what it owes.</p>
       {st.network === "testnet" && <p className="note">Pilot on Nimiq testnet.{st.caps.steadyUsdPerAddress ? ` Up to $${st.caps.steadyUsdPerAddress} each in Steady.` : ""}</p>}
       {messages}
 
@@ -218,7 +221,6 @@ export function PoolHome({ address }: { address: string | null }) {
             <li>Balances change once a day, at the settlement. Deposits and withdrawals happen then too, at that day's price.</li>
             <li>Steady is protected while Boost has enough NIM to cover it. If NIM falls further than that in one day, Steady shares what's in the pool and Boost loses everything.</li>
             <li>Boost withdrawals can wait while savers in Steady need the cover.</li>
-            <li>Unlike Grow, Errand holds this pool's NIM. The reserves check shows what the pool holds against what it owes.</li>
           </ul>
         )}
         {reserves ? (

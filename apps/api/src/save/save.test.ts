@@ -42,6 +42,7 @@ function fakeChain() {
     validator: async (a: string) => validators.get(a) ?? null,
     activeValidators: async () => [...validators.values()],
     transaction: async (h: string) => txs.get(h) ?? null,
+    transactionsByAddress: async (a: string) => [...txs.values()].filter((t) => t.from === a || t.to === a),
     blockNumber: async () => 65_966_500,
   };
   return { stakers, validators, txs, chain };
@@ -193,7 +194,7 @@ describe("receipts (for apps)", () => {
     const { code } = await json(await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address)))));
     const stakerHex = Buffer.from(nimiqAddressBytes(amaka.address)).toString("hex");
     const tx = (hash: string, over: Partial<NimiqTransaction>): NimiqTransaction => ({
-      hash, blockNumber: 65_966_400, from: APP_PAYOUT, to: amaka.address, value: NIM(1400), recipientData: "", executionResult: true, confirmations: 3, ...over,
+      hash, blockNumber: 65_966_400, from: APP_PAYOUT, to: amaka.address, value: NIM(1400), recipientData: "", senderData: "", executionResult: true, confirmations: 3, timestamp: T, ...over,
     });
     txs.set("a".repeat(64), tx("a".repeat(64), {}));
     txs.set("b".repeat(64), tx("b".repeat(64), { to: STAKING_CONTRACT, value: NIM(600), recipientData: `06${stakerHex}` }));
@@ -217,7 +218,7 @@ describe("receipts (for apps)", () => {
     const other = account();
     const { code } = await json(await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address)))));
     const otherHex = Buffer.from(nimiqAddressBytes(other.address)).toString("hex");
-    const base = { blockNumber: 1, value: NIM(1), executionResult: true, confirmations: 1, recipientData: "" };
+    const base = { blockNumber: 1, value: NIM(1), executionResult: true, confirmations: 1, recipientData: "", senderData: "", timestamp: T };
     txs.set("1".repeat(64), { hash: "1".repeat(64), from: other.address, to: amaka.address, ...base });
     txs.set("2".repeat(64), { hash: "2".repeat(64), from: APP_PAYOUT, to: other.address, ...base });
     txs.set("3".repeat(64), { hash: "3".repeat(64), from: APP_PAYOUT, to: STAKING_CONTRACT, ...base, recipientData: `06${otherHex}` });
@@ -318,6 +319,44 @@ describe("the savings screen", () => {
       ["NQ16 085S 7JNP YJNY UA5N G5Y5 B98N 0JT7 6GKB", "Pool A"],
       [VALIDATOR, null],
     ]);
+  });
+});
+
+describe("savings activity", () => {
+  it("lists each payment in with its wallet and Grow parts, and the person's own Grow transactions, newest first", async () => {
+    const { app, store, txs, stake } = setup();
+    const amaka = account();
+    stake(amaka.address);
+    const { code } = await json(await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address)))));
+    await store.addApp({ id: "arcade", name: "Arcade", keyHash: "k", payoutAddresses: [APP_PAYOUT], createdAt: T });
+    const receipt = (txHash: string, kind: "wallet" | "grow", luna: bigint, payoutId: string, at: number) =>
+      store.addReceipt({ txHash, code, address: amaka.address, appId: "arcade", kind, luna: luna.toString(), payoutId, blockNumber: 1, createdAt: at });
+    await receipt("a".repeat(64), "wallet", NIM(1400), "bounty-81", T);
+    await receipt("b".repeat(64), "grow", NIM(600), "bounty-81", T);
+    await receipt("c".repeat(64), "wallet", NIM(1000), "bounty-82", T + 60_000);
+    await store.addSplit({ appId: "arcade", payoutId: "bounty-82", code, address: amaka.address, walletLuna: NIM(1000).toString(), growLuna: "0", reason: "below-minimum", savePercent: 30, createdAt: T + 60_000 });
+    const mine = { from: amaka.address, to: STAKING_CONTRACT, blockNumber: 1, senderData: "", executionResult: true, confirmations: 1 };
+    txs.set("d".repeat(64), { ...mine, hash: "d".repeat(64), value: NIM(500), recipientData: `05${Buffer.from(nimiqAddressBytes(VALIDATOR)).toString("hex")}`, timestamp: T - 1_000 });
+    txs.set("e".repeat(64), { ...mine, hash: "e".repeat(64), value: 0n, recipientData: "08", timestamp: T + 120_000 });
+
+    const r = await json(await app.request(`/v1/save/activity?address=${encodeURIComponent(amaka.address)}`));
+    expect(r.payments).toEqual([
+      { payoutId: "bounty-82", app: "Arcade", walletLuna: NIM(1000).toString(), growLuna: "0", at: T + 60_000, reason: "below-minimum" },
+      { payoutId: "bounty-81", app: "Arcade", walletLuna: NIM(1400).toString(), growLuna: NIM(600).toString(), at: T, reason: null },
+    ]);
+    expect(r.grow).toEqual([
+      { txHash: "e".repeat(64), kind: "withdrawal-started", luna: "0", at: T + 120_000, ok: true },
+      { txHash: "d".repeat(64), kind: "opened", luna: NIM(500).toString(), at: T - 1_000, ok: true },
+    ]);
+  });
+
+  it("still lists payments when the chain can't be read, and says so", async () => {
+    const { app, chain } = setup();
+    chain.transactionsByAddress = async () => {
+      throw new Error("node down");
+    };
+    expect(await json(await app.request(`/v1/save/activity?address=${encodeURIComponent(account().address)}`))).toEqual({ payments: [], grow: null });
+    expect((await app.request("/v1/save/activity?address=NQ00")).status).toBe(400);
   });
 });
 

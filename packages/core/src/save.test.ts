@@ -6,6 +6,7 @@ import {
   checkWithdrawal,
   formatSaveCode,
   formatSaveMessage,
+  growEvents,
   lunaToNimString,
   MIN_STAKE_LUNA,
   newSaveCode,
@@ -16,8 +17,10 @@ import {
   parseSaveMessage,
   releaseBlock,
   splitPayout,
+  STAKING_CONTRACT,
   type StakerState,
 } from "./save";
+import type { NimiqTransaction } from "./nimiq-rpc";
 
 // Cross-checked against @nimiq/core 2.23.0 (KeyPair.toAddress) when this was written.
 const FIXTURE = { publicKey: "eb49ff0ce02e6cd5408e2939590e147a95faafe6de9de404c820e5bb3b36a719", address: "NQ23 4CTV GPEU C004 7USS EPFM RQ5C METQ EMDP" };
@@ -146,6 +149,43 @@ describe("withdrawing from Grow", () => {
   it("releases one epoch after the lock-up starts, or after the validator's jail", () => {
     expect(releaseBlock(65_966_400)).toBe(65_966_400 + 43_201);
     expect(releaseBlock(65_966_400, 65_950_000)).toBe(65_950_000 + 8 * 43_200 + 1);
+  });
+});
+
+describe("Grow's history", () => {
+  // Type bytes as @nimiq/core 2.23.0 builds them: newCreateStaker 05, newAddStake 06, newSetActiveStake 08,
+  // newRetireStake 09, and newRemoveStake comes from the staking contract with sender data 01.
+  const ME = FIXTURE.address;
+  const OTHER = "NQ49 N8MB XYCR XBUP 404C KXKK L49M A7BT F082";
+  const hex = (a: string) => Buffer.from(nimiqAddressBytes(a)).toString("hex");
+  let n = 0;
+  const tx = (over: Partial<NimiqTransaction>): NimiqTransaction => ({
+    hash: (++n).toString(16).padStart(64, "0"), blockNumber: n, from: ME, to: STAKING_CONTRACT, value: 0n, recipientData: "", senderData: "",
+    executionResult: true, confirmations: 1, timestamp: 1_000 * n, ...over,
+  });
+
+  it("reads opening, adding, starting a withdrawal and taking the stake back, newest first", () => {
+    const events = growEvents(ME, [
+      tx({ value: NIM(100), recipientData: `05${hex(OTHER)}` }),
+      tx({ value: NIM(50), recipientData: `06${hex(ME)}` }),
+      tx({ recipientData: "08aa" }),
+      tx({ recipientData: "09aa" }),
+      tx({ from: STAKING_CONTRACT, to: ME, value: NIM(150), senderData: "01" }),
+    ]);
+    expect(events.map((e) => [e.kind, e.luna])).toEqual([["withdrawn", NIM(150)], ["withdrawal-started", 0n], ["added", NIM(50)], ["opened", NIM(100)]]);
+    expect(events[0]).toMatchObject({ ok: true, at: 5_000 });
+  });
+
+  it("leaves out payments, other people's stakes and the release step, and marks failures", () => {
+    const events = growEvents(ME.toLowerCase().replace(/ /g, ""), [
+      tx({ to: OTHER, value: NIM(5) }),
+      tx({ value: NIM(5), recipientData: `06${hex(OTHER)}` }),
+      tx({ recipientData: "09aa" }),
+      tx({ from: STAKING_CONTRACT, to: OTHER, value: NIM(5), senderData: "01" }),
+      tx({ value: NIM(20), recipientData: `06${hex(ME)}`, executionResult: false }),
+    ]);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ kind: "added", luna: NIM(20), ok: false });
   });
 });
 

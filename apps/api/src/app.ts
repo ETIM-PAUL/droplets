@@ -256,7 +256,9 @@ export function createApp(d: AppDeps) {
       }
     }
     const enabled = new Set([...d.corridors].filter(isCorridorId));
-    const r = await understand({ text, draft, expecting }, { enabled, banks, model: d.agent?.model, savingsClassifier: d.agent?.savingsClassifier, allowModel, log });
+    // The model only finishes payment sentences. With no corridor served there's nothing to finish, so no model call.
+    const model = enabled.size > 0 ? d.agent?.model : undefined;
+    const r = await understand({ text, draft, expecting }, { enabled, banks, model, savingsClassifier: d.agent?.savingsClassifier, allowModel, log });
     // The message itself is not logged: it holds names and numbers.
     log("agent turn", { intent: r.intent ?? "send", source: r.source, missing: r.missing, invite: c.get("invite") });
     return c.json(r);
@@ -519,7 +521,9 @@ export function createApp(d: AppDeps) {
   });
 
   if (d.save) mountSaveRoutes(app, d.save, { bad, clientKey, admin, now, log, phraser: d.agent?.savingsPhraser, classifier: d.agent?.savingsClassifier, allowModel });
+  else app.all("/v1/save/*", () => bad("Savings is switched off on this server.", 503));
   if (d.pool) mountPoolRoutes(app, d.pool, { bad, clientKey, admin, now, log });
+  else app.all("/v1/pool/*", () => bad("Steady and Boost are switched off on this server.", 503));
 
   return app;
 }

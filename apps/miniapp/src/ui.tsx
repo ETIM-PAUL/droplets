@@ -47,12 +47,12 @@ export function AppBar({ title, onBack, backLabel = "Back", right }: { title: st
   );
 }
 
-export type Tab = "home" | "savings" | "activity" | "help";
+/** "home" is Savings. */
+export type Tab = "home" | "activity" | "help";
 
-export function TabBar({ tab, onTab, savings = false }: { tab: Tab; onTab: (t: Tab) => void; savings?: boolean }) {
+export function TabBar({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
   const items: { id: Tab; label: string; icon: IconName }[] = [
-    { id: "home", label: "Home", icon: "home" },
-    ...(savings ? [{ id: "savings" as const, label: "Savings", icon: "jar" as const }] : []),
+    { id: "home", label: "Savings", icon: "jar" },
     { id: "activity", label: "Activity", icon: "list" },
     { id: "help", label: "Help", icon: "help" },
   ];
@@ -80,12 +80,6 @@ export function QrCode({ text, label, size = 200 }: { text: string; label: strin
       <path d={d} fill="#000" />
     </svg>
   );
-}
-
-/** Initials in a circle, for people in lists. */
-export function Avatar({ name }: { name: string }) {
-  const initials = name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("") || "?";
-  return <span className="avatar" aria-hidden="true">{initials}</span>;
 }
 
 /** Nimiq's hexagon, the one bit of brand on the balance card. */

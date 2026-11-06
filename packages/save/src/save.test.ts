@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createSaveApi, SaveApiError } from "./index";
 import { createSavePayer, memoryPayoutLog, type NimiqCoreLike, type NimiqTx } from "./payer";
 
@@ -31,13 +31,14 @@ function fakeNimiq() {
   return { nimiq, built };
 }
 
-function fakeRpc() {
+function fakeRpc(follows = "MainAlbatross") {
   const sent: string[] = [];
   const onChain = new Set<string>();
   return {
     sent,
     onChain,
     rpc: {
+      network: async () => follows,
       blockNumber: async () => 1_000,
       sendRawTransaction: async (hex: string) => (sent.push(hex), hex.slice(4)),
       transaction: async (hash: string) => (onChain.has(hash) ? ({ hash } as never) : null),
@@ -85,7 +86,7 @@ describe("createSavePayer", () => {
 
   it("sends one payment when nothing goes to Grow, and says why", async () => {
     const { nimiq, built } = fakeNimiq();
-    const { rpc } = fakeRpc();
+    const { rpc } = fakeRpc("TestAlbatross");
     const { api } = fakeApi({ walletLuna: NIM(10), growLuna: 0n, reason: "no-stake" });
     const r = await createSavePayer({ api, rpc, nimiq, keyPair: KEYPAIR, network: "test" }).pay({ to: `SAVE-${await realCode()}`, luna: NIM(10), payoutId: "p1", memo: "Arcade prize" });
     expect(built).toEqual([["basicWithData", `addr(${PAYOUT})`, `addr(${USER})`, "Arcade prize", NIM(10), 0n, 1_000, 5]]);
@@ -121,6 +122,39 @@ describe("createSavePayer", () => {
     const { api, receipts } = fakeApi({ walletLuna: NIM(1), growLuna: NIM(1) }, [{ walletTx: "recorded", growTx: "pending" }, { walletTx: "recorded", growTx: "recorded" }]);
     await createSavePayer({ api, rpc, nimiq, keyPair: KEYPAIR, network: "main", sleep: async () => undefined }).pay({ to: `SAVE-${await realCode()}`, luna: NIM(2), payoutId: "p3" });
     expect(receipts).toHaveLength(2);
+  });
+
+  it("signs nothing when the node follows the other network, which would accept the payment and never land it", async () => {
+    const { nimiq, built } = fakeNimiq();
+    const { rpc, sent } = fakeRpc("TestAlbatross");
+    const payer = createSavePayer({ rpc, nimiq, keyPair: KEYPAIR, network: "main" });
+    await expect(payer.pay({ to: USER, luna: NIM(5), payoutId: "p4" })).rejects.toThrow(/follows TestAlbatross.*Nothing was sent/);
+    await expect(payer.checkNetwork()).rejects.toThrow(/follows TestAlbatross/);
+    expect(built).toEqual([]);
+    expect(sent).toEqual([]);
+  });
+
+  it("checks the network again after the node couldn't be reached", async () => {
+    const { nimiq } = fakeNimiq();
+    const { rpc } = fakeRpc();
+    const network = vi.fn().mockRejectedValueOnce(new Error("Couldn't reach the Nimiq network")).mockResolvedValue("MainAlbatross");
+    const payer = createSavePayer({ rpc: { ...rpc, network }, nimiq, keyPair: KEYPAIR, network: "main" });
+    await expect(payer.checkNetwork()).rejects.toThrow(/Couldn't reach/);
+    await expect(payer.pay({ to: USER, luna: NIM(5), payoutId: "p5" })).resolves.toMatchObject({ walletLuna: NIM(5) });
+    await payer.pay({ to: USER, luna: NIM(5), payoutId: "p6" });
+    expect(network).toHaveBeenCalledTimes(2);
+  });
+
+  it("treats only a real 'already known' error as sent: a node error about something unknown still fails", async () => {
+    const { nimiq } = fakeNimiq();
+    const { rpc } = fakeRpc();
+    const failWith = (data: string) => async () => {
+      throw Object.assign(new Error("Internal error"), { data });
+    };
+    const unknown = createSavePayer({ rpc: { ...rpc, sendRawTransaction: failWith("Unknown sender account") }, nimiq, keyPair: KEYPAIR, network: "main" });
+    await expect(unknown.pay({ to: USER, luna: NIM(1), payoutId: "p7" })).rejects.toThrow(/Internal error/);
+    const known = createSavePayer({ rpc: { ...rpc, sendRawTransaction: failWith("Transaction already known") }, nimiq, keyPair: KEYPAIR, network: "main" });
+    await expect(known.pay({ to: USER, luna: NIM(1), payoutId: "p8" })).resolves.toMatchObject({ walletLuna: NIM(1) });
   });
 
   it("refuses bad input before signing anything", async () => {

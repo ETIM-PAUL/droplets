@@ -173,6 +173,10 @@ describe("Nimiq RPC client", () => {
     expect(await gone.transaction("00")).toBeNull();
   });
 
+  it("reads which chain the node follows", async () => {
+    expect(await rpc({ jsonrpc: "2.0", id: 1, result: { data: { network: "TestAlbatross", number: 15894144, type: "micro" } } }).network()).toBe("TestAlbatross");
+  });
+
   it("throws other node errors and network failures", async () => {
     await expect(rpc({ jsonrpc: "2.0", id: 1, error: { code: -32602, message: "Invalid params", data: "Unknown format" } }).staker("x")).rejects.toBeInstanceOf(NimiqRpcError);
     const down = createNimiqRpc({ url: "https://rpc.example", fetch: async () => { throw new TypeError("fetch failed"); } });

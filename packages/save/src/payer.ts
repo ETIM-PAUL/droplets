@@ -53,7 +53,7 @@ export function memoryPayoutLog(): PayoutLog {
 export interface SavePayerOptions {
   /** From createSaveApi. Not needed if you only ever pay plain addresses. */
   api?: SaveApi;
-  rpc: Pick<NimiqRpc, "blockNumber" | "sendRawTransaction" | "transaction">;
+  rpc: Pick<NimiqRpc, "blockNumber" | "sendRawTransaction" | "transaction" | "network">;
   nimiq: NimiqCoreLike;
   keyPair: PayoutKeyPair;
   network: "main" | "test";
@@ -78,6 +78,7 @@ export interface PayResult {
 }
 
 const NETWORK_ID = { main: 24, test: 5 } as const;
+const NETWORK_NAME = { main: "MainAlbatross", test: "TestAlbatross" } as const;
 /** A transaction is only valid for this many blocks after its validity start height. */
 const VALIDITY_WINDOW = 7_200;
 const PAYOUT_ID = /^[\w:.-]{1,100}$/;
@@ -87,13 +88,34 @@ export function createSavePayer(o: SavePayerOptions) {
   const sleep = o.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const fee = o.fee ?? 0n;
 
-  /** Sends a signed transaction. "Already known" means it's in the mempool or chain: fine. */
+  let networkChecked: Promise<void> | undefined;
+  /**
+   * Nodes accept a transaction signed for the other network and answer with its hash, but it never lands.
+   * So check once which chain the node follows. A failed check is retried; a wrong network stays an error.
+   */
+  function checkNetwork() {
+    networkChecked ??= o.rpc.network().then(
+      (n) => {
+        if (n !== NETWORK_NAME[o.network]) {
+          throw new Error(`The Nimiq node follows ${n}, but this payer signs for ${NETWORK_NAME[o.network]}. Nothing was sent: use a ${o.network === "main" ? "mainnet" : "testnet"} node.`);
+        }
+      },
+      (e) => {
+        networkChecked = undefined;
+        throw e;
+      },
+    );
+    return networkChecked;
+  }
+
+  /** Sends a signed transaction. "Already known" means it's in the mempool or chain: fine. A plain success proves nothing. */
   async function broadcast(tx: SentTx) {
     try {
       await o.rpc.sendRawTransaction(tx.hex);
     } catch (e) {
       if (await o.rpc.transaction(tx.hash).catch(() => null)) return;
-      if (/already|known|duplicate/i.test(String((e as { data?: unknown }).data ?? (e as Error).message))) return;
+      // Whole words only: "Unknown account" is a real error.
+      if (/\b(already|known|duplicate)\b/i.test(String((e as { data?: unknown }).data ?? (e as Error).message))) return;
       throw e;
     }
   }
@@ -114,6 +136,8 @@ export function createSavePayer(o: SavePayerOptions) {
   }
 
   return {
+    /** Throws unless the node follows the network this payer signs for. pay() checks this too; call it at startup to fail early. */
+    checkNetwork,
     /**
      * Pays `luna` to a save code (split by the user's rule) or to a plain Nimiq address.
      * Safe to retry with the same payoutId: the same signed transactions are resent, never new ones.
@@ -123,6 +147,7 @@ export function createSavePayer(o: SavePayerOptions) {
       if (p.luna <= 0n) throw new RangeError("luna must be above 0.");
       const memo = p.memo === undefined ? undefined : new TextEncoder().encode(p.memo);
       if (memo && memo.length > 64) throw new RangeError("memo: at most 64 bytes.");
+      await checkNetwork();
 
       const done = await log.get(p.payoutId);
       if (done) {

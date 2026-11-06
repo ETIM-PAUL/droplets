@@ -54,9 +54,16 @@ Savings questions ("when can I get my money?", "why did that payment go to my wa
 
 Save codes and Grow: users choose a share of every NIM payment to save, signed once in Nimiq Pay. Apps that pay rewards look up the split with the user's save code and pay the user directly: part as a normal payment, part as an add-stake into the user's own stake. Errand never holds the money.
 
-- Plan: [Errand Save — Product Plan.md](Errand%20Save%20—%20Product%20Plan.md). Guide for paying apps: [docs/save-codes.md](docs/save-codes.md).
+- Plan: [Errand Save — Product Plan.md](Errand%20Save%20—%20Product%20Plan.md). Guide for paying apps: [packages/save/README.md](packages/save/README.md).
 - Switch it on with `SAVE_ENABLED=true`, `SAVE_NETWORK` (start with `testnet`) and `VITE_SAVE_ENABLED=true`. Register paying apps with `POST /v1/admin/save/apps`.
 - Code: `packages/core/src/save.ts` (codes, signed rules, splits), `apps/api/src/save/`, `packages/save` (SDK for paying apps), `apps/miniapp/src/save/SaveHome.tsx`.
+
+### Steady and Boost (feature 2)
+
+A two-sided pool inside Savings: Steady balances keep their dollar value, Boost takes NIM's moves for both sides (about 2x when both sides are the same size). Settles once a day at the median of three price sources. Errand holds this pool's NIM, so it is off by default, testnet first, and needs `POOL_ALLOW_MAINNET=true` on top of `POOL_NETWORK=mainnet` (after the legal review).
+
+- Settlement maths: `packages/core/src/pool.ts` (pure, tested for never creating or losing NIM). Books and jobs: `packages/pool`. Orders and reserves: `apps/api/src/pool/`. The worker that holds the pool's key: `apps/pool-worker`. Screen: `apps/miniapp/src/save/PoolHome.tsx`.
+- Running it: `docs/pool-runbook.md`, kept local with the other runbooks.
 
 ## Deploy (Render)
 

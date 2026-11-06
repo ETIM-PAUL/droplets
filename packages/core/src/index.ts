@@ -20,3 +20,4 @@ export * from "./describe";
 export * from "./nimiq-address";
 export * from "./save";
 export * from "./nimiq-rpc";
+export * from "./pool";

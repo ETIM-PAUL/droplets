@@ -97,7 +97,25 @@ export function createNimiqRpc(o: NimiqRpcOptions) {
       return t && { hash: t.hash, blockNumber: t.blockNumber, from: t.from, to: t.to, value: toBig(t.value), recipientData: t.recipientData ?? "", executionResult: t.executionResult, confirmations: t.confirmations };
     },
 
-    /** Sends a signed transaction (hex). Returns its hash. */
+    /** The latest transactions to or from an address, newest first. */
+    async transactionsByAddress(address: string, max = 100): Promise<NimiqTransaction[]> {
+      const list = await call<RawTx[]>("getTransactionsByAddress", [address, max, null]);
+      return list.map((t) => ({ hash: t.hash, blockNumber: t.blockNumber, from: t.from, to: t.to, value: toBig(t.value), recipientData: t.recipientData ?? "", executionResult: t.executionResult, confirmations: t.confirmations }));
+    },
+
+    /** Luna held by a basic account; 0 for an address that has never received anything. */
+    async balance(address: string): Promise<bigint> {
+      const a = await call<{ balance: number }>("getAccountByAddress", [address]);
+      return toBig(a.balance);
+    },
+
+    /** Which chain the node follows, from its latest block: "MainAlbatross" or "TestAlbatross". */
+    network: async () => (await call<{ network: string }>("getLatestBlock", [false])).network,
+
+    /**
+     * Sends a signed transaction (hex). Returns its hash. Public nodes answer with the hash even for a
+     * transaction that can never land (unfunded, expired, or for the other network), so only `transaction(hash)` proves it went through.
+     */
     sendRawTransaction: (hex: string) => call<string>("sendRawTransaction", [hex]),
   };
 }

@@ -1,6 +1,7 @@
 import { serve } from "@hono/node-server";
 import { createBitrefillApi, createMavapayApi, ProviderError } from "@railkit/adapters";
 import { createNimiqRpc, parseNimiqAddress } from "@railkit/core";
+import { MemoryPoolStore, PgPoolStore, poolConfigFromEnv, type PoolStore } from "@railkit/pool";
 import { createChangellyFiatApi } from "@railkit/adapters/server";
 import pg from "pg";
 import { openAiExtractor, openAiQrExtractor, openAiSavingsClassifier, openAiSavingsPhraser } from "@railkit/agent";
@@ -8,6 +9,7 @@ import { createApp } from "./app";
 import { parseInvites, type BetaConfig } from "./ops/beta";
 import { airtimeToOps, payoutToOps, rampToOps } from "./ops/map";
 import { MemoryOpsStore, PgOpsStore, type OpsStore } from "./ops/store";
+import type { PoolDeps } from "./pool/routes";
 import type { SaveDeps } from "./save/routes";
 import { MemorySaveStore, PgSaveStore, type SaveStore } from "./save/store";
 import { watchOnce, webhookAlerter } from "./ops/watcher";
@@ -78,6 +80,25 @@ async function saveDeps(): Promise<SaveDeps | undefined> {
 }
 const save = await saveDeps();
 
+// Errand Save, feature 2: Steady and Boost. Off unless POOL_ENABLED=true. The worker (apps/pool-worker) settles and pays out.
+async function poolDeps(): Promise<PoolDeps | undefined> {
+  const cfg = poolConfigFromEnv(process.env);
+  if (!cfg) return undefined;
+  let store: PoolStore;
+  if (pool) {
+    const pgStore = new PgPoolStore(pool);
+    await pgStore.migrate();
+    store = pgStore;
+  } else {
+    // Without Postgres the worker can't see these orders: fine for trying the screens, not for money.
+    console.warn(JSON.stringify({ msg: "DATABASE_URL not set: pool orders are in memory and no worker can settle them" }));
+    store = new MemoryPoolStore();
+  }
+  const url = process.env.NIMIQ_RPC_URL || (cfg.network === "testnet" ? "https://rpc.testnet.nimiqwatch.com" : "https://rpc.nimiqwatch.com");
+  return { store, rpc: createNimiqRpc({ url }), cfg };
+}
+const poolSide = await poolDeps();
+
 const beta: BetaConfig | undefined =
   process.env.BETA_REQUIRED === "true"
     ? {
@@ -98,6 +119,7 @@ if (practice && !/staging/.test(process.env.MAVAPAY_BASE_URL ?? "")) {
 
 const app = createApp({
   save,
+  pool: poolSide,
   simulatePayIn: practice
     ? async (orderId) => {
         const res = await fetch(`${process.env.MAVAPAY_BASE_URL}/simulation/pay-in`, {
@@ -135,7 +157,7 @@ const app = createApp({
 
 const port = Number(process.env.PORT ?? 8787);
 serve({ fetch: app.fetch, port }, () => {
-  console.log(JSON.stringify({ msg: "railkit api listening", port, corridors: list(process.env.CORRIDORS), save: save ? save.network : "off" }));
+  console.log(JSON.stringify({ msg: "railkit api listening", port, corridors: list(process.env.CORRIDORS), save: save ? save.network : "off", pool: poolSide ? poolSide.cfg.network : "off" }));
 });
 
 // Every 2 minutes: catch payments made after the app closed, and alert on stuck or failed orders.

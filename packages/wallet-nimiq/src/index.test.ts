@@ -112,6 +112,7 @@ describe("createNimiqSaver", () => {
       sendSetActiveStakeTransaction: async (tx) => (calls.push(["setActive", tx]), "tx3"),
       sendRetireStakeTransaction: async (tx) => (calls.push(["retire", tx]), "tx4"),
       sendRemoveStakeTransaction: async (tx) => (calls.push(["remove", tx]), "tx5"),
+      sendBasicTransactionWithData: async (tx) => (calls.push(["memo", tx]), "tx6"),
       ...over,
     };
     return { p, calls };
@@ -156,6 +157,14 @@ describe("createNimiqSaver", () => {
     await expect(s.addToGrow(0n)).rejects.toBeInstanceOf(WalletError);
     await expect(s.retire(2n ** 60n)).rejects.toBeInstanceOf(WalletError);
     expect(calls).toEqual([]);
+  });
+
+  it("pays the pool with the order's memo, and refuses a memo Nimiq can't carry", async () => {
+    const { p, calls } = saverProvider();
+    const s = createNimiqSaver(p);
+    await s.payWithMemo("NQ26 0000 0000 02A5 YAK7 4QNF 9MH0 TE2B GVRU", 100_000_000n, "Errand Steady 7KQ2XMP9AB");
+    expect(calls).toEqual([["memo", { recipient: "NQ26 0000 0000 02A5 YAK7 4QNF 9MH0 TE2B GVRU", value: 100_000_000, data: "Errand Steady 7KQ2XMP9AB" }]]);
+    expect(() => s.payWithMemo("NQ26 0000 0000 02A5 YAK7 4QNF 9MH0 TE2B GVRU", 1n, "x".repeat(65))).toThrow(WalletError);
   });
 
   it("classifies a refusal in Nimiq Pay as rejected", async () => {

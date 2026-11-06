@@ -16,7 +16,8 @@
     "@railkit/core": "workspace:*",
     "hono": "4.13.14",
     "pg": "8.23.1",
-    "@railkit/agent": "workspace:*"
+    "@railkit/agent": "workspace:*",
+    "@railkit/pool": "workspace:*"
   },
   "devDependencies": {
     "@types/pg": "8.23.1",

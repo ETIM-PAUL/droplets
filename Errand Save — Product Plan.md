@@ -201,7 +201,7 @@ It then reports the receipts. Retrying with the same `payoutId` reuses the trans
 | Phase | Depends on | What ships |
 |---|---|---|
 | 1. Save codes + Grow | Nothing external | Codes, rules, routing, receipts, the SDK and screens; testnet first, then a mainnet pilot with three apps that already pay NIM. Competition entries are open source, so we can open the integration pull requests ourselves. |
-| 2. Steady and Boost pilot | Legal review | The pool with deposit caps, the price feed, daily settlement and the reserves page; Steady added as a code destination. Our team seeds Boost so Steady has cover from day one. |
+| 2. Steady and Boost pilot (built for testnet; off by default) | Legal review before mainnet | The pool with deposit caps, the price feed, daily settlement and the reserves page; Steady added as a code destination. Our team seeds Boost so Steady has cover from day one. |
 | 3. Lightning | Fastspot's answer | Lightning addresses for one-off sends, then weekly auto-save through NWC. This phase moves earlier if Fastspot agrees quickly. |
 
 Ask Fastspot now, in parallel with Phase 1.
@@ -244,6 +244,7 @@ Ask Fastspot now, in parallel with Phase 1.
 | Nimiq Pay's receive address is the user's local address, which is also their staker address and their message-signing key; `listAccounts` returns it first. Mini Apps can only add stake to the user's own stake. | Nimiq Pay source |
 | A server can build and sign add-stake and basic payments with `@nimiq/core` 2.23.0 in Node; the public node `rpc.nimiqwatch.com` allows `sendRawTransaction`, `getTransactionByHash` and `getTransactionsByAddress` (with memos). | Local test (throwaway key, not sent); RPC calls |
 | Add-stakes paid by others don't appear in the staker's own history. | Mainnet check |
+| The public node's `sendRawTransaction` answers with the transaction's hash for anything it can parse: a payment from an empty wallet, a duplicate, one signed for mainnet, and one long expired. None of them land, so only `getTransactionByHash` proves a payment went through. The latest block's `network` field names the chain (`MainAlbatross`, `TestAlbatross`). | Testnet check with empty throwaway wallets; `getLatestBlock` on both networks |
 | Fastspot is run by Inuit International Operations Ltd (UK). It uses non-custodial atomic swaps and requires a partner API key. Its terms allow trading only assets "that belong to you". Lightning (`BTC_LN`) is modelled on both sides of a swap in its client library; whether Lightning to NIM is live for outside services is unconfirmed. | fastspot.io/terms; `@nimiq/fastspot-api` 1.10.3 and 2.0.0-beta.2; public `/assets` |
 | Alby Hub's `/apps/new` link supports `max_amount` (millisats per period), `budget_renewal` (`daily`, `weekly`, `monthly`, `yearly`), `expires_at` and `request_methods`. 20 wallets support NWC; budget support elsewhere is unconfirmed. | Alby Hub README; awesome-nwc list |
 | NIM price $0.000278 on 3 November 2026. | CoinGecko |

@@ -20,6 +20,7 @@ import { airtimeToOps, payoutToOps, rampToOps } from "./ops/map";
 import { betaMetrics } from "./ops/metrics";
 import type { OpsStore } from "./ops/store";
 import { rateLimiter } from "./rate-limit";
+import { mountPoolRoutes, type PoolDeps } from "./pool/routes";
 import { mountSaveRoutes, type SaveDeps } from "./save/routes";
 import { verifyMavapaySignature } from "./webhook";
 
@@ -48,6 +49,8 @@ export interface AppDeps {
   agent?: { model?: Extractor; qrModel?: QrExtractor; savingsPhraser?: SavingsPhraser; savingsClassifier?: SavingsClassifier; modelCallsPerDay?: number };
   /** Errand Save, phase 1: save codes and Grow. Off when undefined. */
   save?: SaveDeps;
+  /** Errand Save, feature 2: the Steady/Boost pool. Off when undefined. The API holds no pool keys. */
+  pool?: PoolDeps;
   log?: (msg: string, data?: Record<string, unknown>) => void;
   now?: () => number;
 }
@@ -508,6 +511,7 @@ export function createApp(d: AppDeps) {
   });
 
   if (d.save) mountSaveRoutes(app, d.save, { bad, clientKey, admin, now, log, phraser: d.agent?.savingsPhraser, classifier: d.agent?.savingsClassifier, allowModel });
+  if (d.pool) mountPoolRoutes(app, d.pool, { bad, clientKey, admin, now, log });
 
   return app;
 }

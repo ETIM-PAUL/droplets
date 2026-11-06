@@ -41,6 +41,24 @@ export interface SaveValidator {
   numStakers: number;
 }
 
+/** Steady and Boost: the pool's latest settlement and settings. */
+export interface PoolStateView {
+  network: "mainnet" | "testnet";
+  poolAddress: string;
+  paused: boolean;
+  settlement: { seq: number; at: number; priceUsd: string; coverBps: number | null; steadyUsd: string; boostNim: string; boostLeveragePct: number | null } | null;
+  nextSettlementAt: number;
+  feeBpsPerYear: number;
+  caps: { steadyUsdPerAddress: string | null; steadyUsdTotal: string | null; boostNimPerAddress: string | null };
+}
+
+export interface PoolMe {
+  steady: { usd: string; nimAtLastPrice: string };
+  boost: { nim: string; leveragePct: number | null };
+  orders: { id: string; side: "steady" | "boost"; kind: "deposit" | "withdraw"; status: "awaiting_payment" | "queued" | "filled" | "refunded" | "rejected" | "expired"; note: string | null; createdAt: number; txHash: string | null; nim: string | null; usd: string | null; all: boolean }[];
+  payouts: { id: string; orderId: string; nim: string; reason: "withdrawal" | "refund"; status: "pending" | "sent" | "confirmed" | "failed"; txHash: string | null }[];
+}
+
 export interface RailkitClientOptions {
   /** e.g. "/api" behind the Mini App's dev proxy, or the deployed API's URL. */
   baseUrl: string;
@@ -114,6 +132,14 @@ export function createRailkitClient(o: RailkitClientOptions) {
     saveRule: (signed: { message: string; publicKey: string; signature: string }) =>
       call<{ code: string; address: string; savePercent: number } | { revoked: true }>("/v1/save/rule", json(signed)),
     saveValidators: async () => (await call<{ validators: SaveValidator[] }>("/v1/save/validators")).validators,
+    /** Steady and Boost. */
+    poolState: () => call<PoolStateView>("/v1/pool/state"),
+    poolMe: (address: string) => call<PoolMe>(`/v1/pool/me?address=${encodeURIComponent(address)}`),
+    /** A deposit order: the user then pays `nim` to `poolAddress` with `memo` in Nimiq Pay. */
+    poolDeposit: (req: { address: string; side: "steady" | "boost"; nim: string }) =>
+      call<{ orderId: string; poolAddress: string; memo: string; nim: string; luna: string; settlesAt: number }>("/v1/pool/deposits", json(req)),
+    poolWithdraw: (signed: { message: string; publicKey: string; signature: string }) => call<{ orderId: string; settlesAt: number }>("/v1/pool/withdrawals", json(signed)),
+    poolReserves: () => call<{ poolAddress: string; onChainNim: string; owedNim: string; covered: boolean; surplusNim: string; lastSettlement: { seq: number; at: number } }>("/v1/pool/reserves"),
     /** A question about the user's own savings, answered from their data. `kind` is what the chat already worked out. */
     saveAsk: (req: { address: string; question: string; kind?: SaveQuestion; period?: SavePeriod; tzOffsetMinutes: number }) =>
       call<{ answer: string; question: SaveQuestion; source: "rules" | "model" }>("/v1/save/ask", json(req)),

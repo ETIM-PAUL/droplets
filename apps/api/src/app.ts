@@ -25,7 +25,8 @@ import { mountSaveRoutes, type SaveDeps } from "./save/routes";
 import { verifyMavapaySignature } from "./webhook";
 
 export interface AppDeps {
-  mavapay: Pick<MavapayApi, "quote" | "getOrder" | "banks" | "nameEnquiry">;
+  /** Send to M-Pesa and banks. Off when undefined: the payout routes say so. */
+  mavapay?: Pick<MavapayApi, "quote" | "getOrder" | "banks" | "nameEnquiry">;
   /** Corridor kill switch: only these are served. */
   corridors: ReadonlySet<string>;
   allowedOrigins: string[];
@@ -90,6 +91,8 @@ export function createApp(d: AppDeps) {
     return bad("Something went wrong on our side. Try again in a minute.", 502);
   };
 
+  const payoutsOff = () => bad("Sending to M-Pesa and banks is switched off.", 503);
+
   const now = d.now ?? Date.now;
   const sessionLimit = rateLimiter(10, 60_000, d.now);
 
@@ -135,6 +138,7 @@ export function createApp(d: AppDeps) {
 
   app.post("/v1/payouts/quote", async (c) => {
     if (!quoteLimit(clientKey((n) => c.req.header(n)))) return bad("Too many quotes in a short time. Wait a minute and try again.", 429);
+    if (!d.mavapay) return payoutsOff();
     let body: Record<string, unknown>;
     try {
       body = await c.req.json();
@@ -175,6 +179,7 @@ export function createApp(d: AppDeps) {
 
   app.get("/v1/payouts/orders/:orderId", async (c) => {
     if (!readLimit(clientKey((n) => c.req.header(n)))) return bad("Too many requests. Wait a minute.", 429);
+    if (!d.mavapay) return payoutsOff();
     const id = c.req.param("orderId");
     if (!ORDER_ID.test(id)) return bad("That order number isn't valid.");
     if (await notYours(id, c.get("invite"))) return bad("Order not found.", 404);
@@ -191,6 +196,7 @@ export function createApp(d: AppDeps) {
   let bankCache: { at: number; banks: Bank[] } | null = null;
   const ngBanks = async (): Promise<Bank[]> => {
     if (bankCache && now() - bankCache.at < 3600_000) return bankCache.banks;
+    if (!d.mavapay) return [];
     const seen = new Set<string>();
     const banks = (await d.mavapay.banks("NG")).filter((b) => !seen.has(b.code) && seen.add(b.code)).map((b) => ({ name: b.name.trim(), code: b.code }));
     bankCache = { at: now(), banks };
@@ -199,6 +205,7 @@ export function createApp(d: AppDeps) {
 
   app.get("/v1/payouts/banks", async (c) => {
     if (c.req.query("country") !== "NG") return bad("Bank lists are available for NG only.");
+    if (!d.mavapay) return payoutsOff();
     if (!d.corridors.has("ng-bank")) return bad("Nigerian bank payouts are paused right now.", 403);
     try {
       return c.json({ banks: await ngBanks() });
@@ -209,6 +216,7 @@ export function createApp(d: AppDeps) {
 
   app.get("/v1/payouts/name-enquiry", async (c) => {
     if (!readLimit(clientKey((n) => c.req.header(n)))) return bad("Too many requests. Wait a minute.", 429);
+    if (!d.mavapay) return payoutsOff();
     const accountNumber = c.req.query("accountNumber") ?? "";
     const bankCode = c.req.query("bankCode") ?? "";
     if (!/^\d{10}$/.test(accountNumber) || !/^\d{3,10}$/.test(bankCode)) return bad("Enter a 10-digit account number and choose a bank.");

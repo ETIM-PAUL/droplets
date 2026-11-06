@@ -55,6 +55,17 @@ describe("payout API", () => {
     expect(calls).toHaveLength(0);
   });
 
+  it("says sending to M-Pesa and banks is off when Mavapay isn't set up", async () => {
+    const { app } = setup({ mavapay: undefined });
+    for (const path of ["/v1/payouts/orders/261026-AAAAA-BBBBB", "/v1/payouts/banks?country=NG", "/v1/payouts/name-enquiry?accountNumber=0123456789&bankCode=000013"]) {
+      const res = await app.request(path);
+      expect(res.status, path).toBe(503);
+    }
+    const res = await app.request("/v1/payouts/quote", post(KE));
+    expect(res.status).toBe(503);
+    expect(((await res.json()) as { error: { message: string } }).error.message).toMatch(/switched off/);
+  });
+
   it("lists only enabled corridors", async () => {
     const res = await setup().app.request("/v1/corridors");
     const ids = ((await res.json()) as { corridors: { id: string }[] }).corridors.map((c) => c.id);

@@ -42,7 +42,9 @@ const ramp = process.env.CHANGELLY_FIAT_PUBLIC_KEY && process.env.CHANGELLY_FIAT
     })
   : undefined;
 
-const mavapay = createMavapayApi({ apiKey: required("MAVAPAY_API_KEY"), baseUrl: required("MAVAPAY_BASE_URL") });
+// Send to M-Pesa and Nigerian banks: Mavapay. Off until its key is set, and then no corridor is served.
+const mavapay = process.env.MAVAPAY_API_KEY ? createMavapayApi({ apiKey: process.env.MAVAPAY_API_KEY, baseUrl: required("MAVAPAY_BASE_URL") }) : undefined;
+const corridors = mavapay ? list(process.env.CORRIDORS) : [];
 
 const pool = process.env.DATABASE_URL ? new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 5 }) : null;
 
@@ -142,7 +144,7 @@ const app = createApp({
   airtimeCountries: new Set(list(process.env.AIRTIME_COUNTRIES)),
   bitrefillWebhookToken: bitrefillToken,
   mavapay,
-  corridors: new Set(list(process.env.CORRIDORS)),
+  corridors: new Set(corridors),
   allowedOrigins: list(process.env.ALLOWED_ORIGINS),
   webhookSecret: process.env.MAVAPAY_WEBHOOK_SECRET || undefined,
   ramp: ramp ? { api: ramp, countries: new Set(list(process.env.TOPUP_COUNTRIES)), nimTicker: process.env.CHANGELLY_NIM_TICKER || "NIM" } : undefined,
@@ -157,7 +159,7 @@ const app = createApp({
 
 const port = Number(process.env.PORT ?? 8787);
 serve({ fetch: app.fetch, port }, () => {
-  console.log(JSON.stringify({ msg: "railkit api listening", port, corridors: list(process.env.CORRIDORS), save: save ? save.network : "off", pool: poolSide ? poolSide.cfg.network : "off" }));
+  console.log(JSON.stringify({ msg: "railkit api listening", port, corridors, save: save ? save.network : "off", pool: poolSide ? poolSide.cfg.network : "off" }));
 });
 
 // Every 2 minutes: catch payments made after the app closed, and alert on stuck or failed orders.
@@ -167,7 +169,9 @@ setInterval(() => {
     alert,
     refresh: async (o) =>
       o.kind === "payout"
-        ? payoutToOps((await mavapay.getOrder(o.id)).state)
+        ? mavapay
+          ? payoutToOps((await mavapay.getOrder(o.id)).state)
+          : null
         : o.kind === "airtime"
           ? bitrefill
             ? airtimeToOps((await bitrefill.status(o.id)).state)

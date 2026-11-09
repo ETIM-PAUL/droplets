@@ -235,11 +235,12 @@ pnpm run ci   # type checks, tests, build, licence check, signing guard
 
 ## Deployment
 
-[render.yaml](render.yaml) is a Render Blueprint for the API (`droplets-api`), the Mini App as a static site (`droplets-app`) and Postgres (`droplets-db`). It's set up for testnet, open to everyone, with the API and the Mini App already pointing at each other's `onrender.com` addresses.
+[render.yaml](render.yaml) is a Render Blueprint for the API (`droplets-api`) and the Mini App as a static site (`droplets-app`). It's set up for testnet, open to everyone, with the API and the Mini App already pointing at each other's `onrender.com` addresses. The database is any Postgres you give it: the free tier of [Neon](https://neon.tech) works well.
 
-1. Push the repo to GitHub, then in Render choose **New > Blueprint** and pick it.
-2. Render asks for two optional secrets, `OPENAI_API_KEY` and `ALERT_WEBHOOK_URL`. Leave them empty if you don't use them.
-3. Once both services are live, open `https://droplets-app.onrender.com` in Nimiq Pay.
+1. Create a Postgres database and copy its **direct** connection string, not the pooled one, because the API runs its own table migrations at startup. With Neon that's the host without `-pooler`. If your Neon login came from Vercel, create it in Vercel under **Storage > Create Database > Neon**, then copy `DATABASE_URL_UNPOOLED`.
+2. Push the repo to GitHub, then in Render choose **New > Blueprint** and pick it.
+3. Render asks for `DATABASE_URL`: paste the connection string. It also asks for two optional secrets, `OPENAI_API_KEY` and `ALERT_WEBHOOK_URL`; leave them empty if you don't use them.
+4. Once both services are live, open `https://droplets-app.onrender.com` in Nimiq Pay.
 
 If Render gives either service a different address, update `ALLOWED_ORIGINS` on the API and `VITE_RAILKIT_API_URL` on the Mini App to match.
 
@@ -247,7 +248,7 @@ If Render gives either service a different address, update `ALLOWED_ORIGINS` on 
 
 **For an invite-only beta:** set `BETA_REQUIRED=true` and a long random `SESSION_SECRET`, and create invite codes with `node scripts/new-invites.mjs "Name"` for `BETA_INVITES`.
 
-Free Render services sleep after about 15 minutes idle, so the first request then takes about a minute, and free Postgres is time-limited. The weekly draw doesn't mind sleeping, because a block picks the winner, not the time the job runs. Move the API and the database to paid plans for a public launch.
+Free Render services sleep after about 15 minutes idle, so the first request then takes about a minute. The weekly draw doesn't mind sleeping, because a block picks the winner, not the time the job runs. Move the API to a paid plan for a public launch.
 
 ## Status and roadmap
 

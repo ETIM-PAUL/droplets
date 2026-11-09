@@ -1,4 +1,4 @@
-# Render Blueprint for Droplets: the API, the Mini App as a static site, and Postgres.
+# Render Blueprint for Droplets: the API, and the Mini App as a static site. Postgres is external (DATABASE_URL).
 # In Render: New > Blueprint > pick this repo. Secrets (sync: false) are asked for once and never stored here.
 services:
   - type: web
@@ -17,10 +17,10 @@ services:
       # Who may call the API: the Mini App's address. Change it if Render gives the app a different one.
       - key: ALLOWED_ORIGINS
         value: https://droplets-app.onrender.com
+      # Postgres, from Neon (or any Postgres). Use the direct connection string, not the pooled one: the API runs its
+      # own table migrations at startup. Render's free tier allows one database per account, so it isn't used here.
       - key: DATABASE_URL
-        fromDatabase:
-          name: droplets-db
-          property: connectionString
+        sync: false
       # Bearer token for /v1/admin/: registering apps that save with Droplets, and paying draw prizes.
       - key: ADMIN_TOKEN
         generateValue: true
@@ -76,7 +76,3 @@ services:
       - path: /*
         name: X-Content-Type-Options
         value: nosniff
-
-databases:
-  - name: droplets-db
-    plan: free

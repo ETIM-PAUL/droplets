@@ -12,7 +12,7 @@ export interface CaseResult {
   expected: number;
   /** Fields it filled with a value other than the expected one, or filled when it should have asked. */
   wrong: string[];
-  /** Expected fields left empty (Errand will ask; slower, but safe). */
+  /** Expected fields left empty (Droplets will ask; slower, but safe). */
   missed: string[];
 }
 
@@ -46,7 +46,7 @@ export async function runEval(cases: EvalCase[], deps: { enabled: ReadonlySet<Co
     if (c.intent === "topup" && r.topup) {
       for (const [k, got] of Object.entries(r.topup)) if (!(k in (c.topup ?? {}))) res.wrong.push(`topup.${k}: should be empty, got ${JSON.stringify(got)}`);
     }
-    // Savings: every field must match, and none may be filled that the case doesn't list (an amount Errand guessed is wrong).
+    // Savings: every field must match, and none may be filled that the case doesn't list (an amount Droplets guessed is wrong).
     for (const [k, want] of Object.entries(c.save ?? {})) {
       res.expected++;
       const got = (r.save as Record<string, unknown> | undefined)?.[k];

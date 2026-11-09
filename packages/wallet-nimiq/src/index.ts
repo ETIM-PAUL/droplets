@@ -82,7 +82,7 @@ function toLuna(amount: bigint, allowZero = false): number {
 }
 
 /**
- * Errand Save's actions in Nimiq Pay, all on the user's own stake (Grow). Amounts are luna.
+ * Droplets's actions in Nimiq Pay, all on the user's own stake (Grow). Amounts are luna.
  * Nimiq Pay shows its approval dialog for each; nothing here can move money without it.
  */
 export function createNimiqSaver(provider: NimiqSaverProvider, options: NimiqExecutorOptions = {}) {
@@ -95,7 +95,7 @@ export function createNimiqSaver(provider: NimiqSaverProvider, options: NimiqExe
     }
   };
   return {
-    /** Signs an Errand request: setting or revoking the save rule, or joining or leaving the weekly draw. Returns the key Nimiq Pay signed with, so the server can check it's this address. */
+    /** Signs a Droplets request: setting or revoking the save rule, or joining or leaving the weekly draw. Returns the key Nimiq Pay signed with, so the server can check it's this address. */
     signRule: (message: string) => run(() => provider.sign(message), false),
     /** Opens Grow: stakes at least 100 NIM with the chosen validator. */
     openGrow: (validator: string, luna: bigint) => run(() => provider.sendNewStakerTransaction({ delegation: validator, value: toLuna(luna) })),

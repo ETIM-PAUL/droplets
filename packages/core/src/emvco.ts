@@ -53,7 +53,7 @@ function readTlv(s: string): Record<string, string> | null {
 
 export function parseEmvco(input: string): Result<EmvcoPayment> {
   const s = input.trim();
-  if (!s.startsWith("000201")) return fail("unrecognised", "This isn't a payment QR code Errand understands.");
+  if (!s.startsWith("000201")) return fail("unrecognised", "This isn't a payment QR code Droplets understands.");
 
   const crcAt = s.length - 8;
   if (crcAt < 0 || s.slice(crcAt, crcAt + 4) !== "6304") {

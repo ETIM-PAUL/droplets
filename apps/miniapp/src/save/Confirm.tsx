@@ -46,7 +46,7 @@ export function ConfirmCard({ intent, address, onDone, onForm, onCancel }: Props
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (!self?.ok) return <p className="note">Open Errand inside Nimiq Pay to make changes.</p>;
+  if (!self?.ok) return <p className="note">Open Droplets inside Nimiq Pay to make changes.</p>;
   if (!me || !apps) return error ? <p className="alert" role="alert">{error}</p> : <p className="note" role="status">Checking your savings…</p>;
   const p = plan(intent, me);
 
@@ -59,7 +59,7 @@ export function ConfirmCard({ intent, address, onDone, onForm, onCancel }: Props
     try {
       const saver = createNimiqSaver(await init({ timeout: 5_000 }));
       if (p.kind === "rule" || p.kind === "revoke") {
-        // Rules are signed whole: keep the user's other rules, and only the apps Errand still knows.
+        // Rules are signed whole: keep the user's other rules, and only the apps Droplets still knows.
         const known = new Set(apps!.map((a) => a.name));
         const message = p.kind === "revoke"
           ? formatSaveMessage({ action: "revoke", address: self.value, time: new Date().toISOString(), nonce: newNonce() })

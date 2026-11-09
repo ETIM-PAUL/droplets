@@ -1,4 +1,4 @@
-// The catch-up: for spending outside apps that save with Errand, Errand adds up the user's share of what they spent
+// The catch-up: for spending outside apps that save with Droplets, Droplets adds up the user's share of what they spent
 // each day, week, two weeks or month, and offers to save it in one approval. Nothing can take it automatically:
 // Nimiq Pay asks the user to approve every payment, including this one.
 

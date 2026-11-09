@@ -7,7 +7,7 @@ import { looksEnglish, type SavingsClassifier } from "./save-answer";
 
 export interface UnderstandInput {
   text: string;
-  /** What Errand understood before this message, sent back by the device. Untrusted: checked again here. */
+  /** What Droplets understood before this message, sent back by the device. Untrusted: checked again here. */
   draft?: Draft;
   /** The question this message answers, if any. */
   expecting?: Missing;
@@ -16,7 +16,7 @@ export interface UnderstandInput {
 export interface UnderstandDeps {
   enabled: ReadonlySet<CorridorId>;
   banks: readonly Bank[];
-  /** Optional. Without it Errand still understands most sentences and asks for the rest. */
+  /** Optional. Without it Droplets still understands most sentences and asks for the rest. */
   model?: Extractor;
   /** Optional. Spots savings questions that aren't in English; it may only pick a kind of question. */
   savingsClassifier?: SavingsClassifier;
@@ -74,8 +74,8 @@ export async function understand(input: UnderstandInput, deps: UnderstandDeps): 
   let source: Understood["source"] = "rules";
   const notes: string[] = [];
   const ambiguous = rules.ambiguous ?? [];
-  if (ambiguous.includes("amount")) notes.push("Your message has more than one amount, so Errand will ask which one.");
-  if (ambiguous.includes("number")) notes.push("Your message has more than one phone or account number, so Errand will ask which one.");
+  if (ambiguous.includes("amount")) notes.push("Your message has more than one amount, so Droplets will ask which one.");
+  if (ambiguous.includes("number")) notes.push("Your message has more than one phone or account number, so Droplets will ask which one.");
 
   // The model is worth a call only for a fresh sentence the rules couldn't finish.
   const first = checkDraft(draft, deps.enabled, deps.banks);
@@ -90,7 +90,7 @@ export async function understand(input: UnderstandInput, deps: UnderstandDeps): 
       draft = mergeDrafts(fromModel, draft);
       source = "rules+model";
       const lost = dropped.map((k) => DROPPED[k]).filter(Boolean);
-      if (lost.length) notes.push(`Errand couldn't confirm ${lost.join(" and ")} from your message, so it will ask.`);
+      if (lost.length) notes.push(`Droplets couldn't confirm ${lost.join(" and ")} from your message, so it will ask.`);
       deps.log?.("agent model used", { dropped });
     } catch (e) {
       deps.log?.("agent model failed", { error: String(e) });

@@ -93,7 +93,7 @@ function cache<T>(ttlMs: number, now: () => number) {
 }
 
 /**
- * Errand Save, phase 1. Users set their rule with a message signed in Nimiq Pay; paying apps look the
+ * Droplets, phase 1. Users set their rule with a message signed in Nimiq Pay; paying apps look the
  * code up with their app key and pay the user directly. The server never holds or moves anyone's NIM.
  */
 export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h: Helpers) {
@@ -140,7 +140,7 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
 
   /**
    * The rule behind an address, only if its owner allowed this app to recognise them. Someone without a rule
-   * and someone who didn't allow the app look the same, so an app can't find out who saves with Errand.
+   * and someone who didn't allow the app look the same, so an app can't find out who saves with Droplets.
    */
   async function allowedSaver(address: string, payer: SaveApp): Promise<SaveCodeRow | undefined> {
     const row = await s.store.activeCodeByAddress(address);
@@ -187,7 +187,7 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
     if (m.value.apps) {
       const byName = new Map((await namedApps()).map((a) => [a.name.toLowerCase(), a.id]));
       const unknown = m.value.apps.find((n) => !byName.has(n.toLowerCase()));
-      if (unknown) return bad(`Errand doesn't know an app called ${unknown}. Reload and try again.`);
+      if (unknown) return bad(`Droplets doesn't know an app called ${unknown}. Reload and try again.`);
       appIds = m.value.apps.map((n) => byName.get(n.toLowerCase())!);
     }
     const spendPercent = m.value.spendPercent ?? existing?.spendPercent ?? 0;
@@ -378,7 +378,7 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
       // What apps already saved when the user paid them, in the same time: that spending has had its share.
       const saved = receipts.filter((r) => r.source === "spend" && r.kind === "grow" && r.createdAt >= w.from && r.createdAt < w.to).reduce((a, r) => a + BigInt(r.luna), 0n);
       const owed = catchUpOwed(spent, row.spendPercent, saved);
-      // Paid by the user's own add-stakes since the first period in the window ended, whenever Errand sees them, and
+      // Paid by the user's own add-stakes since the first period in the window ended, whenever Droplets sees them, and
       // never ones that settled an earlier catch-up.
       const own = ownAddresses(h);
       const stakeHex = `06${hex(nimiqAddressBytes(addr.value))}`;
@@ -401,7 +401,7 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
     }
   });
 
-  /** The apps that save with Errand, for the user to pick which may recognise their address. Names only. */
+  /** The apps that save with Droplets, for the user to pick which may recognise their address. Names only. */
   app.get("/v1/save/apps", async (c) => {
     if (!readLimit(ip(c))) return bad("Too many requests. Wait a minute.", 429);
     return c.json({ apps: (await namedApps()).map((a) => ({ id: a.id, name: a.name })) });
@@ -526,7 +526,7 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
     if (typeof body?.address === "string") {
       const addr = parseNimiqAddress(body.address);
       if (!addr.ok) return bad(addr.error.message);
-      // The same answer for "doesn't save with Errand" and "didn't allow your app".
+      // The same answer for "doesn't save with Droplets" and "didn't allow your app".
       row = await allowedSaver(addr.value, payer);
       if (!row) return bad("This address hasn't allowed your app to save for it.", 404);
     } else {

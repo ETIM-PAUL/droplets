@@ -44,7 +44,7 @@ export function findPaymentCandidates(text: string): string[] {
 
 export type ResolvedText =
   | { status: "found"; payment: ParsedPayment; candidate: string }
-  /** Several different payment requests in one QR: Errand won't pick one. */
+  /** Several different payment requests in one QR: Droplets won't pick one. */
   | { status: "ambiguous"; candidates: string[] }
   | { status: "none" };
 
@@ -86,7 +86,7 @@ const NON_PAYMENT: [RegExp, string][] = [
 
 /**
  * Common QR codes that are never payments, named on the phone so their contents (Wi-Fi passwords,
- * contacts) are never sent to Errand's server or a model. Null when the text could still hold a payment.
+ * contacts) are never sent to the Droplets server or a model. Null when the text could still hold a payment.
  */
 export function nonPaymentKind(text: string): string | null {
   const t = text.trim();

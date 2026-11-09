@@ -1,28 +1,28 @@
-# Saving with Errand: for apps that pay people, and apps people pay
+# Saving with Droplets: for apps that pay people, and apps people pay
 
 For Mini Apps that pay people NIM (games, bounties, quizzes, cashback), and apps that take payments (shops, entry fees).
 
-Errand users set a rule, such as "save 30% of what apps pay me, and 5% more when I pay an app". You apply it in two ways:
-- **When you pay a user,** pay the address you already pay. If its owner allowed your app in Errand, the payment splits by their rule. Everyone else gets one normal payment, as now. Users can also give you a save code (`SAVE-7KQ2XMP`) where you ask for an address.
-- **When a user pays you,** ask Errand what to charge. For a user who allowed your app, a share goes on top, and you put that share into their savings once they've paid. See [Spend and save](#spend-and-save).
+Droplets users set a rule, such as "save 30% of what apps pay me, and 5% more when I pay an app". You apply it in two ways:
+- **When you pay a user,** pay the address you already pay. If its owner allowed your app in Droplets, the payment splits by their rule. Everyone else gets one normal payment, as now. Users can also give you a save code (`SAVE-7KQ2XMP`) where you ask for an address.
+- **When a user pays you,** ask Droplets what to charge. For a user who allowed your app, a share goes on top, and you put that share into their savings once they've paid. See [Spend and save](#spend-and-save).
 
 When you pay a saver, you send two transactions from your payout account:
 - a normal payment of the rest to the user's address;
-- an add-stake of the saved share into their own stake, called **Grow** in Errand.
+- an add-stake of the saved share into their own stake, called **Grow** in Droplets.
 
-You pay the user directly. Errand never holds the money; its API only tells you how to split each payment and records what you sent.
+You pay the user directly. Droplets never holds the money; its API only tells you how to split each payment and records what you sent.
 
 ## 1. Get an app key
 
-Ask the Errand team to register your app with its name and the Nimiq addresses you pay from. You get an `rk_save_…` key once. Keep it on your server.
+Ask the Droplets team to register your app with its name and the Nimiq addresses you pay from. You get an `rk_save_…` key once. Keep it on your server.
 
-Errand only accepts receipts for transactions sent from the addresses you registered.
+Droplets only accepts receipts for transactions sent from the addresses you registered.
 
 ## 2. Pay the address you already pay
 
-Most Mini Apps get the user's address from Nimiq Pay (`listAccounts()[0]`) and pay it. Keep doing that, and pay through the SDK (step 3). Users who allowed your app in Errand get their split; nobody else is affected.
+Most Mini Apps get the user's address from Nimiq Pay (`listAccounts()[0]`) and pay it. Keep doing that, and pay through the SDK (step 3). Users who allowed your app in Droplets get their split; nobody else is affected.
 
-Errand answers the same for "doesn't save with Errand" as for "didn't allow your app", so you can't find out who uses Errand.
+Droplets answers the same for "doesn't save with Droplets" as for "didn't allow your app", so you can't find out who uses Droplets.
 
 If you ask people to type or paste an address, also accept a save code there. `parseSaveCode` tells them apart and catches typos with the code's check character:
 
@@ -56,9 +56,9 @@ const result = await payer.pay({ to: "SAVE-7KQ2XMP", luna: 200_000_000n, payoutI
 ```
 
 - **Amounts are luna** (100,000 luna is 1 NIM). The saved share is rounded down, and the user's wallet gets the odd luna.
-- **An address asks Errand first.** It's split if its owner allowed your app; otherwise it's one normal payment. If Errand doesn't answer within 3 seconds, it's one normal payment too, so your payouts never wait on Errand.
-- **Refunds: `into: "wallet"`.** It sends one normal payment without asking Errand. Use it for anything that isn't a reward, such as giving back an entry fee.
-- **`into: "grow"`** sends it all as an add-stake into that address's own stake, without asking Errand. That only works if the address already stakes, so check first.
+- **An address asks Droplets first.** It's split if its owner allowed your app; otherwise it's one normal payment. If Droplets doesn't answer within 3 seconds, it's one normal payment too, so your payouts never wait on Droplets.
+- **Refunds: `into: "wallet"`.** It sends one normal payment without asking Droplets. Use it for anything that isn't a reward, such as giving back an entry fee.
+- **`into: "grow"`** sends it all as an add-stake into that address's own stake, without asking Droplets. That only works if the address already stakes, so check first.
 - **The memo** is optional, up to 64 bytes, and goes on the wallet payment only.
 - **`network` must match the node.** A node takes a payment signed for the other network, answers with its hash, and never includes it. So `pay()` checks once which chain the node follows, and throws without signing anything if it's the wrong one. Call `await payer.checkNetwork()` at startup to find out sooner.
 
@@ -94,7 +94,7 @@ if (quote && quote.saveLuna > 0n) {
 
 - **The saved part is the user's money.** If their stake can't take it by the time you send it (it closed, or its validator left), `saveFromSpend()` sends it back to their wallet instead. Never keep it.
 - **One quote per purchase.** Keep the quote with the order, so a retry saves the same amount. `payoutId` makes `saveFromSpend()` retry-safe, like `pay()`.
-- **If the quote fails,** charge the price alone. A purchase never waits on Errand.
+- **If the quote fails,** charge the price alone. A purchase never waits on Droplets.
 - `saveFromSpend()` reads the user's stake from your node, so pass an `rpc` from `createNimiqRpc`, which can.
 
 ## Retries
@@ -109,7 +109,7 @@ When `pay()` returns, the node has taken the transactions. That doesn't mean the
 
 ## Receipts
 
-`pay()` and `saveFromSpend()` report the transaction hashes to Errand, so the payment shows in the user's savings history. Errand checks each one on-chain:
+`pay()` and `saveFromSpend()` report the transaction hashes to Droplets, so the payment shows in the user's savings history. Droplets checks each one on-chain:
 - the sender is one of your registered addresses;
 - it succeeded;
 - the wallet payment went to the user's address;
@@ -123,7 +123,7 @@ If you don't use TypeScript, call the API directly with `Authorization: Bearer r
 
 **`GET /v1/save/split?code=SAVE-7KQ2XMP&luna=200000000&payoutId=bounty-81`**, or **`?address=NQ…&luna=…`** for the address you pay.
 
-`payoutId` is optional but worth sending: Errand keeps the split, so when a payment goes to the user's wallet they can ask Errand why ("Grow wasn't open"). The SDK sends it for you.
+`payoutId` is optional but worth sending: Droplets keeps the split, so when a payment goes to the user's wallet they can ask Droplets why ("Grow wasn't open"). The SDK sends it for you.
 
 ```json
 { "code": "SAVE-7KQ2XMP", "address": "NQ…", "savePercent": 30,
@@ -145,4 +145,4 @@ If you don't use TypeScript, call the API directly with `Authorization: Bearer r
 
 - The SDK lives in the RailKit repo (`packages/save`) and isn't on npm yet.
 - Users can change their rule, or stop allowing your app, at any time. Look the split up on every payment rather than caching it.
-- Never send your payout key anywhere. The SDK signs on your server and only sends Errand the transaction hashes.
+- Never send your payout key anywhere. The SDK signs on your server and only sends Droplets the transaction hashes.

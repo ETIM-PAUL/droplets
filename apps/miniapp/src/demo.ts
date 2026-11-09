@@ -1,4 +1,4 @@
-// Development only: open the dev server with ?demo to see Errand with made-up savings and no wallet, for design work
+// Development only: open the dev server with ?demo to see Droplets with made-up savings and no wallet, for design work
 // and screenshots. ?demo=new shows someone who hasn't started saving; &tab=activity|draw|profile opens that tab.
 // Production builds never include this: every use is behind import.meta.env.DEV.
 import type { PrizeMe, RailkitClient, SaveActivity, SaveApp, SaveCatchUp, SaveMe, SaveValidator } from "@railkit/client";

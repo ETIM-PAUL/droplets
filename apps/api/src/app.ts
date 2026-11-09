@@ -48,7 +48,7 @@ export interface AppDeps {
   ramp?: { api: Pick<ChangellyFiatApi, "offers" | "validateAddress" | "createOrder" | "getOrder" | "readCallback">; countries: ReadonlySet<string>; nimTicker: string };
   /** Chat: an optional model for sentences the rules can't finish, capped per UTC day. */
   agent?: { model?: Extractor; qrModel?: QrExtractor; savingsPhraser?: SavingsPhraser; savingsClassifier?: SavingsClassifier; modelCallsPerDay?: number };
-  /** Errand Save: save codes and Grow. Off when undefined. */
+  /** Droplets: save codes and Grow. Off when undefined. */
   save?: SaveDeps;
   /** The weekly draw for people who keep savings in Grow. Off when undefined. The API holds no prize key. */
   prize?: PrizeDeps;
@@ -238,7 +238,7 @@ export function createApp(d: AppDeps) {
   };
   const MISSING: Missing[] = ["corridor", "amount", "phone", "name", "bank", "account"];
 
-  /** One chat turn: a sentence (or an answer to Errand's last question) in, a checked draft and the next question out. */
+  /** One chat turn: a sentence (or an answer to Droplets' last question) in, a checked draft and the next question out. */
   app.post("/v1/agent/understand", async (c) => {
     if (!agentLimit(clientKey((n) => c.req.header(n)))) return bad("Too many messages in a short time. Wait a minute.", 429);
     const body = (await c.req.json().catch(() => null)) as { text?: unknown; draft?: unknown; expecting?: unknown } | null;

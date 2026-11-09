@@ -8,7 +8,7 @@ import { AppBar, ChatInput } from "./ui";
 /** Things to try. Each is one the chat's rules already read as a savings request or question. */
 export const SUGGESTIONS = ["How much have I saved?", "Save 30% of what apps pay me", "Put 500 NIM in savings", "When can I get my money?"];
 
-const NOT_SAVINGS = "Errand is for saving, so it can't send money or buy NIM. Ask about your savings, or tell me how much to save.";
+const NOT_SAVINGS = "Droplets is for saving, so it can't send money or buy NIM. Ask about your savings, or tell me how much to save.";
 
 interface Props {
   /** What was typed or tapped on Savings. */
@@ -26,14 +26,14 @@ interface Line {
 }
 
 /**
- * Ask Errand: a savings request opens the right screen, filled in, and a question is answered from the
+ * Ask Droplets: a savings request opens the right screen, filled in, and a question is answered from the
  * user's own savings. Nothing here can move money; only Nimiq Pay's own dialog can.
  */
 export function Chat({ first, address, onSave, onCancel }: Props) {
   const [lines, setLines] = useState<Line[]>([]);
   const [busy, setBusy] = useState(false);
   const [reply, setReply] = useState("");
-  // After an answer: a way into Savings. After something Errand doesn't do: things to try instead.
+  // After an answer: a way into Savings. After something Droplets doesn't do: things to try instead.
   const [after, setAfter] = useState<"savings" | "suggestions" | null>(null);
   const started = useRef(false);
   /** A change ready to confirm: shown as a card with the exact values, which is the only thing that can reach Nimiq Pay. */
@@ -77,7 +77,7 @@ export function Chat({ first, address, onSave, onCancel }: Props) {
         // The card says what it is: the change to confirm, or why it needs the form.
         setPending({ intent: s, notes: r.notes, id: Date.now() });
       } else if (!address) {
-        say({ from: "errand", text: "Open Errand inside Nimiq Pay to ask about your savings." });
+        say({ from: "errand", text: "Open Droplets inside Nimiq Pay to ask about your savings." });
       } else {
         // A question: answered here, from the user's own savings. Nothing opens and nothing moves.
         const a = await api.saveAsk({ address, question: text, kind: r.save.question, period: r.save.period, tzOffsetMinutes: -new Date().getTimezoneOffset() });
@@ -99,14 +99,14 @@ export function Chat({ first, address, onSave, onCancel }: Props) {
 
   return (
     <div className="screen">
-      <AppBar title="Ask Errand" onBack={onCancel} backLabel="Close" />
+      <AppBar title="Ask Droplets" onBack={onCancel} backLabel="Close" />
 
       <div className="grow">
         <div className="chat" aria-live="polite">
           {lines.map((l, i) => (
             <p key={i} className={`bubble ${l.from}`}>{l.text}</p>
           ))}
-          {busy && <p className="bubble errand typing" aria-label="Errand is thinking">…</p>}
+          {busy && <p className="bubble errand typing" aria-label="Droplets is thinking">…</p>}
           <div ref={end} />
         </div>
 
@@ -145,7 +145,7 @@ export function Chat({ first, address, onSave, onCancel }: Props) {
 
         <div className="grow" />
         <div className="dock">
-          <ChatInput label="Your message" placeholder="Message Errand…" value={reply} onChange={setReply} onSend={() => send(reply)} busy={busy} autoFocus size="compact" />
+          <ChatInput label="Your message" placeholder="Message Droplets…" value={reply} onChange={setReply} onSend={() => send(reply)} busy={busy} autoFocus size="compact" />
         </div>
       </div>
     </div>

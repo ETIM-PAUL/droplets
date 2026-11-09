@@ -11,7 +11,7 @@ export interface SaveCodeRow {
   spendPercent: number;
   /** Apps the user allowed to recognise their address, by id. Others need the code. */
   appIds: string[];
-  /** How often Errand offers to save the share of spending elsewhere. */
+  /** How often Droplets offers to save the share of spending elsewhere. */
   catchUpEvery: CatchUpEvery;
   /** When saving when paying was turned on or last changed: catch-ups never reach back before this. 0 if never recorded. */
   catchUpFrom: number;

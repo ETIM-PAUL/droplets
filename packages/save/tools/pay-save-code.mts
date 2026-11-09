@@ -1,4 +1,4 @@
-// Testnet only. Plays an app that saves with Errand, so you can watch a payment split between someone's wallet
+// Testnet only. Plays an app that saves with Droplets, so you can watch a payment split between someone's wallet
 // and their Grow. It pays through this package's SDK, the same way a real app would.
 //
 //   pnpm pay-save-code SAVE-7KQ2XMP 2000        pays a save code (from the repo root; NIM, 1000 if left out)

@@ -58,7 +58,7 @@ if (pool) {
   ops = new MemoryOpsStore();
 }
 
-// Errand Save (save codes and Grow). Off unless SAVE_ENABLED=true; the Mini App needs it on.
+// Droplets (save codes and Grow). Off unless SAVE_ENABLED=true; the Mini App needs it on.
 async function saveDeps(): Promise<SaveDeps | undefined> {
   if (process.env.SAVE_ENABLED !== "true") return undefined;
   const network = process.env.SAVE_NETWORK === "testnet" ? "testnet" : "mainnet";

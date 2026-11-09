@@ -65,7 +65,7 @@ export class Engine {
     }
     const candidates = this.routes.filter((r) => r.canHandle(intent));
     if (candidates.length === 0) {
-      return fail("unsupported", "Errand can't pay this yet. Try a different payment request.");
+      return fail("unsupported", "Droplets can't pay this yet. Try a different payment request.");
     }
     const settled = await Promise.allSettled(candidates.map((r) => r.quote(intent)));
     const quotes: Quote[] = [];

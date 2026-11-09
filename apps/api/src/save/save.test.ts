@@ -380,7 +380,7 @@ describe("apps that recognise your address (for apps)", () => {
     });
   });
 
-  it("answers the same for an app the user didn't allow as for someone who doesn't save with Errand", async () => {
+  it("answers the same for an app the user didn't allow as for someone who doesn't save with Droplets", async () => {
     const { at, arcade, quiz, a } = await ready();
     const stranger = encodeURIComponent(account().address);
     const plain = (address: string) => ({ code: null, address: decodeURIComponent(address), savePercent: 0, wallet: { luna: NIM(2000).toString() }, grow: null, reason: null });
@@ -493,7 +493,7 @@ describe("the catch-up", () => {
     expect(await catchUp()).toMatchObject({ status: "waiting", from: Date.UTC(2026, 10, 8, 23), to: Date.UTC(2026, 10, 8, 23) });
   });
 
-  it("counts a payment Errand only sees after the next period has started", async () => {
+  it("counts a payment Droplets only sees after the next period has started", async () => {
     const f = setup();
     const amaka = account();
     f.stake(amaka.address);
@@ -502,7 +502,7 @@ describe("the catch-up", () => {
       f.txs.set(hash.repeat(64), { hash: hash.repeat(64), blockNumber: 1, from, to, value: NIM(nim), recipientData: "", senderData: "", executionResult: true, confirmations: 1, timestamp: at, ...over });
     set("1", amaka.address, HTLC, 1_500, T + 3_600_000, { toType: 2, flags: 1 });
     set("2", HTLC, SHOP, 1_000, T + 7_200_000);
-    // She pays Wednesday's 50 NIM on Thursday, but Errand doesn't look again until Friday.
+    // She pays Wednesday's 50 NIM on Thursday, but Droplets doesn't look again until Friday.
     const thursday = Date.UTC(2026, 10, 5, 11);
     set("3", HTLC, STAKING_CONTRACT, 50, thursday, { recipientData: `06${Buffer.from(nimiqAddressBytes(amaka.address)).toString("hex")}` });
     f.clock.t = Date.UTC(2026, 10, 6, 11);

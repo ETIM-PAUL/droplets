@@ -7,7 +7,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { formatMoney } from "../format";
 import { api, hostNetwork } from "../api";
 import { ReportProblem } from "../ReportProblem";
-import { AppBar, Hexagon, Icon, PageHead, QrCode, SettingRow, type IconName, type Tab } from "../ui";
+import { AppBar, Droplet, Icon, PageHead, QrCode, SettingRow, type IconName, type Tab } from "../ui";
 
 type Mode = "home" | "rule" | "open" | "add" | "withdraw";
 
@@ -58,9 +58,9 @@ interface Props {
   /** The weekly draw at a glance, on Home. It doesn't need a save code. */
   draw?: ReactNode;
   onTab: (t: Tab) => void;
-  /** Opens Ask Errand. */
+  /** Opens Ask Droplets. */
   onAsk: () => void;
-  /** Opens How Errand works. */
+  /** Opens How Droplets works. */
   onHelp: () => void;
   /** Told when an inner screen (rules, add, withdraw, open) opens or closes, so the tab bar can step aside. */
   onInner?: (inner: boolean) => void;
@@ -409,7 +409,7 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
   const wrongNetwork = me.network !== hostNetwork();
   const messages = (
     <>
-      {wrongNetwork && <p className="notice" role="status">Errand is on Nimiq {me.network}, but Nimiq Pay is on {hostNetwork()}. Switch networks in Nimiq Pay to use your savings.</p>}
+      {wrongNetwork && <p className="notice" role="status">Droplets is on Nimiq {me.network}, but Nimiq Pay is on {hostNetwork()}. Switch networks in Nimiq Pay to use your savings.</p>}
       {error && <p className="alert" role="alert">{error}</p>}
       {info && <p className="toast" role="status">{info}</p>}
     </>
@@ -434,7 +434,7 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
 
   if (mode === "rule") {
     const toggle = (name: string) => setChosen((c) => (c.includes(name) ? c.filter((n) => n !== name) : [...c, name]));
-    // Keep the order of Errand's list, so the signed rule reads the same way every time.
+    // Keep the order of Droplets' list, so the signed rule reads the same way every time.
     const allowed = (apps ?? []).map((a) => a.name).filter((n) => chosen.includes(n));
     return (
       <div className="grow">
@@ -456,14 +456,14 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
                   <button key={e} type="button" className="preset preset-word" aria-pressed={catchUpEvery === e} onClick={() => setCatchUpEvery(e)}>{CATCH_UP_LABEL[e]}</button>
                 ))}
               </div>
-              <p className="hint">For payments anywhere else, Errand adds up your {spendPercent}% each {CATCH_UP_PERIOD[catchUpEvery]} and asks you to save it. Nothing moves until you approve it.</p>
+              <p className="hint">For payments anywhere else, Droplets adds up your {spendPercent}% each {CATCH_UP_PERIOD[catchUpEvery]} and asks you to save it. Nothing moves until you approve it.</p>
             </div>
           )}
         </section>
         <section className="form-section">
           <div className="field">
             <span className="field-label">Apps that know it's you</span>
-            {apps === null ? <p className="hint">Loading apps…</p> : apps.length === 0 ? <p className="hint">No apps save with Errand yet. Until they do, give apps your save code.</p> : (
+            {apps === null ? <p className="hint">Loading apps…</p> : apps.length === 0 ? <p className="hint">No apps save with Droplets yet. Until they do, give apps your save code.</p> : (
               <div className="choices">
                 {apps.map((a) => (
                   <button key={a.id} type="button" className="choice toggle" aria-pressed={chosen.includes(a.name)} onClick={() => toggle(a.name)}>
@@ -473,7 +473,7 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
                 ))}
               </div>
             )}
-            <p className="hint">These apps recognise the address they already pay, so you don't need your code there. Other apps can't tell you use Errand.</p>
+            <p className="hint">These apps recognise the address they already pay, so you don't need your code there. Other apps can't tell you use Droplets.</p>
           </div>
         </section>
         {messages}
@@ -623,8 +623,8 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
         <section className="section">
           <h2 className="section-title">Help</h2>
           <div className="group">
-            <SettingRow icon="help" label="How Errand works" onClick={onHelp} />
-            <SettingRow icon="chat" label="Ask Errand" onClick={onAsk} />
+            <SettingRow icon="help" label="How Droplets works" onClick={onHelp} />
+            <SettingRow icon="chat" label="Ask Droplets" onClick={onAsk} />
           </div>
           <ReportProblem />
         </section>
@@ -659,7 +659,7 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
   return (
     <>
       <header className="page-head">
-        <span className="brand"><Hexagon size={22} /><h1>Errand</h1></span>
+        <span className="brand"><Droplet size={24} /><h1>Droplets</h1></span>
         {me.network === "testnet" && <span className="chip">Testnet</span>}
       </header>
 
@@ -762,7 +762,7 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
             {me.receipts.slice(0, RECENT_SHOWN).map((r) => (
               <li key={r.txHash}>
                 <div className="row">
-                  <span className={`row-icon ${r.kind === "grow" ? "saved" : "in"}`}><Icon name={r.kind === "grow" ? "jar" : "down"} size={20} /></span>
+                  <span className={`row-icon ${r.kind === "grow" ? "saved" : "in"}`}><Icon name={r.kind === "grow" ? "drop" : "down"} size={20} /></span>
                   <span className="row-main">
                     <strong>{r.app}</strong>
                     <span>{receiptLine(r)}, {shortDay(r.at)}</span>

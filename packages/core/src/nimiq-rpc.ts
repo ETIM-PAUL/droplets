@@ -64,7 +64,7 @@ const toTx = (t: RawTx): NimiqTransaction => ({
   ...(t.toType === undefined ? {} : { toType: t.toType }), ...(t.flags === undefined ? {} : { flags: t.flags }),
 });
 
-/** The few calls Errand Save needs from a Nimiq PoS node. Read-only, plus sending transactions that are already signed. */
+/** The few calls Droplets needs from a Nimiq PoS node. Read-only, plus sending transactions that are already signed. */
 export function createNimiqRpc(o: NimiqRpcOptions) {
   const doFetch = o.fetch ?? ((...a: Parameters<typeof fetch>) => fetch(...a));
   let id = 0;

@@ -18,7 +18,7 @@ function checkUrl(url: string): Result<Lnurl> {
   }
   const onion = u.hostname.endsWith(".onion");
   if (u.protocol !== "https:" && !(onion && u.protocol === "http:")) {
-    return fail("unsupported", "This LNURL points to an insecure link, so Errand won't use it.");
+    return fail("unsupported", "This LNURL points to an insecure link, so Droplets won't use it.");
   }
   return ok({ kind: "lnurl", url: u.toString() });
 }

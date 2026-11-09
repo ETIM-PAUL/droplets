@@ -1,4 +1,4 @@
-// Errand Save's weekly draw. Keep at least the minimum in Grow on enough days of the week and you're in the
+// Droplets's weekly draw. Keep at least the minimum in Grow on enough days of the week and you're in the
 // Sunday draw; keep more and you hold more tickets, up to MAX_TICKETS. Pure functions, shared by the API (which
 // reads stakes and runs the draw) and the Mini App (which shows the week).
 import { nimiqAddressBytes, parseNimiqAddress, addressKey, sameAddress } from "./nimiq-address";
@@ -196,7 +196,7 @@ export function formatDrawMessage(m: DrawMessage): string {
 
 /** Reads a signed join or leave. Anything but the exact format formatDrawMessage writes is refused. */
 export function parseDrawMessage(text: string): Result<DrawMessage> {
-  const bad = fail("unrecognised", "That isn't an Errand draw message.");
+  const bad = fail("unrecognised", "That isn't a Droplets draw message.");
   const lines = text.split("\n");
   const field = (i: number, name: string) => (lines[i]?.startsWith(`${name}: `) ? lines[i]!.slice(name.length + 2) : null);
   const action = field(1, "Action");

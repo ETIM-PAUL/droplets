@@ -1,6 +1,6 @@
 // @railkit/save: pay rewards into a user's savings, by save code or by the address you already pay, and save a
 // share on top when users pay you. Server-side: the app key is a secret. Building and sending payments is in
-// "@railkit/save/payer"; this entry only talks to the Errand API.
+// "@railkit/save/payer"; this entry only talks to the Droplets API.
 export { formatSaveCode, parseSaveCode } from "@railkit/core";
 
 export class SaveApiError extends Error {
@@ -46,7 +46,7 @@ export type ReceiptStatus = "recorded" | "pending";
 export interface SaveApiOptions {
   /** e.g. https://api.errand.example */
   apiUrl: string;
-  /** rk_save_…, issued by Errand. Keep it on your server. */
+  /** rk_save_…, issued by Droplets. Keep it on your server. */
   apiKey: string;
   fetch?: typeof fetch;
   timeoutMs?: number;
@@ -65,10 +65,10 @@ export function createSaveApi(o: SaveApiOptions) {
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch {
-      throw new SaveApiError("Couldn't reach the Errand API.", 0);
+      throw new SaveApiError("Couldn't reach the Droplets API.", 0);
     }
     const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-    if (!res.ok) throw new SaveApiError(body?.error?.message ?? `Errand API answered ${res.status}`, res.status);
+    if (!res.ok) throw new SaveApiError(body?.error?.message ?? `Droplets API answered ${res.status}`, res.status);
     return body as T;
   }
 
@@ -82,13 +82,13 @@ export function createSaveApi(o: SaveApiOptions) {
   return {
     /**
      * How to split `luna` for this code. Throws SaveApiError 404 when the code isn't active.
-     * Pass the payoutId: Errand keeps the split, so the user can ask why a payment went to their wallet.
+     * Pass the payoutId: Droplets keeps the split, so the user can ask why a payment went to their wallet.
      */
     split: async (code: string, luna: bigint, payoutId?: string): Promise<SaveSplit> =>
       toSplit(await call<SplitReply>(`/v1/save/split?code=${encodeURIComponent(code)}&luna=${luna}${payout(payoutId)}`)),
     /**
-     * How to split `luna` for an address you're about to pay. Users who allowed your app in Errand get their split;
-     * everyone else gets it all to the wallet. Gives up after 3 seconds by default: payouts shouldn't wait on Errand.
+     * How to split `luna` for an address you're about to pay. Users who allowed your app in Droplets get their split;
+     * everyone else gets it all to the wallet. Gives up after 3 seconds by default: payouts shouldn't wait on Droplets.
      */
     splitAddress: async (address: string, luna: bigint, payoutId?: string, timeoutMs = 3_000): Promise<SaveSplit> =>
       toSplit(await call<SplitReply>(`/v1/save/split?address=${encodeURIComponent(address)}&luna=${luna}${payout(payoutId)}`, undefined, timeoutMs)),

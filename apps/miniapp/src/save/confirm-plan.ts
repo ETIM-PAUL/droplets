@@ -1,4 +1,4 @@
-// What a change from Ask Errand will do, worked out from the user's savings. Pure, so it's tested on its own.
+// What a change from Ask Droplets will do, worked out from the user's savings. Pure, so it's tested on its own.
 import type { SaveIntent } from "@railkit/agent";
 import type { SaveMe } from "@railkit/client";
 import { checkWithdrawal, lunaToNimString, nimStringToLuna, type StakerState } from "@railkit/core";

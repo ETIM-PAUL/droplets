@@ -12,10 +12,10 @@ import { ActivityTab } from "./save/Activity";
 import { DrawCard, DrawTab } from "./save/Draw";
 import { SaveHome } from "./save/SaveHome";
 import { sessionToken } from "./storage";
-import { AppBar, Hexagon, TabBar, type Tab } from "./ui";
+import { AppBar, Droplet, TabBar, type Tab } from "./ui";
 import "./styles.css";
 
-/** The tabs, or one screen over them: Ask Errand, or Help. */
+/** The tabs, or one screen over them: Ask Droplets, or Help. */
 type View = { name: "tabs" } | { name: "chat"; text: string } | { name: "help" };
 const TABS: Tab[] = ["home", "activity", "draw", "profile"];
 const firstTab = (): Tab => {
@@ -68,15 +68,15 @@ function App() {
     return (
       <div className="screen">
         <div className="hero">
-          <Hexagon size={40} />
-          <h2>Errand runs inside Nimiq Pay</h2>
-          <p className="hint">Open Nimiq Pay, go to Mini Apps, and open Errand from there.</p>
+          <Droplet size={44} />
+          <h2>Droplets runs inside Nimiq Pay</h2>
+          <p className="hint">Open Nimiq Pay, go to Mini Apps, and open Droplets from there.</p>
         </div>
       </div>
     );
   }
 
-  if (signedIn === null) return <div className="screen"><p className="hint loading-line">Opening Errand…</p></div>;
+  if (signedIn === null) return <div className="screen"><p className="hint loading-line">Opening Droplets…</p></div>;
   if (!signedIn) return <InviteGate onIn={() => setSignedIn(true)} />;
 
   const address = host?.status === "ready" ? host.address : null;
@@ -101,7 +101,7 @@ function App() {
   if (view.name === "help") {
     return (
       <div className="screen">
-        <AppBar title="How Errand works" onBack={home} />
+        <AppBar title="How Droplets works" onBack={home} />
         <Help />
       </div>
     );

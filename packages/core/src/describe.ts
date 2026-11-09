@@ -4,7 +4,7 @@ import type { PayIntent, Quote } from "./engine/types";
 import { groupDigits } from "./money";
 import type { ParsedPayment } from "./parse";
 
-/** ISO 4217 numeric codes seen in EMVCo QRs in the countries Errand serves. */
+/** ISO 4217 numeric codes seen in EMVCo QRs in the countries Droplets serves. */
 const CURRENCY_NUMERIC: Record<string, string> = { "404": "KES", "566": "NGN", "936": "GHS", "710": "ZAR", "840": "USD", "978": "EUR" };
 
 const sats = (s: string) => `${groupDigits(s)} sats`;
@@ -40,7 +40,7 @@ export interface PaymentSummary {
   title: string;
   /** Plain facts, one per line. */
   details: string[];
-  /** Whether Errand can pay it today; when not, `why` says so plainly. */
+  /** Whether Droplets can pay it today; when not, `why` says so plainly. */
   payable: boolean;
   why?: string;
   /** For amountless requests: the unit the amount is asked in. */
@@ -65,7 +65,7 @@ export function describePayment(p: ParsedPayment, nowMs: number, hostNetwork: "m
     case "lightning-address":
       return {
         title: `A Lightning Address: ${p.user}@${p.domain}`,
-        details: ["You choose how much to send. Errand asks their service for an invoice and checks it before you pay."],
+        details: ["You choose how much to send. Droplets asks their service for an invoice and checks it before you pay."],
         payable: true,
         needsAmount: "SAT",
       };
@@ -73,7 +73,7 @@ export function describePayment(p: ParsedPayment, nowMs: number, hostNetwork: "m
       const host = destinationLabel(p);
       return {
         title: `A Lightning payment link from ${host}`,
-        details: ["You choose how much to send. Errand asks the service for an invoice and checks it before you pay."],
+        details: ["You choose how much to send. Droplets asks the service for an invoice and checks it before you pay."],
         payable: true,
         needsAmount: "SAT",
       };
@@ -83,7 +83,7 @@ export function describePayment(p: ParsedPayment, nowMs: number, hostNetwork: "m
         title: `A wallet address: ${destinationLabel(p)}`,
         details: ["An address on Ethereum or a network like it, such as Polygon. The QR doesn't say which network."],
         payable: false,
-        why: "Paying wallet addresses from Errand's home screen is coming. Check the network with the recipient first.",
+        why: "Paying wallet addresses from the Droplets home screen is coming. Check the network with the recipient first.",
       };
     case "emvco": {
       const currency = p.currencyNumeric ? CURRENCY_NUMERIC[p.currencyNumeric] ?? `currency ${p.currencyNumeric}` : null;
@@ -95,7 +95,7 @@ export function describePayment(p: ParsedPayment, nowMs: number, hostNetwork: "m
         title: `A shop's payment QR${p.merchantName ? ` for ${p.merchantName}` : ""}`,
         details,
         payable: false,
-        why: "Errand can't pay shop QR codes yet. That's coming in a later update.",
+        why: "Droplets can't pay shop QR codes yet. That's coming in a later update.",
       };
     }
   }
@@ -117,7 +117,7 @@ export function explainRoute(q: Quote): string[] {
       return [
         pay,
         `Mavapay receives the bitcoin, turns it into ${c.currency}, and pays ${groupDigits(q.receive.amount)} ${c.currency} into ${where}.`,
-        `Usually arrives in ${eta}. Errand never holds your money at any point.`,
+        `Usually arrives in ${eta}. Droplets never holds your money at any point.`,
       ];
     }
     case "airtime":

@@ -1,4 +1,4 @@
-# Render Blueprint: the RailKit API and the Errand Mini App, from this repo.
+# Render Blueprint: the RailKit API and the Droplets Mini App, from this repo.
 # In Render: New > Blueprint > pick this repo. Secrets (sync: false) are asked for once and never stored here.
 services:
   - type: web
@@ -75,7 +75,7 @@ services:
         fromDatabase:
           name: errand-db
           property: connectionString
-      # Errand Save: save codes and Grow. The Mini App is savings only, so this stays on.
+      # Droplets: save codes and Grow. The Mini App is savings only, so this stays on.
       # Keep SAVE_NETWORK on testnet until the testnet checks in the plan pass.
       - key: SAVE_ENABLED
         value: "true"

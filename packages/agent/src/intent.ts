@@ -13,7 +13,7 @@ export interface Bank {
 }
 
 /**
- * What Errand has understood so far about a "send money" request. Every field is optional:
+ * What Droplets has understood so far about a "send money" request. Every field is optional:
  * the chat asks for whatever is missing. Nothing here is trusted until `checkDraft` has run.
  */
 export interface Draft {
@@ -43,7 +43,7 @@ export interface TopupIntent {
 }
 
 /**
- * "save 30% of what apps pay me", "put 500 NIM in Grow": the user's own savings (Errand Save).
+ * "save 30% of what apps pay me", "put 500 NIM in Grow": the user's own savings (Droplets).
  * Only ever read by the rules, never the model: it acts on the user's own money, so it comes from their words alone.
  */
 /** What a savings question asks about. Each is answered from the user's own data, worked out in code. */
@@ -74,7 +74,7 @@ export interface Understood {
   question: string | null;
   /** Set when the bank words matched more than one bank. */
   bankChoices?: Bank[];
-  /** Things Errand couldn't use, said plainly (e.g. "The smallest M-Pesa payout is 150 KES."). */
+  /** Things Droplets couldn't use, said plainly (e.g. "The smallest M-Pesa payout is 150 KES."). */
   notes: string[];
   source: "rules" | "model" | "rules+model";
 }
@@ -83,7 +83,7 @@ export const MISSING_ORDER: Missing[] = ["corridor", "amount", "phone", "account
 
 export const network = (c: CorridorId) => CORRIDORS[c].label.split(": ")[1]!;
 
-/** What is still needed before Errand can quote. Nigerian bank payouts look the name up, so they don't ask for it. */
+/** What is still needed before Droplets can quote. Nigerian bank payouts look the name up, so they don't ask for it. */
 export function missingFields(d: Draft): Missing[] {
   if (!d.corridor) return ["corridor", ...(d.amount ? [] : (["amount"] as const))];
   const c = CORRIDORS[d.corridor];
@@ -105,7 +105,7 @@ export function questionFor(m: Missing, d: Draft, enabled: ReadonlySet<CorridorI
   switch (m) {
     case "corridor": {
       const names = [...enabled].map((id) => CORRIDORS[id].label.replace(": ", " "));
-      return names.length ? `Where should the money go? Errand can send to ${names.join(" or ")}.` : "Sending is paused right now. Try again later.";
+      return names.length ? `Where should the money go? Droplets can send to ${names.join(" or ")}.` : "Sending is paused right now. Try again later.";
     }
     case "amount":
       return `How much should they get${c ? `, in ${c.currency}` : ""}?`;
@@ -114,7 +114,7 @@ export function questionFor(m: Missing, d: Draft, enabled: ReadonlySet<CorridorI
     case "name":
       return c?.recipientType === "mobile-money" ? `What's their name, as it shows on ${network(d.corridor!)}?` : "What's the account holder's name?";
     case "bank":
-      return d.bankQuery ? `Errand couldn't find "${d.bankQuery}" in the bank list. Which bank is the account with?` : "Which bank is the account with?";
+      return d.bankQuery ? `Droplets couldn't find "${d.bankQuery}" in the bank list. Which bank is the account with?` : "Which bank is the account with?";
     case "account":
       return c?.country === "NG" ? "What's the 10-digit account number?" : "What's the account number?";
   }
@@ -124,7 +124,7 @@ const NAME = /^[\p{L}][\p{L}' .-]{0,59}$/u;
 const digitsOf = (s: string) => s.replace(/\D/g, "");
 
 /**
- * Turns an untrusted draft (from the user's device, the rules or the model) into one Errand can use:
+ * Turns an untrusted draft (from the user's device, the rules or the model) into one Droplets can use:
  * unknown or disabled corridors dropped, numbers checked, wrong currencies and too-small amounts explained.
  * The corridor decides whether a loose number is a phone or an account number.
  */
@@ -136,7 +136,7 @@ export function checkDraft(raw: Draft, enabled: ReadonlySet<CorridorId>, banks: 
   const corridor = str(raw.corridor, 20);
   if (corridor && isCorridorId(corridor)) {
     if (enabled.has(corridor)) d.corridor = corridor;
-    else notes.push(`Errand doesn't send to ${CORRIDORS[corridor].label.replace(": ", " ")} right now.`);
+    else notes.push(`Droplets doesn't send to ${CORRIDORS[corridor].label.replace(": ", " ")} right now.`);
   }
   const c = d.corridor ? CORRIDORS[d.corridor] : null;
 
@@ -144,7 +144,7 @@ export function checkDraft(raw: Draft, enabled: ReadonlySet<CorridorId>, banks: 
   const currency = str(raw.currency, 8)?.toUpperCase();
   if (amount) {
     if (c && currency && currency !== c.currency) {
-      notes.push(`${network(c.id)} pays out in ${c.currency}, so Errand needs the amount in ${c.currency}.`);
+      notes.push(`${network(c.id)} pays out in ${c.currency}, so Droplets needs the amount in ${c.currency}.`);
     } else if (c) {
       const v = validatePayoutAmount(c.id, { amount, currency: c.currency });
       if (v.ok) d.amount = v.value.amount;

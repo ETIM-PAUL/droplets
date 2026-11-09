@@ -1,6 +1,8 @@
-# Errand Save
+# Droplets
 
-**Savings inside Nimiq Pay.** Errand is a Nimiq Pay Mini App that puts part of every payment into savings you own: NIM staked from your own Nimiq account, earning staking rewards, that only you can move.
+**Every payment leaves a droplet.**
+
+Droplets is a Nimiq Pay Mini App that puts part of every payment into savings you own: NIM staked from your own Nimiq account, earning staking rewards, that only you can move.
 
 Built for the Save track of the [Nimiq Mini Apps Competition](https://miniappscompetition.com) (Cycle III).
 
@@ -33,12 +35,12 @@ Built for the Save track of the [Nimiq Mini Apps Competition](https://miniappsco
 
 ## Features
 
-- **Savings you own.** Your savings are NIM staked from your own account, with a validator Errand suggests or one you choose. Errand never holds them, and withdrawing takes 12 to 24 hours, so savings are never one tap from being spent.
+- **Savings you own.** Your savings are NIM staked from your own account, with a validator Droplets suggests or one you choose. Droplets never holds them, and withdrawing takes 12 to 24 hours, so savings are never one tap from being spent.
 - **Save from what apps pay you.** Choose a share, such as 30%. Games, bounties and shops that pay you NIM put that share straight into your savings: either the apps you allow, which recognise the address they already pay, or any app you give your save code (`SAVE-7KQ2XMP`).
 - **Save when you pay.** Apps you allow add a share, such as 5%, on top of what you buy, and put it into your savings.
-- **The catch-up.** For payments anywhere else, Errand adds up your share daily, weekly, every two weeks or monthly, and asks you to save it with one approval.
+- **The catch-up.** For payments anywhere else, Droplets adds up your share daily, weekly, every two weeks or monthly, and asks you to save it with one approval.
 - **The weekly draw.** Keep at least 1,000 NIM saved on 5 of the 7 days to be in Sunday's draw for 1,000 NIM. Saving more gives more tickets, and you never risk your savings.
-- **Ask Errand.** Ask about your savings in plain words ("When can I get my money?"), or ask for a change ("Save 30% of what apps pay me", "Withdraw 200 NIM") and confirm it right in the chat.
+- **Ask Droplets.** Ask about your savings in plain words ("When can I get my money?"), or ask for a change ("Save 30% of what apps pay me", "Withdraw 200 NIM") and confirm it right in the chat.
 - **Activity.** Every payment in, every saving, and your own staking transactions, grouped by day.
 
 Nothing moves without your approval: every action opens Nimiq Pay's own approval window.
@@ -47,12 +49,12 @@ Nothing moves without your approval: every action opens Nimiq Pay's own approval
 
 ### Saving from payouts
 
-Apps pay you directly. Errand's API only tells them how to split each payment, then records what they sent once it has checked it on-chain.
+Apps pay you directly. Droplets' API only tells them how to split each payment, then records what they sent once it has checked it on-chain.
 
 ```mermaid
 sequenceDiagram
-    participant U as You, in Errand
-    participant E as Errand API
+    participant U as You, in Droplets
+    participant E as Droplets API
     participant A as An app that pays you
     participant C as Nimiq chain
     U->>C: Open your savings: stake at least 100 NIM from your own account
@@ -66,20 +68,20 @@ sequenceDiagram
 ```
 
 - **Anyone can add to a stake.** On Nimiq's proof of stake, an add-stake needs no signature from the owner, so an app can pay into your savings itself. Only you can take money out.
-- **Your rules are a signed message.** Signing is free. Errand checks the signature belongs to your address.
-- **Apps can't probe who saves.** An app you haven't allowed gets "pay it all to the wallet", the same answer as for someone who doesn't use Errand.
+- **Your rules are a signed message.** Signing is free. Droplets checks the signature belongs to your address.
+- **Apps can't probe who saves.** An app you haven't allowed gets "pay it all to the wallet", the same answer as for someone who doesn't use Droplets.
 - **A payment never fails because of savings.** If your savings can't take the share (they're closed, the validator has gone, or they'd stay under Nimiq's 100 NIM staking minimum), the whole payment goes to your wallet.
 
 ### Saving when you pay, and the catch-up
 
-- **In apps you allow,** the app asks Errand what to charge: the price, plus your share on top. You approve the total once, and the app puts the share into your savings, or back into your wallet if your savings can no longer take it.
-- **Everywhere else,** nothing can take NIM from a wallet by itself. So once each day, week, two weeks or month ends, Errand works out your share of what you spent, less what apps already saved, and shows it with a Save button.
-- **Reading what you spent.** Nimiq Pay keeps your spendable NIM in an HTLC it co-signs, funded from your wallet address and replaced about weekly, and sends payments and staking from it. So Errand reads your wallet and every HTLC it funded (`ownHistory` in `packages/core`). That reading also gives Activity and the weekly draw your staking transactions.
+- **In apps you allow,** the app asks Droplets what to charge: the price, plus your share on top. You approve the total once, and the app puts the share into your savings, or back into your wallet if your savings can no longer take it.
+- **Everywhere else,** nothing can take NIM from a wallet by itself. So once each day, week, two weeks or month ends, Droplets works out your share of what you spent, less what apps already saved, and shows it with a Save button.
+- **Reading what you spent.** Nimiq Pay keeps your spendable NIM in an HTLC it co-signs, funded from your wallet address and replaced about weekly, and sends payments and staking from it. So Droplets reads your wallet and every HTLC it funded (`ownHistory` in `packages/core`). That reading also gives Activity and the weekly draw your staking transactions.
 
 ### The weekly draw
 
 - **Entering.** Joining is a signed message plus Nimiq Pay's identifier for the phone, so each phone enters once.
-- **Counting days.** A day counts if your stake never went under the minimum at any moment that day. Only you can lower your stake, and only with a transaction that records the new amount, so Errand reads every drop from the chain.
+- **Counting days.** A day counts if your stake never went under the minimum at any moment that day. Only you can lower your stake, and only with a transaction that records the new amount, so Droplets reads every drop from the chain.
 - **Tickets.** You get 1 ticket at the minimum and one more for each 10 times as much, up to 4, based on the amount kept on 5 days.
 - **Picking the winner.** The draw closes on Sunday at 23:59 (`PRIZE_UTC_OFFSET_MINUTES`, West Africa Time by default). The hash of the first Nimiq block after that picks the winning ticket, so nobody can know it in advance. Each draw is stored with its entries, so anyone can check it.
 - **Paying.** `pnpm pay-prizes` pays the prize into the winner's savings from a prize wallet whose key never reaches the API. The API marks it paid once the chain shows it.
@@ -106,7 +108,7 @@ Without `DATABASE_URL`, the API keeps everything in memory and forgets it on res
 
 ### Try it in a browser (demo mode)
 
-Errand normally runs only inside Nimiq Pay. In development, open [http://localhost:5173/?demo](http://localhost:5173/?demo) to see it with made-up savings and no wallet:
+Droplets normally runs only inside Nimiq Pay. In development, open [http://localhost:5173/?demo](http://localhost:5173/?demo) to see it with made-up savings and no wallet:
 
 - `?demo=new` shows someone who hasn't started saving;
 - `&tab=activity`, `&tab=draw` or `&tab=profile` opens that tab.
@@ -142,7 +144,7 @@ Settings live in `.env` (gitignored). [.env.example](.env.example) lists them al
 | `SAVE_VALIDATORS` | Validators suggested when someone opens their savings. |
 | `PRIZE_ENABLED`, `PRIZE_NIM`, `PRIZE_MIN_NIM`, `PRIZE_DAYS`, `PRIZE_UTC_OFFSET_MINUTES` | The weekly draw's rules. |
 | `PRIZE_ADDRESS` | The prize wallet's address, so the API can check payouts. Its key stays with `pnpm pay-prizes`. |
-| `OPENAI_API_KEY`, `OPENAI_MODEL`, `AGENT_MODEL_CALLS_PER_DAY` | Optional model for Ask Errand. Without a key, it uses its rules only. |
+| `OPENAI_API_KEY`, `OPENAI_MODEL`, `AGENT_MODEL_CALLS_PER_DAY` | Optional model for Ask Droplets. Without a key, it uses its rules only. |
 | `BETA_REQUIRED`, `BETA_INVITES`, `SESSION_SECRET` | An optional closed beta with invite codes. |
 | `VITE_RAILKIT_API_URL` | The API's address, for the Mini App build. Only `VITE_` values reach the browser, so never put a key in one. |
 
@@ -159,7 +161,7 @@ const quote = await api.spend(userAddress, 10_000_000n);
 await payer.saveFromSpend({ to: userAddress, luna: quote.saveLuna, payoutId: "order-7-save" });
 ```
 
-The SDK signs with your own payout key on your server, is safe to retry, and never waits on Errand: if Errand doesn't answer, it pays normally. Ask the Errand team for an app key. The SDK isn't on npm yet.
+The SDK signs with your own payout key on your server, is safe to retry, and never waits on Droplets: if Droplets doesn't answer, it pays normally. Ask the Droplets team for an app key. The SDK isn't on npm yet.
 
 ## API
 
@@ -172,28 +174,30 @@ The API ([apps/api](apps/api)) is Hono on Node. It holds no wallet keys.
 | `GET /v1/save/activity` | The Mini App | The history, newest first. |
 | `GET /v1/save/catchup` | The Mini App | The catch-up for spending elsewhere. |
 | `GET /v1/save/apps`, `GET /v1/save/validators` | The Mini App | Apps users can allow, and validators to stake with. |
-| `POST /v1/save/ask` | The Mini App | Ask Errand's answers about the user's own savings. |
+| `POST /v1/save/ask` | The Mini App | Ask Droplets' answers about the user's own savings. |
 | `GET /v1/save/split`, `GET /v1/save/spend`, `POST /v1/save/receipts` | Paying apps (app key) | How to split a payment, what to charge, and what was sent. |
 | `POST /v1/prize/join`, `GET /v1/prize/me`, `GET /v1/prize/draws` | The Mini App | The weekly draw. |
 | `/v1/admin/save/apps`, `/v1/admin/prize/*` | Admin token | Registering apps, and the prize payout tool. |
 
 ## Project structure
 
-This repository is RailKit, a pnpm workspace. Errand Save is built on these parts:
+This repository is RailKit, a pnpm workspace. Droplets is built on these parts:
 
 | Path | What it is |
 |---|---|
 | [apps/miniapp](apps/miniapp) | The Mini App: React and Vite. |
 | [apps/api](apps/api) | The API: Hono on Node, with Postgres. |
 | [packages/core](packages/core) | Shared logic: save codes and signed rules, payment splits, the catch-up, the draw's rules, a Nimiq RPC client and the own-accounts reader. |
-| [packages/agent](packages/agent) | Ask Errand: the rules, savings answers, the optional model and the eval set. |
+| [packages/agent](packages/agent) | Ask Droplets: the rules, savings answers, the optional model and the eval set. |
 | [packages/client](packages/client) | A typed client for the API. |
 | [packages/wallet-nimiq](packages/wallet-nimiq) | The Nimiq Pay actions, each opening Nimiq Pay's approval window. |
 | [packages/save](packages/save) | The SDK for apps, its server-side payer, and the testnet tools. |
 
-In the code, the user's savings are called Grow (`grow`, `growLuna`, `GrowState`).
+Names in the code that users don't see:
+- the user's savings are called Grow (`grow`, `growLuna`, `GrowState`);
+- the app was called Errand while it was being built. Signed messages still begin with `Errand save code` and `Errand weekly draw`, because the API checks that text exactly, and the Render services keep their `errand-` names.
 
-The repository started as a toolkit for on- and off-ramps. These parts are left from that work and aren't used by Errand Save:
+The repository started as a toolkit for on- and off-ramps. These parts are left from that work and aren't used by Droplets:
 - the ramp routes in the API, which stay off without provider keys, and their adapters in `packages/adapters`;
 - `packages/wallet-evm`;
 - the order engine and Lightning parsers in `packages/core`.
@@ -202,7 +206,7 @@ The repository started as a toolkit for on- and off-ramps. These parts are left 
 
 ## Security
 
-**Errand never:**
+**Droplets never:**
 - **holds your savings.** They stay staked in your own account.
 - **moves your NIM.** Every action is a tap that opens Nimiq Pay's own approval window. Neither the Mini App nor the API holds a wallet key.
 - **lets the chat move money on its own.** A change from the chat shows its exact values with a Confirm button, and Nimiq Pay then asks you to approve it. If anything in the request is unclear, the form opens instead.
@@ -216,7 +220,7 @@ The repository started as a toolkit for on- and off-ramps. These parts are left 
   - a wallet action is created outside the screens' tap handlers or the chat's Confirm card, or the chat itself imports a wallet;
   - a key pair appears anywhere but the SDK's payer;
   - the Mini App or the API imports the payer.
-- **Ask Errand is checked too.** Savings requests are read by rules, never a model. A model may only reword an answer, and the rewording is shown only if it keeps every number and the save code exactly. The API doesn't log what people type.
+- **Ask Droplets is checked too.** Savings requests are read by rules, never a model. A model may only reword an answer, and the rewording is shown only if it keeps every number and the save code exactly. The API doesn't log what people type.
 
 ## Testing
 
@@ -225,7 +229,7 @@ pnpm run ci   # type checks, tests, build, licence check, signing guard
 ```
 
 - **Tests** use Vitest, with an in-memory Postgres (pg-mem) for the stores.
-- **Ask Errand's eval set** ([packages/agent/src/evals](packages/agent/src/evals)) has 96 sentences and runs with the tests. They fail on any wrong value, or if recall drops below 95%. `pnpm eval:model` runs the same set against the real model (needs `OPENAI_API_KEY`).
+- **Ask Droplets' eval set** ([packages/agent/src/evals](packages/agent/src/evals)) has 96 sentences and runs with the tests. They fail on any wrong value, or if recall drops below 95%. `pnpm eval:model` runs the same set against the real model (needs `OPENAI_API_KEY`).
 - **The injection test** pairs a hostile model with every eval sentence. Nothing it invents may survive.
 - **GitHub Actions** runs these checks on every push to `main` and every pull request. It blocks GPL, AGPL and LGPL production dependencies, and deploys a preview of the Mini App to Cloudflare Pages.
 
@@ -243,7 +247,7 @@ Free Render services sleep after about 15 minutes idle. The weekly draw doesn't 
 
 | | |
 |---|---|
-| **Built** | Savings, save codes, apps you allow, saving when you pay, the catch-up, the weekly draw, Ask Errand, and the SDK for apps. Running on testnet (`SAVE_NETWORK`). |
+| **Built** | Savings, save codes, apps you allow, saving when you pay, the catch-up, the weekly draw, Ask Droplets, and the SDK for apps. Running on testnet (`SAVE_NETWORK`). |
 | **Next** | Mainnet, with the first partner apps, self-serve sign-up for apps, and the SDK on npm. |
 | **Planned** | Bitcoin Lightning in, NIM savings out, which depends on a swap partner. |
 

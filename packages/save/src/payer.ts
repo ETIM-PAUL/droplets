@@ -34,7 +34,7 @@ export interface PayoutRecord {
   /** The save code paid; null for an address. */
   code: string | null;
   address: string;
-  /** True when Errand recognised the address as a saver who allowed this app: receipts go back by address. */
+  /** True when Droplets recognised the address as a saver who allowed this app: receipts go back by address. */
   byAddress?: boolean;
   /** "spend": the part saved on top when the user paid the app. Absent means a payout. */
   source?: "payout" | "spend";
@@ -205,9 +205,9 @@ export function createSavePayer(o: SavePayerOptions) {
     checkNetwork,
     /**
      * Pays `luna` to a save code, or to the Nimiq address you'd pay anyway. Both are split by the user's rule:
-     * an address only if its owner allowed your app in Errand, otherwise it's one normal payment. If Errand
+     * an address only if its owner allowed your app in Droplets, otherwise it's one normal payment. If Droplets
      * doesn't answer within 3 seconds, the address gets one normal payment too. `into: "wallet"` never asks
-     * Errand (use it for refunds); `into: "grow"` sends it all as an add-stake into that address's own stake.
+     * Droplets (use it for refunds); `into: "grow"` sends it all as an add-stake into that address's own stake.
      * Safe to retry with the same payoutId: the same signed transactions are resent, never new ones.
      */
     async pay(p: { to: string; luna: bigint; payoutId: string; memo?: string; into?: "wallet" | "grow" }): Promise<PayResult> {
@@ -222,7 +222,7 @@ export function createSavePayer(o: SavePayerOptions) {
       if (done) return resend(done);
 
       if (asCode.ok) {
-        if (!o.api) throw new SaveApiError("Paying a save code needs the Errand API (pass `api`).", 0);
+        if (!o.api) throw new SaveApiError("Paying a save code needs the Droplets API (pass `api`).", 0);
         const split = await o.api.split(asCode.value, p.luna, p.payoutId);
         return send({ payoutId: p.payoutId, code: asCode.value, address: split.address, walletLuna: split.walletLuna, growLuna: split.growLuna, memo, reason: split.reason });
       }

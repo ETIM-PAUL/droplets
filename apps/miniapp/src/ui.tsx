@@ -1,7 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 import { qrModules, qrPath } from "./qr-code";
 
-/** The few icons Errand uses, drawn inline on a 24px grid so they inherit text colour. */
+/** The few icons Droplets uses, drawn inline on a 24px grid so they inherit text colour. */
 const PATHS = {
   back: "M15 5l-7 7 7 7",
   send: "M12 19V5M5 12l7-7 7 7",
@@ -20,6 +20,7 @@ const PATHS = {
   close: "M6 6l12 12M18 6L6 18",
   down: "M12 5v14M5 12l7 7 7-7",
   jar: "M8 3h8M9 3v3L7 8.5V19a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V8.5L15 6V3M7 12h10",
+  drop: "M12 3.5c3.6 4.3 6 7.7 6 10.6a6 6 0 0 1-12 0c0-2.9 2.4-6.3 6-10.6z",
   user: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4.5 20a7.5 7.5 0 0 1 15 0",
   chat: "M20 11.5a7.5 7.5 0 0 1-10.9 6.7L4 19.5l1.4-4.6A7.5 7.5 0 1 1 20 11.5z",
   gift: "M20 12v7a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-7M3 8h18v4H3zM12 20V8M12 8H8a2 2 0 1 1 0-4c2.5 0 4 4 4 4zM12 8h4a2 2 0 1 0 0-4c-2.5 0-4 4-4 4z",
@@ -112,11 +113,12 @@ export function SettingRow({ icon, label, value, onClick, danger }: { icon?: Ico
   );
 }
 
-/** Nimiq's hexagon, the one bit of brand on the balance card. */
-export function Hexagon({ size = 28 }: { size?: number }) {
+/** The Droplets mark: a teal drop. */
+export function Droplet({ size = 28 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M17.4 3.6H6.6L1.2 12l5.4 8.4h10.8l5.4-8.4-5.4-8.4z" fill="var(--gold)" />
+      <path d="M12 2.5c4 4.7 6.6 8.4 6.6 11.7a6.6 6.6 0 0 1-13.2 0c0-3.3 2.6-7 6.6-11.7z" fill="var(--teal)" />
+      <path d="M9 14.5a3 3 0 0 0 3 3" fill="none" stroke="#fff" strokeOpacity="0.7" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   );
 }
@@ -127,7 +129,7 @@ interface ChatInputProps {
   onSend: () => void;
   placeholder: string;
   label: string;
-  /** While Errand is answering: typing stays possible, sending waits. */
+  /** While Droplets is answering: typing stays possible, sending waits. */
   busy?: boolean;
   disabled?: boolean;
   inputMode?: "text" | "tel" | "decimal";

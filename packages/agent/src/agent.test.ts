@@ -223,11 +223,11 @@ describe("savings sentences", () => {
   });
 
   it("say why they'll ask instead of guessing", async () => {
-    expect((await understand({ text: "save 150% of everything" }, deps)).notes).toEqual(["The share to save is a whole percent from 0 to 100, so Errand will ask."]);
+    expect((await understand({ text: "save 150% of everything" }, deps)).notes).toEqual(["The share to save is a whole percent from 0 to 100, so Droplets will ask."]);
     expect((await understand({ text: "put 100 NIM in Grow and 50 later" }, deps)).notes[0]).toMatch(/more than one amount/);
   });
 
-  it("only count as savings when Errand isn't in the middle of another question", async () => {
+  it("only count as savings when Droplets isn't in the middle of another question", async () => {
     const r = await understand({ text: "save it", expecting: "name", draft: { corridor: "ke-mpesa", amount: "500", phone: "+254712345678" } }, deps);
     expect(r.intent).toBeUndefined();
   });

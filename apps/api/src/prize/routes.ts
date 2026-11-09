@@ -199,7 +199,7 @@ export function mountPrizeRoutes<E extends HonoEnv>(app: Hono<E>, p: PrizeDeps, 
       return c.json({ joined: false });
     }
     const device = typeof body?.device === "string" ? body.device.toLowerCase() : "";
-    if (!DEVICE.test(device)) return bad("Errand needs Nimiq Pay to recognise this phone. Update Nimiq Pay and try again.");
+    if (!DEVICE.test(device)) return bad("Droplets needs Nimiq Pay to recognise this phone. Update Nimiq Pay and try again.");
     const other = await p.store.entryByDevice(device);
     if (other && other.address !== address) return bad("This phone is already in the draw with another account. Leave the draw with that account first.", 409);
     const existing = await p.store.entry(address);
@@ -227,7 +227,7 @@ export function mountPrizeRoutes<E extends HonoEnv>(app: Hono<E>, p: PrizeDeps, 
     if (entry) {
       const w = prizeWeekAt(t, p.rules.utcOffsetMinutes);
       try {
-        // Opening Errand is a good moment for a fresh reading.
+        // Opening Droplets is a good moment for a fresh reading.
         const staker = await p.chain.staker(address);
         await p.store.addCheck({ address, at: t, activeLuna: (staker?.active ?? 0n).toString() });
         const points = await stakePoints(p, address, w);

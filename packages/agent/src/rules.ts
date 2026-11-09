@@ -43,7 +43,7 @@ const RELATIONS = "mum|mom|mother|mama|dad|father|baba|sister|brother|wife|husba
 export interface RuleResult {
   draft: Draft;
   bankChoices?: Bank[];
-  /** The sentence had more than one of these, so Errand asks instead of picking one. */
+  /** The sentence had more than one of these, so Droplets asks instead of picking one. */
   ambiguous?: ("amount" | "number")[];
 }
 
@@ -106,7 +106,7 @@ export function parseSentence(input: string, enabled: ReadonlySet<CorridorId>, b
   for (const ids of ordered) {
     const live = ids.filter((id) => enabled.has(id));
     if (live.length === 0 && named.has(ids)) {
-      // They named somewhere Errand doesn't send to: say so (checkDraft explains), never switch countries.
+      // They named somewhere Droplets doesn't send to: say so (checkDraft explains), never switch countries.
       d.corridor = ids[0];
       break;
     }
@@ -145,7 +145,7 @@ export function parseSentence(input: string, enabled: ReadonlySet<CorridorId>, b
 }
 
 /**
- * A short reply to Errand's last question ("Mary", "0712 345 678", "Zenith") is read as the answer to it,
+ * A short reply to Droplets' last question ("Mary", "0712 345 678", "Zenith") is read as the answer to it,
  * so a follow-up never needs the model.
  */
 export function parseAnswer(text: string, expecting: Missing, enabled: ReadonlySet<CorridorId>, banks: readonly Bank[], current: Draft): RuleResult {
@@ -195,7 +195,7 @@ const FOR_SOMEONE = /\b(for|to|top\s?up)\s+[A-Z][a-z]/;
  */
 export function parseTopup(input: string): TopupIntent | null {
   let text = ` ${input.normalize("NFKC").slice(0, 300)} `;
-  if (!TOPUP_VERB.test(text) || NOT_TOPUP.test(text) || FOR_SOMEONE.test(text.replace(/\b(to|for)\s+(NIM|Nimiq|Errand)\b/g, ""))) return null;
+  if (!TOPUP_VERB.test(text) || NOT_TOPUP.test(text) || FOR_SOMEONE.test(text.replace(/\b(to|for)\s+(NIM|Nimiq|Errand|Droplets)\b/g, ""))) return null;
   if (/\+?\d(?:[ -]?\d){8,14}/.test(text)) return null;
   const bareTopUp = /\btop\s?up\b/i.test(text);
   if (!TOPUP_TARGET.test(text) && !bareTopUp) return null;
@@ -215,7 +215,7 @@ export function parseTopup(input: string): TopupIntent | null {
   return unit ? { amount, currency: unit } : { amount };
 }
 
-// ---- Errand Save: the user's own savings. Narrow on purpose, like top-ups: anything about another person,
+// ---- Droplets: the user's own savings. Narrow on purpose, like top-ups: anything about another person,
 // a phone or account number, a bank or a fiat amount is a send, never savings.
 
 const SAVE_NOUN = /\b(savings?|grow|save\s?code|saved|saving)\b/i;
@@ -257,7 +257,7 @@ export function parseSave(input: string): { save: SaveIntent; notes: string[] } 
   const asking = SAVE_QUESTION.test(input.trim());
   // Two questions about savings that don't say "savings": "when can I get my money?", "why did it go to my wallet?"
   const savingsQuestion = asking && (SAVE_WHEN_MONEY.test(text) || (SAVE_WHY_WALLET.test(text) && /\b(pay|paid|payment|money|went|go|gone)\b/i.test(text)));
-  // Errand only holds savings, so taking NIM out ("withdraw 200 NIM", "unstake everything") means out of savings.
+  // Droplets only holds savings, so taking NIM out ("withdraw 200 NIM", "unstake everything") means out of savings.
   const takeOut = SAVE_WITHDRAW.test(text) && /\b(nim|unstake)\b/i.test(text);
   if (!noun && !SAVE_VERB.test(text) && !savingsQuestion && !takeOut) return null;
   if (NOT_SAVE.test(text) || /\+?\d(?:[ -]?\d){8,14}/.test(text)) return null;
@@ -275,7 +275,7 @@ export function parseSave(input: string): { save: SaveIntent; notes: string[] } 
   if (pct) {
     const n = Number(pct[1]);
     if (Number.isInteger(n) && n <= 100) return { save: { action: "rule", savePercent: n }, notes };
-    notes.push("The share to save is a whole percent from 0 to 100, so Errand will ask.");
+    notes.push("The share to save is a whole percent from 0 to 100, so Droplets will ask.");
     return { save: { action: "rule" }, notes };
   }
 
@@ -289,7 +289,7 @@ export function parseSave(input: string): { save: SaveIntent; notes: string[] } 
     }
     seen.add(whole.replace(/^0+(?=\d)/, "") + frac);
   }
-  if (seen.size > 1) notes.push("Your message has more than one amount, so Errand will ask which one.");
+  if (seen.size > 1) notes.push("Your message has more than one amount, so Droplets will ask which one.");
   const nim = seen.size === 1 ? [...seen][0] : undefined;
   const amount = nim && nim.replace(/\..*/, "").length <= 12 ? { nim } : {};
 

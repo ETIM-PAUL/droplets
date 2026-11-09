@@ -9,7 +9,7 @@ export class ApiError extends UserFacingError {
   }
 }
 
-/** Errand Save: what the savings screen shows. Luna amounts are decimal strings. */
+/** Droplets: what the savings screen shows. Luna amounts are decimal strings. */
 export interface SaveMe {
   network: "mainnet" | "testnet";
   address: string;
@@ -19,7 +19,7 @@ export interface SaveMe {
   savePercent: number | null;
   /** Share added on top and saved when the user pays an app; null before the user sets a rule. */
   spendPercent: number | null;
-  /** How often Errand offers to save that share of spending elsewhere; null before the user sets a rule. */
+  /** How often Droplets offers to save that share of spending elsewhere; null before the user sets a rule. */
   catchUp: CatchUpEvery | null;
   /** Apps the user allowed to recognise their address, so they save without the code. */
   apps: { id: string; name: string }[];
@@ -54,7 +54,7 @@ export interface SaveActivity {
 }
 
 /**
- * The catch-up: the user's share of what they spent outside apps that save with Errand, ready to save in one approval.
+ * The catch-up: the user's share of what they spent outside apps that save with Droplets, ready to save in one approval.
  * "waiting": the first period hasn't ended. "due": `owed` is still to save. "nothing": nothing to save this time.
  * "done": settled just now. "off": no share to save when paying. `paid` is what the user's own add-stakes have put
  * towards it so far. Luna amounts are decimal strings; times ms since 1970.
@@ -67,7 +67,7 @@ export type SaveCatchUp =
       spent: string; alreadySaved: string; paid: string; owed: string; complete: boolean; growOpen: boolean;
     };
 
-/** An app that saves with Errand, which the user can allow to recognise their address. */
+/** An app that saves with Droplets, which the user can allow to recognise their address. */
 export interface SaveApp {
   id: string;
   name: string;
@@ -144,11 +144,11 @@ export function createRailkitClient(o: RailkitClientOptions) {
       const headers = { ...(init?.headers as Record<string, string> | undefined), ...(token ? { Authorization: `Bearer ${token}` } : {}) };
       res = await doFetch(base + path, { ...init, headers, signal: AbortSignal.timeout(o.timeoutMs ?? 20_000) });
     } catch {
-      throw new ApiError("Can't reach Errand's server. Check your connection and try again.", 0);
+      throw new ApiError("Can't reach the Droplets server. Check your connection and try again.", 0);
     }
     const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
     if (res.status === 401) o.onUnauthorized?.();
-    if (!res.ok) throw new ApiError(body?.error?.message ?? "Errand's server had a problem. Try again in a minute.", res.status);
+    if (!res.ok) throw new ApiError(body?.error?.message ?? "the Droplets server had a problem. Try again in a minute.", res.status);
     return body as T;
   }
 
@@ -175,7 +175,7 @@ export function createRailkitClient(o: RailkitClientOptions) {
     airtime,
     lookupAirtime: (country: CountryCode, phone: string) =>
       call<{ phone: string; operator: AirtimeOperator }>(`/v1/airtime/lookup?country=${country}&phone=${encodeURIComponent(phone)}`),
-    /** One chat turn: Errand reads the sentence (or the answer to its last question) and says what's still missing. */
+    /** One chat turn: Droplets reads the sentence (or the answer to its last question) and says what's still missing. */
     understand: (text: string, draft?: Draft, expecting?: Missing) => call<Understood>("/v1/agent/understand", json({ text, draft, expecting })),
     /** A QR the phone couldn't read itself. */
     understandQr: (text: string, network: "mainnet" | "testnet") => call<QrUnderstood>("/v1/agent/qr", json({ text, network })),
@@ -188,17 +188,17 @@ export function createRailkitClient(o: RailkitClientOptions) {
     topupStatus: (orderId: string) =>
       call<{ orderId: string; state: RampState; payoutAmount: string | null; transactionHash: string | null }>(`/v1/topup/orders/${encodeURIComponent(orderId)}`),
     corridors: async () => (await call<{ corridors: Corridor[] }>("/v1/corridors")).corridors,
-    /** Errand Save: the user's code, rule, Grow balance and payments in. `fresh` skips the server's one-minute stake cache. */
+    /** Droplets: the user's code, rule, Grow balance and payments in. `fresh` skips the server's one-minute stake cache. */
     saveMe: (address: string, fresh = false) => call<SaveMe>(`/v1/save/me?address=${encodeURIComponent(address)}${fresh ? "&fresh=1" : ""}`),
     saveActivity: (address: string) => call<SaveActivity>(`/v1/save/activity?address=${encodeURIComponent(address)}`),
     /** Sets or revokes the rule: the message the user signed in Nimiq Pay, with the key and signature it returned. */
     /** `tzOffsetMinutes` (the phone's time zone) decides when the user's catch-up days, weeks and months start. */
     saveRule: (signed: { message: string; publicKey: string; signature: string; tzOffsetMinutes?: number }) =>
       call<{ code: string; address: string; savePercent: number; spendPercent: number; appIds: string[] } | { revoked: true }>("/v1/save/rule", json(signed)),
-    /** The catch-up for the user's spending outside apps that save with Errand, in their own time zone. */
+    /** The catch-up for the user's spending outside apps that save with Droplets, in their own time zone. */
     saveCatchUp: (address: string, tzOffsetMinutes: number, fresh = false) =>
       call<SaveCatchUp>(`/v1/save/catchup?address=${encodeURIComponent(address)}&tzOffsetMinutes=${tzOffsetMinutes}${fresh ? "&fresh=1" : ""}`),
-    /** The apps that save with Errand, by name. */
+    /** The apps that save with Droplets, by name. */
     saveApps: async () => (await call<{ apps: SaveApp[] }>("/v1/save/apps")).apps,
     saveValidators: async () => (await call<{ validators: SaveValidator[] }>("/v1/save/validators")).validators,
     /** A question about the user's own savings, answered from their data. `kind` is what the chat already worked out. */

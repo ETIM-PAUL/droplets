@@ -103,7 +103,7 @@ describe("createSavePayer", () => {
     expect(r).toMatchObject({ growTx: null, growLuna: 0n, reason: "no-stake" });
   });
 
-  it("pays a plain address without asking the Errand API", async () => {
+  it("pays a plain address without asking the Droplets API", async () => {
     const { nimiq, built } = fakeNimiq();
     const { rpc } = fakeRpc();
     const r = await createSavePayer({ rpc, nimiq, keyPair: KEYPAIR, network: "main" }).pay({ to: USER, luna: NIM(5), payoutId: "p2" });
@@ -205,7 +205,7 @@ describe("paying the address you already pay", () => {
     expect(receipts).toEqual([{ address: USER, payoutId: "bounty-81", walletTx: "1".padStart(64, "0"), growTx: "2".padStart(64, "0") }]);
   });
 
-  it("pays everyone else, or anyone when Errand doesn't answer, in one normal payment with nothing to report", async () => {
+  it("pays everyone else, or anyone when Droplets doesn't answer, in one normal payment with nothing to report", async () => {
     for (const answer of [async () => ({ walletLuna: NIM(5), growLuna: 0n }), async () => Promise.reject(new Error("timed out"))]) {
       const { nimiq, built } = fakeNimiq();
       const { rpc } = fakeRpc();
@@ -227,7 +227,7 @@ describe("paying the address you already pay", () => {
     expect(receipts).toEqual([{ address: USER, payoutId: "p2", walletTx: "1".padStart(64, "0") }]);
   });
 
-  it("never asks Errand about a refund (into: wallet) or a prize into Grow (into: grow)", async () => {
+  it("never asks Droplets about a refund (into: wallet) or a prize into Grow (into: grow)", async () => {
     const { nimiq } = fakeNimiq();
     const { rpc } = fakeRpc();
     const { api, addressCalls } = fakeApi({ walletLuna: NIM(1), growLuna: NIM(1) });

@@ -1,4 +1,4 @@
-// Errand Save, phase 1: save codes, the signed rule behind them, how a payment from an app splits between
+// Droplets, phase 1: save codes, the signed rule behind them, how a payment from an app splits between
 // the user's wallet and their Grow savings (their own staked NIM), and what's saved on top when the user pays
 // an app. Pure functions, shared by the API, the payout SDK and the Mini App.
 import { blake2b } from "@noble/hashes/blake2.js";
@@ -65,7 +65,7 @@ export interface SaveRuleMessage {
    * Only for "set"; absent in rules signed before it existed. An empty list is written "none".
    */
   apps?: string[];
-  /** How often Errand offers to save the share of spending outside those apps. Only for "set", after the two above; optional. */
+  /** How often Droplets offers to save the share of spending outside those apps. Only for "set", after the two above; optional. */
   catchUp?: CatchUpEvery;
   /** ISO 8601 UTC, e.g. 2026-11-04T15:20:00.000Z. */
   time: string;
@@ -98,7 +98,7 @@ export function formatSaveMessage(m: SaveRuleMessage): string {
 
 /** Reads a signed rule. Anything but the exact format formatSaveMessage writes is refused. */
 export function parseSaveMessage(text: string): Result<SaveRuleMessage> {
-  const bad = fail("unrecognised", "That isn't an Errand save message.");
+  const bad = fail("unrecognised", "That isn't a Droplets save message.");
   const lines = text.split("\n");
   if (lines[0] !== MESSAGE_TITLE) return bad;
   const field = (i: number, name: string) => (lines[i]?.startsWith(`${name}: `) ? lines[i]!.slice(name.length + 2) : null);

@@ -18,5 +18,5 @@ export function parsePaymentInput(input: string): Result<ParsedPayment> {
   if (/^(ethereum:)?0x[0-9a-fA-F]{40}$/i.test(s)) return parseEvmAddress(s);
   if (s.startsWith("000201")) return parseEmvco(s);
 
-  return fail("unrecognised", "Errand can't read this yet. Try a Lightning invoice, a Lightning address, a wallet address or a payment QR code.");
+  return fail("unrecognised", "Droplets can't read this yet. Try a Lightning invoice, a Lightning address, a wallet address or a payment QR code.");
 }

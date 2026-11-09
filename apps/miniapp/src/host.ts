@@ -62,7 +62,7 @@ export async function connectHost(sdk: HostSdk = defaultSdk): Promise<HostState>
   try {
     addresses = await provider.listAccounts();
     const address = addresses[0];
-    if (!address) return { status: "error", message: "No account found in Nimiq Pay. Create or import one, then reopen Errand." };
+    if (!address) return { status: "error", message: "No account found in Nimiq Pay. Create or import one, then reopen Droplets." };
     const accounts: { address: string; nim: string }[] = [];
     let total = 0n;
     for (const a of addresses) {
@@ -76,7 +76,7 @@ export async function connectHost(sdk: HostSdk = defaultSdk): Promise<HostState>
     if (addresses[0] && NimiqProviderError.is(e) && /not ready|consensus|connect/i.test(e.message)) {
       return { status: "ready", network, language, fiat, address: addresses[0], balanceNim: null, accounts: [] };
     }
-    const message = NimiqProviderError.is(e) ? e.message : "Could not reach your wallet. Close and reopen Errand.";
+    const message = NimiqProviderError.is(e) ? e.message : "Could not reach your wallet. Close and reopen Droplets.";
     return { status: "error", message };
   }
 }

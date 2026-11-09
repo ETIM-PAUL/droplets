@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api } from "./api";
 import { sessionToken } from "./storage";
-import { Hexagon } from "./ui";
+import { Droplet } from "./ui";
 
 /** The closed beta's front door: one code per tester. */
 export function InviteGate({ onIn }: { onIn: (name: string | null) => void }) {
@@ -27,9 +27,9 @@ export function InviteGate({ onIn }: { onIn: (name: string | null) => void }) {
   return (
     <form className="screen" onSubmit={(e) => { e.preventDefault(); void enter(); }}>
       <div className="hero">
-        <Hexagon size={40} />
-        <h2>Welcome to Errand</h2>
-        <p className="hint">Errand is invite-only while we test it with friends and family.</p>
+        <Droplet size={44} />
+        <h2>Welcome to Droplets</h2>
+        <p className="hint">Droplets is invite-only while we test it with friends and family.</p>
       </div>
       <div className="grow">
         <div className="field">

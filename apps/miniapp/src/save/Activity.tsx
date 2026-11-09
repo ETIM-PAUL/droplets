@@ -25,7 +25,7 @@ const ALL_TO_WALLET: Record<NonNullable<SaveActivity["payments"][number]["reason
 };
 
 const GROW: Record<NonNullable<SaveActivity["grow"]>[number]["kind"], { title: string; icon: IconName; sign: string }> = {
-  opened: { title: "Opened your savings", icon: "jar", sign: "+" },
+  opened: { title: "Opened your savings", icon: "drop", sign: "+" },
   added: { title: "Added to savings", icon: "plus", sign: "+" },
   "withdrawal-started": { title: "Started a withdrawal", icon: "clock", sign: "" },
   withdrawn: { title: "Withdrew to your wallet", icon: "send", sign: "−" },
@@ -75,7 +75,7 @@ export function ActivityTab({ address }: { address: string | null }) {
     if (p.source === "spend") {
       // The part saved on top when the user paid the app; back to the wallet if Grow couldn't take it by then.
       rows.push({
-        key: `spend:${p.app}:${p.payoutId}`, at: p.at, icon: grow > 0n ? "jar" : "down", tone: grow > 0n ? "saved" : "in", amount: `+${nim(grow + wallet)}`,
+        key: `spend:${p.app}:${p.payoutId}`, at: p.at, icon: grow > 0n ? "drop" : "down", tone: grow > 0n ? "saved" : "in", amount: `+${nim(grow + wallet)}`,
         title: p.app,
         detail: grow > 0n ? "Saved on top when you paid" : "Your saving, back to your wallet: your savings couldn't take it",
       });

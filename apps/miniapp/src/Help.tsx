@@ -1,4 +1,4 @@
-/** What Errand does with people's money, in plain words. Opened from Profile, under its own app bar. */
+/** What Droplets does with people's money, in plain words. Opened from Profile, under its own app bar. */
 export function Help() {
   return (
     <div className="help">
@@ -7,7 +7,7 @@ export function Help() {
         <div className="group">
           <div className="help-row">
             <strong>They stay in your own account</strong>
-            <p>Your savings are NIM staked from your own Nimiq account, with a validator Errand suggests or one you choose. They earn staking rewards, and only you can move them: every change opens Nimiq Pay's own approval window.</p>
+            <p>Your savings are NIM staked from your own Nimiq account, with a validator Droplets suggests or one you choose. They earn staking rewards, and only you can move them: every change opens Nimiq Pay's own approval window.</p>
           </div>
           <div className="help-row">
             <strong>Taking money out</strong>
@@ -25,7 +25,7 @@ export function Help() {
           </div>
           <div className="help-row">
             <strong>Apps that know it's you</strong>
-            <p>Most apps get your address from Nimiq Pay, so there's nowhere to give a code. In your saving rules, pick the apps you use: they recognise the address they already pay and save for you. Apps you didn't pick can't tell you use Errand.</p>
+            <p>Most apps get your address from Nimiq Pay, so there's nowhere to give a code. In your saving rules, pick the apps you use: they recognise the address they already pay and save for you. Apps you didn't pick can't tell you use Droplets.</p>
           </div>
           <div className="help-row">
             <strong>Saving when you pay</strong>
@@ -33,7 +33,7 @@ export function Help() {
           </div>
           <div className="help-row">
             <strong>The catch-up</strong>
-            <p>For everything else you pay, Errand adds up your share each day, week, two weeks or month, as you choose, and shows it on Home with a Save button. Nothing can take it from your wallet by itself: you approve it in Nimiq Pay. If you add at least that much to your savings yourself, it counts too.</p>
+            <p>For everything else you pay, Droplets adds up your share each day, week, two weeks or month, as you choose, and shows it on Home with a Save button. Nothing can take it from your wallet by itself: you approve it in Nimiq Pay. If you add at least that much to your savings yourself, it counts too.</p>
           </div>
         </div>
       </section>
@@ -46,8 +46,8 @@ export function Help() {
             <p>Join it on the Draw tab. If you keep the minimum saved on enough days of the week, you're in that Sunday's draw, and keeping more gives you more tickets. The winner is picked with a Nimiq block made after the draw time, so nobody can know it in advance, and you never risk any of your savings.</p>
           </div>
           <div className="help-row">
-            <strong>Ask Errand</strong>
-            <p>Type things like "Save 30% of what apps pay me" or "When can I get my money?". Errand answers questions from your own savings. For a change, it shows the exact values with a Confirm button, and Nimiq Pay then asks you to approve it. If anything is unclear, it opens the form instead, filled in.</p>
+            <strong>Ask Droplets</strong>
+            <p>Type things like "Save 30% of what apps pay me" or "When can I get my money?". Droplets answers questions from your own savings. For a change, it shows the exact values with a Confirm button, and Nimiq Pay then asks you to approve it. If anything is unclear, it opens the form instead, filled in.</p>
           </div>
         </div>
       </section>

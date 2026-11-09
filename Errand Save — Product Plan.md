@@ -6,12 +6,13 @@ Updated 8 November: Steady and Boost, a two-sided pool, are dropped. Boost was a
 
 ## What it is
 
-One savings account inside Nimiq Pay, with three ways in.
+One savings account inside Nimiq Pay, with four ways in.
 
 **Ways in**
-1. **Save code.** Other Mini Apps pay rewards, bounties and cashback using the user's code. Each payment splits by the user's rule, for example 30% to savings and 70% to the wallet.
+1. **Save code, or an app the user allows.** Other Mini Apps pay rewards, bounties and cashback using the user's code. Apps the user allows in Errand don't need the code: they pay the address they already have, and Errand recognises it. Each payment splits by the user's rule, for example 30% to savings and 70% to the wallet.
 2. **Bitcoin Lightning.** The same code is also a Lightning address. Anyone can send sats from any Lightning wallet, and they arrive as NIM savings. Users with a supported wallet can also save automatically every week.
 3. **Direct.** The user moves NIM from their own wallet into savings.
+4. **Spend and save.** When the user pays an app they allow, a share such as 5% goes on top of the price, and the app puts it into Grow.
 
 **Where it's kept:** in **Grow**, NIM staked in the user's own account. It earns staking rewards and follows NIM's price, and only the user can move it. Withdrawing takes 12 to 24 hours.
 
@@ -43,6 +44,16 @@ Every payment, whether NIM from an app or sats from Lightning, is split by the s
 | Grow | The app sends an add-stake into the user's stake | Our swap account sends an add-stake into the user's stake |
 
 Add-stake needs no signature from the user, so apps (and our swap account) can pay straight into a user's Grow savings. Staking pools do this daily on mainnet.
+
+### Apps the user allows (added 9 November 2026)
+
+Most Mini Apps never ask for an address: they read it from Nimiq Pay and pay it. So the signed rule also names the apps that may recognise the user's address. Such an app asks for the split by address (`GET /v1/save/split?address=…`). Errand answers only for users who allowed that app, and gives everyone else "pay it all to the wallet", which is also what a non-user gets. So apps can't probe who saves with Errand. The SDK asks on every payout to an address, gives up after 3 seconds, and then pays normally. Refunds use `into: "wallet"` and never ask.
+
+### Spend and save (added 9 November 2026)
+
+The rule also carries a share to save when paying, from 0 to 100% (the screen offers 0, 5, 10 and 20%). When a user pays an app they allow, the app asks what to charge (`GET /v1/save/spend`): the price plus `floor(price × spendPercent / 100)`, or the price alone if Grow can't take it. The user approves the total in Nimiq Pay, once. Then the app adds the saved part to the user's stake with `saveFromSpend()`, which sends it back to the wallet instead if the stake can no longer take it. Errand records it as "Saved when you paid …".
+
+Errand still never sends money: the paying app collects the saved part with the purchase and passes it on, the same trust the user already gives that app for the purchase. Payments made outside apps that save with Errand, such as Nimiq Pay's own transfers, can't save on top: no app or Errand can move the user's NIM after it's sent.
 
 ## Grow: staked NIM
 

@@ -1,6 +1,6 @@
 import { init } from "@nimiq/mini-app-sdk";
 import type { SaveIntent } from "@railkit/agent";
-import type { SaveMe, SaveValidator } from "@railkit/client";
+import type { SaveApp, SaveMe, SaveValidator } from "@railkit/client";
 import { checkWithdrawal, formatSaveMessage, lunaToNimString, MIN_STAKE_LUNA, nimStringToLuna, parseNimiqAddress, WalletError, type StakerState } from "@railkit/core";
 import { createNimiqSaver } from "@railkit/wallet-nimiq";
 import { useEffect, useState, type ReactNode } from "react";
@@ -11,6 +11,8 @@ import { AppBar, Icon, QrCode } from "../ui";
 type Mode = "home" | "rule" | "open" | "add" | "withdraw";
 
 const PRESETS = [10, 30, 50, 100];
+/** Shares saved on top when paying an app: small, since they're added to the price. */
+const SPEND_PRESETS = [0, 5, 10, 20];
 /** Payments in shown on Savings; Activity has the rest. */
 const PAID_IN_SHOWN = 4;
 const nim = (luna: string | bigint) => formatMoney(lunaToNimString(BigInt(luna)), "NIM");
@@ -64,6 +66,10 @@ export function SaveHome({ address, start, onStarted, ask, draw, onSeeAll }: Pro
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [percent, setPercent] = useState(30);
+  const [spendPercent, setSpendPercent] = useState(0);
+  /** Names of the apps allowed to recognise the user's address, as they'll appear in the signed rule. */
+  const [chosen, setChosen] = useState<string[]>([]);
+  const [apps, setApps] = useState<SaveApp[] | null>(null);
   const [amount, setAmount] = useState("");
   const [validators, setValidators] = useState<SaveValidator[] | null>(null);
   const [validator, setValidator] = useState<string | null>(null);
@@ -78,6 +84,8 @@ export function SaveHome({ address, start, onStarted, ask, draw, onSeeAll }: Pro
       setMe(m);
       setLoadError(null);
       if (m.savePercent !== null) setPercent(m.savePercent);
+      if (m.spendPercent !== null) setSpendPercent(m.spendPercent);
+      setChosen(m.apps.map((a) => a.name));
       return m;
     } catch (e) {
       setLoadError(errorText(e));
@@ -98,6 +106,11 @@ export function SaveHome({ address, start, onStarted, ask, draw, onSeeAll }: Pro
     // Reload when the account changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [address]);
+
+  useEffect(() => {
+    if (mode !== "rule" || apps) return;
+    api.saveApps().then(setApps, (e) => setError(errorText(e)));
+  }, [mode, apps]);
 
   useEffect(() => {
     if (mode !== "open" || validators) return;
@@ -162,23 +175,30 @@ export function SaveHome({ address, start, onStarted, ask, draw, onSeeAll }: Pro
     setError(null);
     setInfo(null);
     setAmount(m === "open" ? "100" : "");
+    // The rules screen starts from what's saved, not from changes left unsigned last time.
+    if (m === "rule" && me) {
+      setPercent(me.savePercent ?? 30);
+      setSpendPercent(me.spendPercent ?? 0);
+      setChosen(me.apps.map((a) => a.name));
+    }
     setMode(m);
   };
 
   // ---- Tap handlers. Each opens Nimiq Pay's own dialog; the signing guard checks they stay that way.
 
-  async function saveRule(savePercent: number) {
+  /** Signs all three rules in one message: the share of payouts, the share on top when paying, and the apps allowed. */
+  async function saveRule(rules: { savePercent: number; spendPercent: number; apps: string[] }) {
     if (!self?.ok) return;
     setBusy(true);
     setError(null);
     try {
-      const message = formatSaveMessage({ action: "set", address: self.value, savePercent, time: new Date().toISOString(), nonce: newNonce() });
+      const message = formatSaveMessage({ action: "set", address: self.value, ...rules, time: new Date().toISOString(), nonce: newNonce() });
       const saver = createNimiqSaver(await init({ timeout: 5_000 }));
       const signed = await saver.signRule(message);
       await api.saveRule({ message, ...signed });
       await load(true);
       setMode("home");
-      setInfo(`Apps now pay ${savePercent}% of what they send you into Grow.`);
+      setInfo(`Saved. Apps pay ${rules.savePercent}% of what they send you into Grow${rules.spendPercent ? `, and ${rules.spendPercent}% more goes in when you pay one` : ""}.`);
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -319,27 +339,58 @@ export function SaveHome({ address, start, onStarted, ask, draw, onSeeAll }: Pro
     </>
   );
   const example = (p: number) => `If an app pays you 1,000 NIM: ${(p * 10).toLocaleString()} NIM to Grow, ${((100 - p) * 10).toLocaleString()} NIM to your wallet.`;
+  const presets = (list: number[], value: number, set: (n: number) => void, label: string, suffix = "") => (
+    <div className="presets" role="group" aria-label={label}>
+      {(list.includes(value) ? list : [...list, value].sort((a, b) => a - b)).map((p) => (
+        <button key={p} type="button" className="preset" aria-pressed={value === p} onClick={() => set(p)}>{p}%{suffix}</button>
+      ))}
+    </div>
+  );
   const picker = (
     <div className="field">
       <span className="field-label">How much of each payment to save</span>
-      <div className="presets" role="group" aria-label="Share to save">
-        {(PRESETS.includes(percent) ? PRESETS : [...PRESETS, percent].sort((a, b) => a - b)).map((p) => (
-          <button key={p} type="button" className="preset" aria-pressed={percent === p} onClick={() => setPercent(p)}>{p}%</button>
-        ))}
-      </div>
+      {presets(PRESETS, percent, setPercent, "Share to save")}
       <p className="hint">{example(percent)}</p>
     </div>
   );
 
   if (mode === "rule") {
+    const toggle = (name: string) => setChosen((c) => (c.includes(name) ? c.filter((n) => n !== name) : [...c, name]));
+    // Keep the order of Errand's list, so the signed rule reads the same way every time.
+    const allowed = (apps ?? []).map((a) => a.name).filter((n) => chosen.includes(n));
     return (
       <div className="grow">
-        <AppBar title="Change your share" onBack={() => go("home")} />
+        <AppBar title="Your saving rules" onBack={() => go("home")} />
         {picker}
+        <div className="field">
+          <span className="field-label">When you pay an app, save on top</span>
+          {presets(SPEND_PRESETS, spendPercent, setSpendPercent, "Share to save when you pay")}
+          <p className="hint">
+            {spendPercent === 0
+              ? "Nothing extra when you pay an app."
+              : `Pay an app 100 NIM and you pay ${100 + spendPercent} NIM: ${spendPercent} NIM of it goes into Grow. Only in apps you allow below.`}
+          </p>
+        </div>
+        <div className="field">
+          <span className="field-label">Apps that know it's you</span>
+          {apps === null ? <p className="hint">Loading apps…</p> : apps.length === 0 ? <p className="hint">No apps save with Errand yet. Give apps your code meanwhile.</p> : (
+            <div className="choices">
+              {apps.map((a) => (
+                <button key={a.id} type="button" className="choice toggle" aria-pressed={chosen.includes(a.name)} onClick={() => toggle(a.name)}>
+                  <strong>{a.name}</strong>
+                  <small>{chosen.includes(a.name) ? "Saves for you" : "Tap to allow"}</small>
+                </button>
+              ))}
+            </div>
+          )}
+          <p className="hint">These apps recognise the address they already pay, so you don't need your code there. Other apps can't tell you save with Errand.</p>
+        </div>
         {messages}
         <div className="bottom">
-          <button type="button" className="primary" disabled={busy || wrongNetwork} onClick={() => void saveRule(percent)}>{busy ? "Opening Nimiq Pay…" : `Save ${percent}%`}</button>
-          <p className="note">Nimiq Pay asks you to sign, so only you can change your share. It costs nothing.</p>
+          <button type="button" className="primary" disabled={busy || wrongNetwork || apps === null} onClick={() => void saveRule({ savePercent: percent, spendPercent, apps: allowed })}>
+            {busy ? "Opening Nimiq Pay…" : "Save my rules"}
+          </button>
+          <p className="note">Nimiq Pay asks you to sign, so only you can change your rules. It costs nothing.</p>
         </div>
       </div>
     );
@@ -418,6 +469,7 @@ export function SaveHome({ address, start, onStarted, ask, draw, onSeeAll }: Pro
           <ul className="save-points">
             <li><Icon name="check" size={18} /> Your savings stay in your own Nimiq account, staked so they earn rewards.</li>
             <li><Icon name="check" size={18} /> Apps pay you directly, so Errand never holds your Grow savings.</li>
+            <li><Icon name="check" size={18} /> Apps you allow can save for you without your code, and save a little extra when you pay them.</li>
             <li><Icon name="clock" size={18} /> Taking money out takes 12 to 24 hours, so it's never one tap from being spent.</li>
           </ul>
         </section>
@@ -426,7 +478,7 @@ export function SaveHome({ address, start, onStarted, ask, draw, onSeeAll }: Pro
             <p className="note">Step 2 of 2. Grow is open with {nim(BigInt(g.active) + BigInt(g.inactive))}.</p>
             {picker}
             {messages}
-            <button type="button" className="primary" disabled={busy || wrongNetwork} onClick={() => void saveRule(percent)}>{busy ? "Opening Nimiq Pay…" : "Get my save code"}</button>
+            <button type="button" className="primary" disabled={busy || wrongNetwork} onClick={() => void saveRule({ savePercent: percent, spendPercent: 0, apps: [] })}>{busy ? "Opening Nimiq Pay…" : "Get my save code"}</button>
             <p className="note">Nimiq Pay asks you to sign your choice. Signing costs nothing.</p>
           </>
         ) : (
@@ -465,23 +517,33 @@ export function SaveHome({ address, start, onStarted, ask, draw, onSeeAll }: Pro
       <section className="card code-card" aria-label="Your save code">
         <span className="hint">Your save code</span>
         <p className="save-code">{me.code}</p>
-        <p className="hint">Apps pay {me.savePercent}% of what they send you into Grow. Give this code wherever an app asks for your address.</p>
+        <p className="hint">Give this code wherever an app asks for your address. Apps you allow below don't need it.</p>
         {showQr && (
           <div className="qr-wrap">
             <QrCode text={me.code} label={`QR code for ${me.code}`} />
             <p className="hint">An app that pays you can scan this instead of typing your code.</p>
           </div>
         )}
-        <div className="row-buttons">
-          <button type="button" className="secondary" onClick={() => {
-            // The clipboard needs HTTPS. Over plain http (a phone on the dev machine's Wi-Fi) there is none, so show the code instead.
-            const show = () => setInfo(`Your code is ${me.code}.`);
-            if (!navigator.clipboard) return show();
-            void navigator.clipboard.writeText(me.code!).then(() => setInfo("Code copied."), show);
-          }}>Copy code</button>
-          <button type="button" className="secondary" onClick={() => go("rule")}>Change {me.savePercent}%</button>
-        </div>
+        <button type="button" className="secondary" onClick={() => {
+          // The clipboard needs HTTPS. Over plain http (a phone on the dev machine's Wi-Fi) there is none, so show the code instead.
+          const show = () => setInfo(`Your code is ${me.code}.`);
+          if (!navigator.clipboard) return show();
+          void navigator.clipboard.writeText(me.code!).then(() => setInfo("Code copied."), show);
+        }}>Copy code</button>
         <button type="button" className="text-button" aria-expanded={showQr} onClick={() => setShowQr((v) => !v)}>{showQr ? "Hide QR code" : "Show QR code"}</button>
+      </section>
+
+      <section className="card rules-card" aria-label="Your saving rules">
+        <strong>Your saving rules</strong>
+        <dl className="rules">
+          <dt>When an app pays you</dt>
+          <dd>{me.savePercent}% into Grow</dd>
+          <dt>When you pay an app</dt>
+          <dd>{me.spendPercent ? `${me.spendPercent}% more into Grow` : "Nothing extra"}</dd>
+          <dt>Apps that know it's you</dt>
+          <dd>{me.apps.length ? me.apps.map((a) => a.name).join(", ") : "None yet"}</dd>
+        </dl>
+        <button type="button" className="secondary" onClick={() => go("rule")}>Change rules</button>
       </section>
 
       {!g && me.growClosed === "no-stake" && (
@@ -514,11 +576,11 @@ export function SaveHome({ address, start, onStarted, ask, draw, onSeeAll }: Pro
 
       <section className="section">
         <div className="section-head">
-          <h2 className="section-title">Paid in with your code</h2>
+          <h2 className="section-title">From apps</h2>
           {me.receipts.length > PAID_IN_SHOWN && onSeeAll && <button type="button" className="text-button" onClick={onSeeAll}>See all</button>}
         </div>
         {me.receipts.length === 0 ? (
-          <p className="empty">Nothing yet. When an app pays you with your code, it shows here.</p>
+          <p className="empty">Nothing yet. When an app pays you, or saves for you when you pay it, it shows here.</p>
         ) : (
           <ul className="list">
             {me.receipts.slice(0, PAID_IN_SHOWN).map((r) => (
@@ -527,7 +589,7 @@ export function SaveHome({ address, start, onStarted, ask, draw, onSeeAll }: Pro
                   <span className="row-icon in"><Icon name={r.kind === "grow" ? "jar" : "down"} size={20} /></span>
                   <span className="row-main">
                     <strong>{r.app}</strong>
-                    <span>{new Date(r.at).toLocaleDateString(undefined, { day: "numeric", month: "short" })} · {r.kind === "grow" ? "to Grow" : "to your wallet"}</span>
+                    <span>{new Date(r.at).toLocaleDateString(undefined, { day: "numeric", month: "short" })} · {r.source === "spend" ? (r.kind === "grow" ? "saved when you paid" : "your saving, back to your wallet") : r.kind === "grow" ? "to Grow" : "to your wallet"}</span>
                   </span>
                   <span className="row-end"><span className="row-amount">+{nim(r.luna)}</span></span>
                 </div>

@@ -3,6 +3,7 @@ import type { Env as HonoEnv, Hono } from "hono";
 import {
   formatSaveCode,
   growEvents,
+  isAppName,
   MIN_STAKE_LUNA,
   newSaveCode,
   nimiqAddressBytes,
@@ -12,6 +13,7 @@ import {
   parseSaveCode,
   parseSaveMessage,
   releaseBlock,
+  spendSave,
   splitPayout,
   STAKING_CONTRACT,
   type GrowState,
@@ -20,7 +22,7 @@ import {
 } from "@railkit/core";
 import { answerSavingsQuestion, looksEnglish, parseSave, phraseSavingsAnswer, type SavePeriod, type SaveQuestion, type SavingsClassifier, type SavingsFacts, type SavingsPhraser } from "@railkit/agent";
 import { rateLimiter } from "../rate-limit";
-import type { SaveApp, SaveStore } from "./store";
+import type { SaveApp, SaveCodeRow, SaveStore } from "./store";
 
 export interface SaveDeps {
   store: SaveStore;
@@ -114,6 +116,18 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
     return s.store.appByKeyHash(sha256Hex(key));
   }
 
+  /**
+   * The rule behind an address, only if its owner allowed this app to recognise them. Someone without a rule
+   * and someone who didn't allow the app look the same, so an app can't find out who saves with Errand.
+   */
+  async function allowedSaver(address: string, payer: SaveApp): Promise<SaveCodeRow | undefined> {
+    const row = await s.store.activeCodeByAddress(address);
+    return row && row.appIds.includes(payer.id) ? row : undefined;
+  }
+
+  /** Apps people can allow, by name. Names that can't be written in a signed rule are left out. */
+  const namedApps = async () => (await s.store.listApps()).filter((a) => isAppName(a.name));
+
   // ---- For the user, from the Mini App.
 
   /** Set or revoke the rule. The body is the message the user signed in Nimiq Pay, with the key and signature. */
@@ -143,11 +157,20 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
       log("save code revoked", { code: existing?.code ?? null });
       return c.json({ revoked: true });
     }
-    const savePercent = m.value.savePercent!;
+    // The apps the user named, as ids. A rule signed before apps and spending existed keeps what was there.
+    let appIds = existing?.appIds ?? [];
+    if (m.value.apps) {
+      const byName = new Map((await namedApps()).map((a) => [a.name.toLowerCase(), a.id]));
+      const unknown = m.value.apps.find((n) => !byName.has(n.toLowerCase()));
+      if (unknown) return bad(`Errand doesn't know an app called ${unknown}. Reload and try again.`);
+      appIds = m.value.apps.map((n) => byName.get(n.toLowerCase())!);
+    }
+    const rule = { savePercent: m.value.savePercent!, spendPercent: m.value.spendPercent ?? existing?.spendPercent ?? 0, appIds };
+    const reply = (code: string) => c.json({ code: formatSaveCode(code), address, savePercent: rule.savePercent, spendPercent: rule.spendPercent, appIds });
     if (existing) {
-      await s.store.updatePercent(existing.code, savePercent, now());
-      log("save rule changed", { code: existing.code, savePercent });
-      return c.json({ code: formatSaveCode(existing.code), address, savePercent });
+      await s.store.updateRule(existing.code, rule, now());
+      log("save rule changed", { code: existing.code, savePercent: rule.savePercent, spendPercent: rule.spendPercent, apps: appIds.length });
+      return reply(existing.code);
     }
     // A new code only once Grow is open, so nobody hands out a code that can't save anything yet.
     // Read fresh: the user has usually just opened Grow a moment ago.
@@ -162,9 +185,9 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
     }
     for (let i = 0; i < 5; i++) {
       const code = newSaveCode();
-      if (await s.store.insertCode({ code, address, savePercent, createdAt: now(), updatedAt: now(), revokedAt: null })) {
-        log("save code created", { code, savePercent });
-        return c.json({ code: formatSaveCode(code), address, savePercent });
+      if (await s.store.insertCode({ code, address, ...rule, createdAt: now(), updatedAt: now(), revokedAt: null })) {
+        log("save code created", { code, savePercent: rule.savePercent, spendPercent: rule.spendPercent, apps: appIds.length });
+        return reply(code);
       }
     }
     return bad("Couldn't make a save code just now. Try again.", 503);
@@ -201,10 +224,12 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
         address: addr.value,
         code: x.code ? formatSaveCode(x.code.code) : null,
         savePercent: x.code?.savePercent ?? null,
+        spendPercent: x.code?.spendPercent ?? null,
+        apps: (x.code?.appIds ?? []).map((id) => ({ id, name: x.appName(id) })),
         blockNumber: x.blockNumber,
         grow: x.staker && { ...lunaJson(x.staker), releaseBlock: x.release, validatorJailed: x.jailedFrom !== null },
         growClosed: x.grow.open ? null : x.grow.reason,
-        receipts: x.receipts.map((r) => ({ txHash: r.txHash, app: x.appName(r.appId), kind: r.kind, luna: r.luna, at: r.createdAt })),
+        receipts: x.receipts.map((r) => ({ txHash: r.txHash, app: x.appName(r.appId), kind: r.kind, source: r.source, luna: r.luna, at: r.createdAt })),
         splits: x.splits.map((r) => ({ payoutId: r.payoutId, app: x.appName(r.appId), walletLuna: r.walletLuna, growLuna: r.growLuna, reason: r.reason, savePercent: r.savePercent, at: r.createdAt })),
       });
     } catch (e) {
@@ -228,10 +253,10 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
       s.chain.transactionsByAddress(addr.value, 100).catch((e) => (log("save activity chain read failed", { error: String(e) }), null)),
     ]);
     const names = new Map(apps.map((a) => [a.id, a.name]));
-    const payments = new Map<string, { payoutId: string; app: string; walletLuna: bigint; growLuna: bigint; at: number; reason: string | null }>();
+    const payments = new Map<string, { payoutId: string; app: string; source: "payout" | "spend"; walletLuna: bigint; growLuna: bigint; at: number; reason: string | null }>();
     for (const r of receipts) {
       const key = `${r.appId}:${r.payoutId}`;
-      const p = payments.get(key) ?? { payoutId: r.payoutId, app: names.get(r.appId) ?? "An app", walletLuna: 0n, growLuna: 0n, at: 0, reason: null };
+      const p = payments.get(key) ?? { payoutId: r.payoutId, app: names.get(r.appId) ?? "An app", source: r.source, walletLuna: 0n, growLuna: 0n, at: 0, reason: null };
       if (r.kind === "grow") p.growLuna += BigInt(r.luna);
       else p.walletLuna += BigInt(r.luna);
       p.at = Math.max(p.at, r.createdAt);
@@ -295,6 +320,12 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
     }
   });
 
+  /** The apps that save with Errand, for the user to pick which may recognise their address. Names only. */
+  app.get("/v1/save/apps", async (c) => {
+    if (!readLimit(ip(c))) return bad("Too many requests. Wait a minute.", 429);
+    return c.json({ apps: (await namedApps()).map((a) => ({ id: a.id, name: a.name })) });
+  });
+
   /** Validators for opening Grow: our recommended ones first, then the rest of the active set by stake. */
   app.get("/v1/save/validators", async (c) => {
     try {
@@ -316,20 +347,33 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
 
   // ---- For paying apps, server to server, with their app key.
 
-  /** How to split a payment for this code: the wallet part and the Grow part, in luna. */
+  /**
+   * How to split a payment: the wallet part and the Grow part, in luna. For a save code, or for an address
+   * whose owner allowed this app. Any other address gets "pay it all to the wallet", saver or not.
+   */
   app.get("/v1/save/split", async (c) => {
     const payer = await appFrom(c.req.header("authorization"));
     if (!payer) return bad("Missing or unknown app key.", 401);
     if (!appLimit(payer.id)) return bad("Too many lookups. Slow down.", 429);
-    const code = parseSaveCode(c.req.query("code") ?? "");
-    if (!code.ok) return bad(code.error.message);
+    const [rawCode, rawAddress] = [c.req.query("code"), c.req.query("address")];
+    if ((rawCode === undefined) === (rawAddress === undefined)) return bad("Send either a save code or an address.");
     const raw = c.req.query("luna") ?? "";
     if (!/^[1-9]\d{0,15}$/.test(raw)) return bad("luna must be a whole number above 0.");
     // Optional: which payout this is. With it, the user can later ask why a payment went to their wallet.
     const payoutId = c.req.query("payoutId");
     if (payoutId !== undefined && !/^[\w:.-]{1,100}$/.test(payoutId)) return bad("payoutId: 1 to 100 letters, digits or _ : . -");
-    const row = await s.store.activeCode(code.value);
-    if (!row) return bad("No active save code like that. Pay the user's address instead.", 404);
+    let row: SaveCodeRow | undefined;
+    if (rawAddress !== undefined) {
+      const addr = parseNimiqAddress(rawAddress);
+      if (!addr.ok) return bad(addr.error.message);
+      row = await allowedSaver(addr.value, payer);
+      if (!row) return c.json({ code: null, address: addr.value, savePercent: 0, wallet: { luna: raw }, grow: null, reason: null });
+    } else {
+      const code = parseSaveCode(rawCode!);
+      if (!code.ok) return bad(code.error.message);
+      row = await s.store.activeCode(code.value);
+      if (!row) return bad("No active save code like that. Pay the user's address instead.", 404);
+    }
     try {
       const { grow } = await growState(row.address);
       const split = splitPayout(BigInt(raw), row.savePercent, grow);
@@ -340,7 +384,8 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
         });
       }
       return c.json({
-        code: formatSaveCode(row.code),
+        // The code only goes back to an app that already had it.
+        code: rawCode !== undefined ? formatSaveCode(row.code) : null,
         address: row.address,
         savePercent: row.savePercent,
         wallet: { luna: split.wallet.toString() },
@@ -353,22 +398,62 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
     }
   });
 
+  /**
+   * Spend and save: what to charge when this address pays the app `luna`. The saved part goes on top, and the app
+   * puts it into the payer's stake once the payment arrives. Without a rule that allows this app, nothing goes on top.
+   */
+  app.get("/v1/save/spend", async (c) => {
+    const payer = await appFrom(c.req.header("authorization"));
+    if (!payer) return bad("Missing or unknown app key.", 401);
+    if (!appLimit(payer.id)) return bad("Too many lookups. Slow down.", 429);
+    const addr = parseNimiqAddress(c.req.query("address") ?? "");
+    if (!addr.ok) return bad(addr.error.message);
+    const raw = c.req.query("luna") ?? "";
+    if (!/^[1-9]\d{0,15}$/.test(raw)) return bad("luna must be a whole number above 0.");
+    const row = await allowedSaver(addr.value, payer);
+    const nothing = { address: addr.value, spendPercent: 0, price: raw, save: "0", total: raw, staker: null, reason: null };
+    if (!row || row.spendPercent === 0) return c.json(nothing);
+    try {
+      const { grow } = await growState(row.address);
+      const q = spendSave(BigInt(raw), row.spendPercent, grow);
+      return c.json({
+        address: row.address, spendPercent: row.spendPercent, price: q.price.toString(), save: q.save.toString(), total: q.total.toString(),
+        staker: q.save > 0n ? row.address : null, reason: q.reason,
+      });
+    } catch (e) {
+      log("save spend quote failed", { error: String(e) });
+      return bad("Couldn't reach the Nimiq network. Try again in a minute.", 502);
+    }
+  });
+
   /** An app reports what it sent. Each transaction is checked on-chain before it shows in the user's history. */
   app.post("/v1/save/receipts", async (c) => {
     const payer = await appFrom(c.req.header("authorization"));
     if (!payer) return bad("Missing or unknown app key.", 401);
     if (!appLimit(payer.id)) return bad("Too many requests. Slow down.", 429);
-    const body = (await c.req.json().catch(() => null)) as { code?: unknown; payoutId?: unknown; walletTx?: unknown; growTx?: unknown } | null;
-    const code = parseSaveCode(typeof body?.code === "string" ? body.code : "");
-    if (!code.ok) return bad(code.error.message);
+    const body = (await c.req.json().catch(() => null)) as { code?: unknown; address?: unknown; source?: unknown; payoutId?: unknown; walletTx?: unknown; growTx?: unknown } | null;
+    if ((typeof body?.code === "string") === (typeof body?.address === "string")) return bad("Send either a save code or an address.");
+    const source = body?.source === undefined || body.source === "payout" ? "payout" : body.source === "spend" ? "spend" : null;
+    if (!source) return bad("source is \"payout\" or \"spend\".");
     const payoutId = typeof body?.payoutId === "string" && /^[\w:.-]{1,100}$/.test(body.payoutId) ? body.payoutId : "";
     if (!payoutId) return bad("payoutId is required: letters, digits and _ : . - only.");
     const txs = (["walletTx", "growTx"] as const)
       .map((k) => ({ k, hash: body?.[k] }))
       .filter((t): t is { k: "walletTx" | "growTx"; hash: string } => typeof t.hash === "string");
     if (txs.length === 0 || txs.some((t) => !/^[0-9a-f]{64}$/.test(t.hash))) return bad("Send walletTx and/or growTx as 64-character hex hashes.");
-    const row = await s.store.activeCode(code.value);
-    if (!row) return bad("No active save code like that.", 404);
+    let row: SaveCodeRow | undefined;
+    if (typeof body?.address === "string") {
+      const addr = parseNimiqAddress(body.address);
+      if (!addr.ok) return bad(addr.error.message);
+      // The same answer for "doesn't save with Errand" and "didn't allow your app".
+      row = await allowedSaver(addr.value, payer);
+      if (!row) return bad("This address hasn't allowed your app to save for it.", 404);
+    } else {
+      const code = parseSaveCode(body!.code as string);
+      if (!code.ok) return bad(code.error.message);
+      row = await s.store.activeCode(code.value);
+      if (!row) return bad("No active save code like that.", 404);
+    }
 
     const from = new Set(payer.payoutAddresses);
     const stakerHex = hex(nimiqAddressBytes(row.address));
@@ -384,9 +469,9 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
         if (!tx.executionResult) return bad(`${t.k} failed on-chain.`);
         const kind = t.k === "walletTx" ? "wallet" : "grow";
         const ok = kind === "wallet" ? tx.to === row.address : tx.to === STAKING_CONTRACT && tx.recipientData.startsWith(`06${stakerHex}`);
-        if (!ok) return bad(kind === "wallet" ? "walletTx didn't pay this code's address." : "growTx isn't an add-stake into this code's Grow savings.");
+        if (!ok) return bad(kind === "wallet" ? "walletTx didn't pay this saver's address." : "growTx isn't an add-stake into this saver's Grow savings.");
         await s.store.addReceipt({
-          txHash: tx.hash, code: row.code, address: row.address, appId: payer.id, kind, luna: tx.value.toString(), payoutId, blockNumber: tx.blockNumber, createdAt: now(),
+          txHash: tx.hash, code: row.code, address: row.address, appId: payer.id, kind, source, luna: tx.value.toString(), payoutId, blockNumber: tx.blockNumber, createdAt: now(),
         });
         out[t.k] = "recorded";
       }
@@ -394,7 +479,7 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
       log("save receipt failed", { error: String(e) });
       return bad("Couldn't reach the Nimiq network. Try again in a minute.", 502);
     }
-    log("save receipt", { app: payer.id, code: row.code, ...out });
+    log("save receipt", { app: payer.id, code: row.code, source, ...out });
     return c.json(out);
   });
 
@@ -403,8 +488,9 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
   app.post("/v1/admin/save/apps", async (c) => {
     if (!h.admin(c.req.header("authorization"))) return bad("Not found.", 404);
     const body = (await c.req.json().catch(() => null)) as { name?: unknown; payoutAddresses?: unknown } | null;
-    const name = typeof body?.name === "string" ? body.name.trim().slice(0, 60) : "";
-    if (!name) return bad("Give the app a name.");
+    const name = typeof body?.name === "string" ? body.name.trim() : "";
+    if (!isAppName(name)) return bad("Give the app a name of up to 40 letters, digits, spaces or . ' & ! + -, with no commas.");
+    if ((await s.store.listApps()).some((a) => a.name.toLowerCase() === name.toLowerCase())) return bad(`There's already an app called ${name}.`);
     const raw = Array.isArray(body?.payoutAddresses) ? body.payoutAddresses : [];
     const addresses = raw.map((a) => parseNimiqAddress(typeof a === "string" ? a : ""));
     if (addresses.length === 0 || addresses.some((a) => !a.ok)) return bad("List the app's payout addresses as valid Nimiq addresses.");

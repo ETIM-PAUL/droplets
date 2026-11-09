@@ -1,7 +1,12 @@
-// Testnet only. Plays an app that pays rewards with save codes, so you can watch a payment split between
-// someone's wallet and their Grow. It pays through this package's SDK, the same way a real app would.
+// Testnet only. Plays an app that saves with Errand, so you can watch a payment split between someone's wallet
+// and their Grow. It pays through this package's SDK, the same way a real app would.
 //
-//   pnpm pay-save-code SAVE-7KQ2XMP 2000      (from the repo root; the amount is in NIM, 1000 if left out)
+//   pnpm pay-save-code SAVE-7KQ2XMP 2000        pays a save code (from the repo root; NIM, 1000 if left out)
+//   pnpm pay-save-code "NQ.. .." 2000            pays an address: split only if its owner allowed Test Arcade
+//   pnpm pay-save-code --spend "NQ.. .." 100     spend and save: quotes a 100 NIM purchase, then saves the part on top
+//
+// For --spend, a real app would first take the quoted total from the user. This tool only plays the app, so it
+// skips that payment and puts the saved part in from its own wallet.
 //
 // The first run gives the pretend app ("Test Arcade") a wallet, fills it from the testnet faucet, and
 // registers it with your local API, which needs ADMIN_TOKEN in .env. The wallet key and the app key stay in
@@ -11,9 +16,11 @@ import { createNimiqRpc, lunaToNimString, nimStringToLuna } from "@railkit/core"
 import { createSaveApi, SaveApiError } from "../src/index";
 import { createSavePayer } from "../src/payer";
 
-const [code, amount = "1000"] = process.argv.slice(2);
+const args = process.argv.slice(2);
+const spending = args[0] === "--spend";
+const [code, amount = spending ? "100" : "1000"] = spending ? args.slice(1) : args;
 if (!code) {
-  console.error("Usage: pnpm pay-save-code SAVE-XXXXXXX [amount in NIM, default 1000]");
+  console.error("Usage: pnpm pay-save-code <SAVE-XXXXXXX or Nimiq address> [NIM, default 1000]\n       pnpm pay-save-code --spend <Nimiq address> [price in NIM, default 100]");
   process.exit(1);
 }
 if (process.env.SAVE_NETWORK !== "testnet") throw new Error("This tool only runs on testnet: set SAVE_NETWORK=testnet in .env.");
@@ -58,9 +65,18 @@ if ((await rpc.balance(address)) < luna.value) {
   if ((await rpc.balance(address)) < luna.value) throw new Error(`The faucet didn't fill the wallet. Send ${address} some testnet NIM from Nimiq Pay, then try again.`);
 }
 
-const pay = () =>
-  createSavePayer({ api: createSaveApi({ apiUrl, apiKey }), rpc, nimiq: Nimiq, keyPair, network: "test" })
-    .pay({ to: code, luna: luna.value, payoutId: `test-${Date.now()}`, memo: "Test Arcade reward" });
+const nim = (l: bigint) => `${lunaToNimString(l)} NIM`;
+const payer = () => createSavePayer({ api: createSaveApi({ apiUrl, apiKey }), rpc, nimiq: Nimiq, keyPair, network: "test" });
+const pay = async () => {
+  if (!spending) return payer().pay({ to: code, luna: luna.value, payoutId: `test-${Date.now()}`, memo: "Test Arcade reward" });
+  const quote = await createSaveApi({ apiUrl, apiKey }).spend(code, luna.value);
+  if (quote.saveLuna === 0n) {
+    console.log(`Nothing goes on top of a ${nim(luna.value)} purchase${quote.reason ? ` (${quote.reason})` : ": this address hasn't allowed Test Arcade, or saves 0% when paying"}.`);
+    process.exit(0);
+  }
+  console.log(`Charge ${nim(quote.totalLuna)}: ${nim(quote.priceLuna)} for the purchase and ${nim(quote.saveLuna)} (${quote.spendPercent}%) for their savings.`);
+  return payer().saveFromSpend({ to: code, luna: quote.saveLuna, payoutId: `test-spend-${Date.now()}` });
+};
 let r: Awaited<ReturnType<typeof pay>>;
 try {
   r = await pay();
@@ -70,7 +86,10 @@ try {
   await register();
   r = await pay();
 }
-const nim = (l: bigint) => `${lunaToNimString(l)} NIM`;
+if (spending) {
+  console.log(r.growLuna > 0n ? `Test Arcade put ${nim(r.growLuna)} into their Grow.` : `Their Grow couldn't take it (${r.reason}), so Test Arcade sent ${nim(r.walletLuna)} back to their wallet.`);
+  process.exit(0);
+}
 console.log(
   r.growLuna > 0n
     ? `Test Arcade paid ${code} ${nim(luna.value)}: ${nim(r.growLuna)} into Grow and ${nim(r.walletLuna)} to the wallet.`

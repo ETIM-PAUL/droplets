@@ -1,6 +1,6 @@
-// Errand Save, phase 1: save codes, the signed rule behind them, and how a payment splits between
-// the user's wallet and their Grow savings (their own staked NIM). Pure functions, shared by the API,
-// the payout SDK and the Mini App.
+// Errand Save, phase 1: save codes, the signed rule behind them, how a payment from an app splits between
+// the user's wallet and their Grow savings (their own staked NIM), and what's saved on top when the user pays
+// an app. Pure functions, shared by the API, the payout SDK and the Mini App.
 import { blake2b } from "@noble/hashes/blake2.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { formatNimiqAddress, nimiqAddressBytes, parseNimiqAddress } from "./nimiq-address";
@@ -55,8 +55,15 @@ export function parseSaveCode(input: string): Result<string> {
 export interface SaveRuleMessage {
   action: "set" | "revoke";
   address: string;
-  /** Whole percent of each payment that goes to savings. Only for "set". */
+  /** Whole percent of each payment from an app that goes to savings. Only for "set". */
   savePercent?: number;
+  /** Whole percent added on top when the user pays an app, and saved. Only for "set"; absent in rules signed before it existed. */
+  spendPercent?: number;
+  /**
+   * The apps, by name, that may recognise the user's address and save for them without the code.
+   * Only for "set"; absent in rules signed before it existed. An empty list is written "none".
+   */
+  apps?: string[];
   /** ISO 8601 UTC, e.g. 2026-11-04T15:20:00.000Z. */
   time: string;
   /** 16 to 64 hex characters, never reused. */
@@ -64,11 +71,23 @@ export interface SaveRuleMessage {
 }
 
 const MESSAGE_TITLE = "Errand save code";
+/** Most apps one rule can name. */
+export const MAX_RULE_APPS = 20;
+
+/**
+ * An app's name as people see it, and as it's written in a signed rule: letters, digits, spaces and . ' & ! + -,
+ * up to 40 characters. No commas, so a list of names in a rule reads back exactly.
+ */
+export const isAppName = (name: string): boolean => /^[\p{L}\p{N}](?:[\p{L}\p{N} .'&!+-]{0,38}[\p{L}\p{N}.!+])?$/u.test(name) && !name.includes("  ");
 
 /** The exact text the user signs. One field per line, so what Nimiq Pay shows is what we check. */
 export function formatSaveMessage(m: SaveRuleMessage): string {
   const lines = [MESSAGE_TITLE, `Action: ${m.action}`, `Address: ${m.address}`];
-  if (m.action === "set") lines.push(`Save: ${m.savePercent}%`);
+  if (m.action === "set") {
+    lines.push(`Save: ${m.savePercent}%`);
+    if (m.spendPercent !== undefined) lines.push(`Spend: ${m.spendPercent}%`);
+    if (m.apps !== undefined) lines.push(`Apps: ${m.apps.length ? m.apps.join(", ") : "none"}`);
+  }
   lines.push(`Time: ${m.time}`, `Nonce: ${m.nonce}`);
   return lines.join("\n");
 }
@@ -79,22 +98,38 @@ export function parseSaveMessage(text: string): Result<SaveRuleMessage> {
   const lines = text.split("\n");
   if (lines[0] !== MESSAGE_TITLE) return bad;
   const field = (i: number, name: string) => (lines[i]?.startsWith(`${name}: `) ? lines[i]!.slice(name.length + 2) : null);
+  const percent = (s: string | null) => {
+    const pct = /^(\d{1,3})%$/.exec(s ?? "");
+    const n = pct ? Number(pct[1]) : NaN;
+    return Number.isInteger(n) && n >= 0 && n <= 100 ? n : null;
+  };
   const action = field(1, "Action");
   if (action !== "set" && action !== "revoke") return bad;
   const address = parseNimiqAddress(field(2, "Address") ?? "");
   if (!address.ok) return bad;
   let i = 3;
-  let savePercent: number | undefined;
+  let set: Pick<SaveRuleMessage, "savePercent" | "spendPercent" | "apps"> = {};
   if (action === "set") {
-    const pct = /^(\d{1,3})%$/.exec(field(i++, "Save") ?? "");
-    savePercent = pct ? Number(pct[1]) : NaN;
-    if (!Number.isInteger(savePercent) || savePercent < 0 || savePercent > 100) return fail("bad_amount", "The share to save must be a whole percent from 0 to 100.");
+    const savePercent = percent(field(i++, "Save"));
+    if (savePercent === null) return fail("bad_amount", "The share to save must be a whole percent from 0 to 100.");
+    set = { savePercent };
+    // Rules signed before spending and apps existed have neither line; newer ones have both.
+    if (field(i, "Spend") !== null) {
+      const spendPercent = percent(field(i++, "Spend"));
+      if (spendPercent === null) return fail("bad_amount", "The share to save when you pay must be a whole percent from 0 to 100.");
+      const list = field(i++, "Apps");
+      if (list === null) return bad;
+      const apps = list === "none" ? [] : list.split(", ");
+      if (apps.length > MAX_RULE_APPS) return fail("unsupported", `A rule can name up to ${MAX_RULE_APPS} apps.`);
+      if (apps.some((a) => !isAppName(a)) || new Set(apps.map((a) => a.toLowerCase())).size !== apps.length) return bad;
+      set = { savePercent, spendPercent, apps };
+    }
   }
   const time = field(i++, "Time") ?? "";
   const nonce = field(i++, "Nonce") ?? "";
   if (!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d{3})?Z$/.test(time) || Number.isNaN(Date.parse(time))) return bad;
   if (!/^[0-9a-f]{16,64}$/.test(nonce) || lines.length !== i) return bad;
-  const m: SaveRuleMessage = { action, address: address.value, ...(action === "set" ? { savePercent } : {}), time, nonce };
+  const m: SaveRuleMessage = { action, address: address.value, ...set, time, nonce };
   // Round trip: refuses extra spaces, a lowercase address or anything else that reads differently from what was signed.
   return formatSaveMessage(m) === text ? ok(m) : bad;
 }
@@ -163,6 +198,31 @@ export function splitPayout(luna: bigint, savePercent: number, grow: GrowState):
   if (!grow.open) return { wallet: luna, grow: 0n, reason: grow.reason };
   if (grow.staker.active + grow.staker.inactive + part < MIN_STAKE_LUNA) return { wallet: luna, grow: 0n, reason: "below-minimum" };
   return { wallet: luna - part, grow: part, reason: null };
+}
+
+export interface SpendSave {
+  /** Luna the app charges for what's being bought. */
+  price: bigint;
+  /** Luna added on top and saved into the user's stake; 0n when nothing is. */
+  save: bigint;
+  /** What the user pays: price + save. */
+  total: bigint;
+  /** Why nothing is saved when the rule asked for some. */
+  reason: SaveSplit["reason"];
+}
+
+/**
+ * Spend and save: when the user pays an app `price`, floor(price × percent / 100) more is added on top, and the
+ * app puts that part into the user's stake. When the stake can't take it, nothing is added, so paying never fails
+ * because of savings.
+ */
+export function spendSave(price: bigint, spendPercent: number, grow: GrowState): SpendSave {
+  if (price <= 0n) throw new RangeError("A payment must be more than 0 luna.");
+  if (!Number.isInteger(spendPercent) || spendPercent < 0 || spendPercent > 100) throw new RangeError("spendPercent must be a whole number from 0 to 100.");
+  const save = (price * BigInt(spendPercent)) / 100n;
+  // The stake takes the saved part whole, or not at all: the same check as a payout's share of 100%.
+  const split = save === 0n ? { grow: 0n, reason: null } : splitPayout(save, 100, grow);
+  return split.grow > 0n ? { price, save, total: price + save, reason: null } : { price, save: 0n, total: price, reason: split.reason };
 }
 
 /** First block at which inactive stake can be retired: one epoch after its lock-up starts, and after any jail ends. */

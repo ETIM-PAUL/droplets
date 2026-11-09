@@ -7,6 +7,7 @@ import {
   formatSaveCode,
   formatSaveMessage,
   growEvents,
+  isAppName,
   lunaToNimString,
   MIN_STAKE_LUNA,
   newSaveCode,
@@ -16,6 +17,7 @@ import {
   parseSaveCode,
   parseSaveMessage,
   releaseBlock,
+  spendSave,
   splitPayout,
   STAKING_CONTRACT,
   type StakerState,
@@ -86,6 +88,41 @@ describe("signed rules", () => {
     }
   });
 
+  it("carries the share saved when paying and the apps allowed to recognise the address", () => {
+    const full = { ...set, spendPercent: 5, apps: ["NIMblers", "Quiz Night"] };
+    const text = formatSaveMessage(full);
+    expect(text).toBe(`Errand save code\nAction: set\nAddress: ${FIXTURE.address}\nSave: 30%\nSpend: 5%\nApps: NIMblers, Quiz Night\nTime: 2026-11-04T15:20:00.000Z\nNonce: 9f2c4d1e8a7b6c5d`);
+    expect(parseSaveMessage(text)).toEqual({ ok: true, value: full });
+    const none = { ...set, spendPercent: 0, apps: [] };
+    expect(formatSaveMessage(none)).toContain("\nApps: none\n");
+    expect(parseSaveMessage(formatSaveMessage(none))).toEqual({ ok: true, value: none });
+    // A rule signed before these lines existed still reads, without them.
+    expect(parseSaveMessage(formatSaveMessage(set))).toEqual({ ok: true, value: set });
+  });
+
+  it("refuses a bad share when paying, a bad app list, or one line without the other", () => {
+    const text = formatSaveMessage({ ...set, spendPercent: 5, apps: ["NIMblers"] });
+    for (const bad of [
+      text.replace("Spend: 5%", "Spend: 101%"),
+      text.replace("Spend: 5%", "Spend: five"),
+      text.replace("Apps: NIMblers", "Apps: NIMblers,Quiz"),
+      text.replace("Apps: NIMblers", "Apps: NIMblers, NIMblers"),
+      text.replace("Apps: NIMblers", "Apps: NIMblers, nimblers"),
+      text.replace("Apps: NIMblers", "Apps: NIMblers, "),
+      text.replace("Apps: NIMblers", "Apps: "),
+      text.replace("\nApps: NIMblers", ""),
+      text.replace("Spend: 5%\n", ""),
+      text.replace("Apps: NIMblers", `Apps: ${Array.from({ length: 21 }, (_, i) => `App ${i}`).join(", ")}`),
+    ]) {
+      expect(parseSaveMessage(bad).ok, bad).toBe(false);
+    }
+  });
+
+  it("knows a good app name", () => {
+    for (const name of ["NIMblers", "Quiz Night", "Tom's Shop", "A", "Kids & Coins!", "Nimiq-Arena 2"]) expect(isAppName(name), name).toBe(true);
+    for (const name of ["", " NIMblers", "NIMblers ", "Two  spaces", "a, b", "x".repeat(41), "new\nline", "-dash"]) expect(isAppName(name), name).toBe(false);
+  });
+
   it("hashes like Nimiq Pay's sign(), and a node:crypto Ed25519 signature over it verifies", () => {
     const { publicKey, privateKey } = generateKeyPairSync("ed25519");
     const hash = nimiqMessageHash("héllo");
@@ -133,6 +170,30 @@ describe("splitting a payment", () => {
     expect(() => splitPayout(0n, 30, open)).toThrow();
     expect(() => splitPayout(NIM(1), 30.5, open)).toThrow();
     expect(() => splitPayout(NIM(1), 101, open)).toThrow();
+  });
+});
+
+describe("spend and save", () => {
+  const open = { open: true as const, staker: staker() };
+
+  it("adds the rule's share on top of the price, rounded down", () => {
+    expect(spendSave(NIM(100), 5, open)).toEqual({ price: NIM(100), save: NIM(5), total: NIM(105), reason: null });
+    expect(spendSave(119n, 5, open)).toEqual({ price: 119n, save: 5n, total: 124n, reason: null });
+    expect(spendSave(NIM(100), 0, open)).toEqual({ price: NIM(100), save: 0n, total: NIM(100), reason: null });
+    expect(spendSave(19n, 5, open)).toEqual({ price: 19n, save: 0n, total: 19n, reason: null });
+  });
+
+  it("adds nothing when the stake can't take it, and says why", () => {
+    expect(spendSave(NIM(100), 5, { open: false, reason: "no-stake" })).toEqual({ price: NIM(100), save: 0n, total: NIM(100), reason: "no-stake" });
+    expect(spendSave(NIM(100), 5, { open: false, reason: "validator-gone" }).reason).toBe("validator-gone");
+    const emptied = { open: true as const, staker: staker({ active: 0n, retired: NIM(500) }) };
+    expect(spendSave(NIM(100), 5, emptied)).toEqual({ price: NIM(100), save: 0n, total: NIM(100), reason: "below-minimum" });
+  });
+
+  it("refuses nonsense", () => {
+    expect(() => spendSave(0n, 5, open)).toThrow();
+    expect(() => spendSave(NIM(1), 5.5, open)).toThrow();
+    expect(() => spendSave(NIM(1), 101, open)).toThrow();
   });
 });
 

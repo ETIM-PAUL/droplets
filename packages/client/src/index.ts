@@ -15,7 +15,12 @@ export interface SaveMe {
   address: string;
   /** e.g. SAVE-7KQ2XMP; null before the user sets a rule. */
   code: string | null;
+  /** Share of each payment from an app that's saved; null before the user sets a rule. */
   savePercent: number | null;
+  /** Share added on top and saved when the user pays an app; null before the user sets a rule. */
+  spendPercent: number | null;
+  /** Apps the user allowed to recognise their address, so they save without the code. */
+  apps: { id: string; name: string }[];
   blockNumber: number;
   grow: {
     active: string;
@@ -29,17 +34,27 @@ export interface SaveMe {
   } | null;
   /** Why Grow isn't open: no stake yet, or the validator it was delegated to is gone. */
   growClosed: null | "no-stake" | "validator-gone";
-  receipts: { txHash: string; app: string; kind: "wallet" | "grow"; luna: string; at: number }[];
+  /** What apps sent: "payout" when an app paid the user, "spend" for the part saved when the user paid an app. */
+  receipts: { txHash: string; app: string; kind: "wallet" | "grow"; source: "payout" | "spend"; luna: string; at: number }[];
   /** How recent payouts were split, when the paying app said which payout it was. */
   splits: { payoutId: string; app: string; walletLuna: string; growLuna: string; reason: null | "no-stake" | "validator-gone" | "below-minimum"; savePercent: number; at: number }[];
 }
 
 /** The savings history, newest first. Amounts are luna; `at` is ms since 1970. */
 export interface SaveActivity {
-  /** One row per payout an app made with the save code, as checked on-chain. */
-  payments: { payoutId: string; app: string; walletLuna: string; growLuna: string; at: number; reason: null | "no-stake" | "validator-gone" | "below-minimum" }[];
+  /**
+   * One row per payment an app made to the user's savings or wallet, as checked on-chain. "spend" rows are the part
+   * saved when the user paid that app.
+   */
+  payments: { payoutId: string; app: string; source: "payout" | "spend"; walletLuna: string; growLuna: string; at: number; reason: null | "no-stake" | "validator-gone" | "below-minimum" }[];
   /** The person's own Grow transactions; null when the chain couldn't be read just now. */
   grow: { txHash: string; kind: "opened" | "added" | "withdrawal-started" | "withdrawn"; luna: string; at: number; ok: boolean }[] | null;
+}
+
+/** An app that saves with Errand, which the user can allow to recognise their address. */
+export interface SaveApp {
+  id: string;
+  name: string;
 }
 
 export interface SaveValidator {
@@ -162,7 +177,9 @@ export function createRailkitClient(o: RailkitClientOptions) {
     saveActivity: (address: string) => call<SaveActivity>(`/v1/save/activity?address=${encodeURIComponent(address)}`),
     /** Sets or revokes the rule: the message the user signed in Nimiq Pay, with the key and signature it returned. */
     saveRule: (signed: { message: string; publicKey: string; signature: string }) =>
-      call<{ code: string; address: string; savePercent: number } | { revoked: true }>("/v1/save/rule", json(signed)),
+      call<{ code: string; address: string; savePercent: number; spendPercent: number; appIds: string[] } | { revoked: true }>("/v1/save/rule", json(signed)),
+    /** The apps that save with Errand, by name. */
+    saveApps: async () => (await call<{ apps: SaveApp[] }>("/v1/save/apps")).apps,
     saveValidators: async () => (await call<{ validators: SaveValidator[] }>("/v1/save/validators")).validators,
     /** A question about the user's own savings, answered from their data. `kind` is what the chat already worked out. */
     saveAsk: (req: { address: string; question: string; kind?: SaveQuestion; period?: SavePeriod; tzOffsetMinutes: number }) =>

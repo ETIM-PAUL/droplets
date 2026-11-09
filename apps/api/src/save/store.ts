@@ -4,7 +4,12 @@ import type { Pool } from "pg";
 export interface SaveCodeRow {
   code: string;
   address: string;
+  /** Share of each payment from an app that goes to savings. */
   savePercent: number;
+  /** Share added on top, and saved, when the user pays an app. */
+  spendPercent: number;
+  /** Apps the user allowed to recognise their address, by id. Others need the code. */
+  appIds: string[];
   createdAt: number;
   updatedAt: number;
   revokedAt: number | null;
@@ -20,13 +25,15 @@ export interface SaveApp {
   createdAt: number;
 }
 
-/** One verified payment an app made with a save code, as shown in the user's history. */
+/** One verified payment an app made to a saver, as shown in the user's history. */
 export interface SaveReceipt {
   txHash: string;
   code: string;
   address: string;
   appId: string;
   kind: "wallet" | "grow";
+  /** "payout": the app paid the user. "spend": the user paid the app, and this is the part saved on top. */
+  source: "payout" | "spend";
   luna: string;
   payoutId: string;
   blockNumber: number;
@@ -51,7 +58,7 @@ export interface SaveStore {
   activeCode(code: string): Promise<SaveCodeRow | undefined>;
   /** False when the code is already taken (a collision; pick another). */
   insertCode(row: SaveCodeRow): Promise<boolean>;
-  updatePercent(code: string, savePercent: number, at: number): Promise<void>;
+  updateRule(code: string, rule: Pick<SaveCodeRow, "savePercent" | "spendPercent" | "appIds">, at: number): Promise<void>;
   revoke(code: string, at: number): Promise<void>;
   /** True the first time a nonce is seen, false after; old nonces are forgotten after a day. */
   useNonce(nonce: string, at: number): Promise<boolean>;
@@ -84,12 +91,12 @@ export class MemorySaveStore implements SaveStore {
   }
   async insertCode(row: SaveCodeRow) {
     if (this.codes.has(row.code)) return false;
-    this.codes.set(row.code, { ...row });
+    this.codes.set(row.code, { ...row, appIds: [...row.appIds] });
     return true;
   }
-  async updatePercent(code: string, savePercent: number, at: number) {
+  async updateRule(code: string, rule: Pick<SaveCodeRow, "savePercent" | "spendPercent" | "appIds">, at: number) {
     const c = this.codes.get(code);
-    if (c) this.codes.set(code, { ...c, savePercent, updatedAt: at });
+    if (c) this.codes.set(code, { ...c, ...rule, appIds: [...rule.appIds], updatedAt: at });
   }
   async revoke(code: string, at: number) {
     const c = this.codes.get(code);
@@ -170,21 +177,25 @@ CREATE TABLE IF NOT EXISTS save_splits (
   created_at BIGINT NOT NULL,
   PRIMARY KEY (app_id, payout_id)
 );
-CREATE INDEX IF NOT EXISTS save_splits_address ON save_splits (address, created_at);`;
+CREATE INDEX IF NOT EXISTS save_splits_address ON save_splits (address, created_at);
+ALTER TABLE save_codes ADD COLUMN IF NOT EXISTS spend_percent INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE save_codes ADD COLUMN IF NOT EXISTS app_ids TEXT NOT NULL DEFAULT '';
+ALTER TABLE save_receipts ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'payout';`;
 
 type Num = string | number;
-interface CodeRow { code: string; address: string; save_percent: Num; created_at: Num; updated_at: Num; revoked_at: Num | null }
+interface CodeRow { code: string; address: string; save_percent: Num; spend_percent: Num; app_ids: string; created_at: Num; updated_at: Num; revoked_at: Num | null }
 interface AppRow { id: string; name: string; key_hash: string; payout_addresses: string; created_at: Num }
 interface SplitRow { app_id: string; payout_id: string; code: string; address: string; wallet_luna: string; grow_luna: string; reason: SaveSplitRow["reason"]; save_percent: Num; created_at: Num }
-interface ReceiptRow { tx_hash: string; code: string; address: string; app_id: string; kind: "wallet" | "grow"; luna: string; payout_id: string; block_number: Num; created_at: Num }
+interface ReceiptRow { tx_hash: string; code: string; address: string; app_id: string; kind: "wallet" | "grow"; source: SaveReceipt["source"]; luna: string; payout_id: string; block_number: Num; created_at: Num }
 
 const code = (r: CodeRow): SaveCodeRow => ({
-  code: r.code, address: r.address, savePercent: Number(r.save_percent), createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
+  code: r.code, address: r.address, savePercent: Number(r.save_percent), spendPercent: Number(r.spend_percent ?? 0),
+  appIds: (r.app_ids ?? "").split(",").filter(Boolean), createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
   revokedAt: r.revoked_at === null ? null : Number(r.revoked_at),
 });
 const app = (r: AppRow): SaveApp => ({ id: r.id, name: r.name, keyHash: r.key_hash, payoutAddresses: r.payout_addresses.split(",").filter(Boolean), createdAt: Number(r.created_at) });
 const receipt = (r: ReceiptRow): SaveReceipt => ({
-  txHash: r.tx_hash, code: r.code, address: r.address, appId: r.app_id, kind: r.kind, luna: r.luna, payoutId: r.payout_id,
+  txHash: r.tx_hash, code: r.code, address: r.address, appId: r.app_id, kind: r.kind, source: r.source ?? "payout", luna: r.luna, payoutId: r.payout_id,
   blockNumber: Number(r.block_number), createdAt: Number(r.created_at),
 });
 
@@ -222,13 +233,15 @@ export class PgSaveStore implements SaveStore {
   }
   async insertCode(row: SaveCodeRow) {
     return this.insertOnce(
-      `INSERT INTO save_codes (code, address, save_percent, created_at, updated_at, revoked_at)
-       SELECT $1::text, $2::text, $3::integer, $4::bigint, $5::bigint, NULL WHERE NOT EXISTS (SELECT 1 FROM save_codes WHERE code = $1) RETURNING code`,
-      [row.code, row.address, row.savePercent, row.createdAt, row.updatedAt],
+      `INSERT INTO save_codes (code, address, save_percent, spend_percent, app_ids, created_at, updated_at, revoked_at)
+       SELECT $1::text, $2::text, $3::integer, $4::integer, $5::text, $6::bigint, $7::bigint, NULL WHERE NOT EXISTS (SELECT 1 FROM save_codes WHERE code = $1) RETURNING code`,
+      [row.code, row.address, row.savePercent, row.spendPercent, row.appIds.join(","), row.createdAt, row.updatedAt],
     );
   }
-  async updatePercent(c: string, savePercent: number, at: number) {
-    await this.pool.query(`UPDATE save_codes SET save_percent = $2, updated_at = $3 WHERE code = $1`, [c, savePercent, at]);
+  async updateRule(c: string, rule: Pick<SaveCodeRow, "savePercent" | "spendPercent" | "appIds">, at: number) {
+    await this.pool.query(`UPDATE save_codes SET save_percent = $2, spend_percent = $3, app_ids = $4, updated_at = $5 WHERE code = $1`, [
+      c, rule.savePercent, rule.spendPercent, rule.appIds.join(","), at,
+    ]);
   }
   async revoke(c: string, at: number) {
     await this.pool.query(`UPDATE save_codes SET revoked_at = $2, updated_at = $2 WHERE code = $1 AND revoked_at IS NULL`, [c, at]);
@@ -255,9 +268,9 @@ export class PgSaveStore implements SaveStore {
   }
   async addReceipt(x: SaveReceipt) {
     await this.pool.query(
-      `INSERT INTO save_receipts (tx_hash, code, address, app_id, kind, luna, payout_id, block_number, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (tx_hash) DO NOTHING`,
-      [x.txHash, x.code, x.address, x.appId, x.kind, x.luna, x.payoutId, x.blockNumber, x.createdAt],
+      `INSERT INTO save_receipts (tx_hash, code, address, app_id, kind, source, luna, payout_id, block_number, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (tx_hash) DO NOTHING`,
+      [x.txHash, x.code, x.address, x.appId, x.kind, x.source, x.luna, x.payoutId, x.blockNumber, x.createdAt],
     );
   }
   async receiptsForAddress(address: string, limit: number) {

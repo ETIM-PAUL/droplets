@@ -46,14 +46,24 @@ function fakeRpc(follows = "MainAlbatross") {
   };
 }
 
-function fakeApi(split: { walletLuna: bigint; growLuna: bigint; reason?: string | null }, receiptAnswers: Record<string, string>[] = [{}]) {
+function fakeApi(
+  split: { walletLuna: bigint; growLuna: bigint; reason?: string | null },
+  receiptAnswers: Record<string, string>[] = [{}],
+  byAddress: (address: string, luna: bigint) => Promise<{ walletLuna: bigint; growLuna: bigint; reason?: string | null }> = async () => split,
+) {
   const receipts: unknown[] = [];
   const splitCalls: (string | undefined)[] = [];
+  const addressCalls: string[] = [];
   return {
     receipts,
     splitCalls,
+    addressCalls,
     api: {
       split: async (code: string, _luna: bigint, payoutId?: string) => (splitCalls.push(payoutId), { code: `SAVE-${code}`, address: USER, savePercent: 30, staker: USER, reason: null, ...split }) as never,
+      splitAddress: async (address: string, luna: bigint) => (addressCalls.push(address), { code: null, address, savePercent: 30, staker: address, reason: null, ...(await byAddress(address, luna)) }) as never,
+      spend: async () => {
+        throw new Error("unused");
+      },
       receipt: async (r: unknown) => (receipts.push(r), (receiptAnswers.shift() ?? { growTx: "recorded" }) as never),
     },
   };
@@ -180,6 +190,104 @@ describe("createSavePayer", () => {
   });
 });
 
+describe("paying the address you already pay", () => {
+  it("splits it for a saver who allowed the app, and reports by address", async () => {
+    const { nimiq, built } = fakeNimiq();
+    const { rpc } = fakeRpc();
+    const { api, receipts, addressCalls } = fakeApi({ walletLuna: NIM(1400), growLuna: NIM(600) });
+    const r = await createSavePayer({ api, rpc, nimiq, keyPair: KEYPAIR, network: "main" }).pay({ to: USER, luna: NIM(2000), payoutId: "bounty-81" });
+    expect(addressCalls).toEqual([USER]);
+    expect(built).toEqual([
+      ["basic", `addr(${PAYOUT})`, `addr(${USER})`, NIM(1400), 0n, 1_000, 24],
+      ["addStake", `addr(${PAYOUT})`, `addr(${USER})`, NIM(600), 0n, 1_000, 24],
+    ]);
+    expect(r).toMatchObject({ address: USER, walletLuna: NIM(1400), growLuna: NIM(600) });
+    expect(receipts).toEqual([{ address: USER, payoutId: "bounty-81", walletTx: "1".padStart(64, "0"), growTx: "2".padStart(64, "0") }]);
+  });
+
+  it("pays everyone else, or anyone when Errand doesn't answer, in one normal payment with nothing to report", async () => {
+    for (const answer of [async () => ({ walletLuna: NIM(5), growLuna: 0n }), async () => Promise.reject(new Error("timed out"))]) {
+      const { nimiq, built } = fakeNimiq();
+      const { rpc } = fakeRpc();
+      const { api, receipts } = fakeApi({ walletLuna: 0n, growLuna: 0n }, [{}], answer);
+      const r = await createSavePayer({ api, rpc, nimiq, keyPair: KEYPAIR, network: "main" }).pay({ to: USER, luna: NIM(5), payoutId: "p1", memo: "Prize" });
+      expect(built).toEqual([["basicWithData", `addr(${PAYOUT})`, `addr(${USER})`, "Prize", NIM(5), 0n, 1_000, 24]]);
+      expect(r).toMatchObject({ walletLuna: NIM(5), growLuna: 0n, reason: null });
+      expect(receipts).toEqual([]);
+    }
+  });
+
+  it("records why nothing was saved for a saver whose Grow couldn't take it", async () => {
+    const { nimiq, built } = fakeNimiq();
+    const { rpc } = fakeRpc();
+    const { api, receipts } = fakeApi({ walletLuna: NIM(5), growLuna: 0n, reason: "no-stake" });
+    const r = await createSavePayer({ api, rpc, nimiq, keyPair: KEYPAIR, network: "main" }).pay({ to: USER, luna: NIM(5), payoutId: "p2" });
+    expect(built).toHaveLength(1);
+    expect(r.reason).toBe("no-stake");
+    expect(receipts).toEqual([{ address: USER, payoutId: "p2", walletTx: "1".padStart(64, "0") }]);
+  });
+
+  it("never asks Errand about a refund (into: wallet) or a prize into Grow (into: grow)", async () => {
+    const { nimiq } = fakeNimiq();
+    const { rpc } = fakeRpc();
+    const { api, addressCalls } = fakeApi({ walletLuna: NIM(1), growLuna: NIM(1) });
+    const payer = createSavePayer({ api, rpc, nimiq, keyPair: KEYPAIR, network: "main" });
+    await payer.pay({ to: USER, luna: NIM(2), payoutId: "refund-1", into: "wallet" });
+    await payer.pay({ to: USER, luna: NIM(2), payoutId: "prize-1", into: "grow" });
+    expect(addressCalls).toEqual([]);
+  });
+
+  it("doesn't fail a sent payment when the saver stopped allowing the app before it was reported", async () => {
+    const { nimiq } = fakeNimiq();
+    const { rpc } = fakeRpc();
+    const { api } = fakeApi({ walletLuna: NIM(1), growLuna: NIM(1) });
+    api.receipt = async () => {
+      throw new SaveApiError("This address hasn't allowed your app to save for it.", 404);
+    };
+    await expect(createSavePayer({ api, rpc, nimiq, keyPair: KEYPAIR, network: "main" }).pay({ to: USER, luna: NIM(2), payoutId: "p3" })).resolves.toMatchObject({ growLuna: NIM(1) });
+  });
+});
+
+describe("spend and save", () => {
+  const VALIDATOR = "NQ26 0000 0000 02A5 YAK7 4QNF 9MH0 TE2B GVRU";
+  const STAKE = { active: NIM(500), inactive: 0n, inactiveFrom: null, retired: 0n, delegation: VALIDATOR };
+  function stakeRpc(staker: typeof STAKE | null, validatorThere = true) {
+    const { rpc, ...rest } = fakeRpc();
+    return { ...rest, rpc: { ...rpc, staker: async () => staker, validator: async () => (validatorThere ? ({} as never) : null) } };
+  }
+
+  it("puts the saved part into the payer's own stake and reports it as spending", async () => {
+    const { nimiq, built } = fakeNimiq();
+    const { rpc } = stakeRpc(STAKE);
+    const { api, receipts } = fakeApi({ walletLuna: 0n, growLuna: 0n });
+    const r = await createSavePayer({ api, rpc, nimiq, keyPair: KEYPAIR, network: "main" }).saveFromSpend({ to: USER, luna: NIM(5), payoutId: "order-7-save" });
+    expect(built).toEqual([["addStake", `addr(${PAYOUT})`, `addr(${USER})`, NIM(5), 0n, 1_000, 24]]);
+    expect(r).toMatchObject({ growLuna: NIM(5), walletLuna: 0n, reason: null });
+    expect(receipts).toEqual([{ address: USER, source: "spend", payoutId: "order-7-save", growTx: "1".padStart(64, "0") }]);
+  });
+
+  it("gives the saved part back to the wallet when the stake can't take it any more", async () => {
+    for (const [staker, validator, reason] of [[null, true, "no-stake"], [STAKE, false, "validator-gone"]] as const) {
+      const { nimiq, built } = fakeNimiq();
+      const { rpc } = stakeRpc(staker, validator);
+      const r = await createSavePayer({ rpc, nimiq, keyPair: KEYPAIR, network: "main" }).saveFromSpend({ to: USER, luna: NIM(5), payoutId: "order-8-save" });
+      expect(built).toEqual([["basic", `addr(${PAYOUT})`, `addr(${USER})`, NIM(5), 0n, 1_000, 24]]);
+      expect(r).toMatchObject({ walletLuna: NIM(5), growLuna: 0n, reason });
+    }
+  });
+
+  it("is retry-safe, and needs a node that can read stakes", async () => {
+    const { nimiq, built } = fakeNimiq();
+    const { rpc } = stakeRpc(STAKE);
+    const payer = createSavePayer({ rpc, nimiq, keyPair: KEYPAIR, network: "main" });
+    await payer.saveFromSpend({ to: USER, luna: NIM(5), payoutId: "order-9-save" });
+    expect(await payer.saveFromSpend({ to: USER, luna: NIM(5), payoutId: "order-9-save" })).toMatchObject({ repeated: true, growLuna: NIM(5) });
+    expect(built).toHaveLength(1);
+    const { rpc: plain } = fakeRpc();
+    await expect(createSavePayer({ rpc: plain, nimiq, keyPair: KEYPAIR, network: "main" }).saveFromSpend({ to: USER, luna: NIM(5), payoutId: "x" })).rejects.toThrow(/rpc.staker/);
+  });
+});
+
 describe("createSaveApi", () => {
   it("sends the app key and converts luna to bigint", async () => {
     let seen: { url: string; auth: string | null } | undefined;
@@ -195,6 +303,30 @@ describe("createSaveApi", () => {
     expect(seen).toEqual({ url: "https://api.errand.example/v1/save/split?code=7KQ2XMP&luna=200000000", auth: "Bearer rk_save_x" });
     await api.split("7KQ2XMP", NIM(2000), "bounty-81");
     expect(seen?.url).toBe("https://api.errand.example/v1/save/split?code=7KQ2XMP&luna=200000000&payoutId=bounty-81");
+  });
+
+  it("looks up an address and a spend quote, and reports by address", async () => {
+    const seen: { url: string; body?: string }[] = [];
+    const answers: unknown[] = [
+      { code: null, address: USER, savePercent: 30, wallet: { luna: "140000000" }, grow: { luna: "60000000", staker: USER }, reason: null },
+      { address: USER, spendPercent: 5, price: "10000000", save: "500000", total: "10500000", staker: USER, reason: null },
+      { growTx: "recorded" },
+    ];
+    const api = createSaveApi({
+      apiUrl: "https://api.errand.example",
+      apiKey: "rk_save_x",
+      fetch: async (url, init) => (seen.push({ url: String(url), body: init?.body as string | undefined }), Response.json(answers.shift())),
+    });
+    expect(await api.splitAddress(USER, NIM(2000), "bounty-81")).toEqual({ code: null, address: USER, savePercent: 30, walletLuna: NIM(1400), growLuna: NIM(600), staker: USER, reason: null });
+    expect(await api.spend(USER, NIM(100))).toEqual({ address: USER, spendPercent: 5, priceLuna: NIM(100), saveLuna: NIM(5), totalLuna: NIM(105), reason: null });
+    await api.receipt({ address: USER, source: "spend", payoutId: "order-7-save", growTx: "f".repeat(64) });
+    const a = encodeURIComponent(USER);
+    expect(seen.map((x) => x.url)).toEqual([
+      `https://api.errand.example/v1/save/split?address=${a}&luna=200000000&payoutId=bounty-81`,
+      `https://api.errand.example/v1/save/spend?address=${a}&luna=10000000`,
+      "https://api.errand.example/v1/save/receipts",
+    ]);
+    expect(JSON.parse(seen[2]!.body!)).toEqual({ address: USER, source: "spend", payoutId: "order-7-save", growTx: "f".repeat(64) });
   });
 
   it("turns API errors into SaveApiError with the status", async () => {

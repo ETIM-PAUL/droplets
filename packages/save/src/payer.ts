@@ -1,6 +1,6 @@
-// Server-side payouts with save codes. Signs with the paying app's own payout key, never a user's.
-// The signing guard only allows that here, and keeps this file out of the Mini App and the API.
-import { parseNimiqAddress, parseSaveCode, type NimiqRpc } from "@railkit/core";
+// Server-side payouts with save codes or to savers' addresses, and spend and save. Signs with the paying app's own
+// payout key, never a user's. The signing guard only allows that here, and keeps this file out of the Mini App and the API.
+import { parseNimiqAddress, parseSaveCode, splitPayout, type GrowState, type NimiqRpc } from "@railkit/core";
 import { SaveApiError, type SaveApi } from "./index";
 
 /** The slice of @nimiq/core used here. Pass the real module: `await import("@nimiq/core")`. */
@@ -31,9 +31,13 @@ export interface SentTx {
 
 export interface PayoutRecord {
   payoutId: string;
-  /** null for a plain payment to an address. */
+  /** The save code paid; null for an address. */
   code: string | null;
   address: string;
+  /** True when Errand recognised the address as a saver who allowed this app: receipts go back by address. */
+  byAddress?: boolean;
+  /** "spend": the part saved on top when the user paid the app. Absent means a payout. */
+  source?: "payout" | "spend";
   validityStartHeight: number;
   txs: SentTx[];
 }
@@ -51,9 +55,10 @@ export function memoryPayoutLog(): PayoutLog {
 }
 
 export interface SavePayerOptions {
-  /** From createSaveApi. Not needed if you only ever pay plain addresses. */
+  /** From createSaveApi. Without it, addresses are paid plainly and codes can't be paid. */
   api?: SaveApi;
-  rpc: Pick<NimiqRpc, "blockNumber" | "sendRawTransaction" | "transaction" | "network">;
+  /** staker and validator are needed for saveFromSpend, to check the user's stake can still take the saved part. */
+  rpc: Pick<NimiqRpc, "blockNumber" | "sendRawTransaction" | "transaction" | "network"> & Partial<Pick<NimiqRpc, "staker" | "validator">>;
   nimiq: NimiqCoreLike;
   keyPair: PayoutKeyPair;
   network: "main" | "test";
@@ -121,104 +126,133 @@ export function createSavePayer(o: SavePayerOptions) {
   }
 
   async function report(record: PayoutRecord) {
-    if (!o.api || !record.code) return;
+    if (!o.api || (!record.code && !record.byAddress)) return;
     const body = {
-      code: record.code,
+      ...(record.code ? { code: record.code } : { address: record.address }),
+      ...(record.source === "spend" ? { source: "spend" as const } : {}),
       payoutId: record.payoutId,
       ...Object.fromEntries(record.txs.map((t) => [t.kind === "wallet" ? "walletTx" : "growTx", t.hash])),
     };
     for (let i = 0; i < (o.receiptTries ?? 10); i++) {
-      const r = await o.api.receipt(body);
-      if (!Object.values(r).includes("pending")) return;
+      const r = await o.api.receipt(body).catch((e: unknown) => {
+        // The user stopped allowing this app after the payment went out: it's sent, there's just nothing to record.
+        if (record.byAddress && e instanceof SaveApiError && e.status === 404) return null;
+        throw e;
+      });
+      if (!r || !Object.values(r).includes("pending")) return;
       await sleep(2_000);
     }
     // Still pending: the payment is sent; the user's history catches up when you report again.
+  }
+
+  /** Before anything is signed: the inputs, the network, and whether this payoutId was already sent. */
+  async function begin(p: { luna: bigint; payoutId: string }) {
+    if (!PAYOUT_ID.test(p.payoutId)) throw new RangeError("payoutId: 1 to 100 letters, digits or _ : . -");
+    if (p.luna <= 0n) throw new RangeError("luna must be above 0.");
+    await checkNetwork();
+    return log.get(p.payoutId);
+  }
+
+  /** A payout that was already signed: resend whatever isn't on-chain yet, and report it again. */
+  async function resend(done: PayoutRecord): Promise<PayResult> {
+    const height = await o.rpc.blockNumber();
+    for (const tx of done.txs) {
+      if (await o.rpc.transaction(tx.hash).catch(() => null)) continue;
+      if (height >= done.validityStartHeight + VALIDITY_WINDOW) {
+        throw new Error(`Payout ${done.payoutId} was signed but never confirmed, and has expired. Check before paying again.`);
+      }
+      await broadcast(tx);
+    }
+    await report(done);
+    const sum = (k: SentTx["kind"]) => done.txs.filter((t) => t.kind === k).reduce((a, t) => a + t.luna, 0n);
+    return {
+      payoutId: done.payoutId, address: done.address, walletTx: done.txs.find((t) => t.kind === "wallet")?.hash ?? null,
+      growTx: done.txs.find((t) => t.kind === "grow")?.hash ?? null, walletLuna: sum("wallet"), growLuna: sum("grow"), reason: null, repeated: true,
+    };
+  }
+
+  /** Signs the plan, records it, then sends it: if the process dies mid-way, the retry resends these exact transactions. */
+  async function send(plan: Omit<PayoutRecord, "validityStartHeight" | "txs"> & { walletLuna: bigint; growLuna: bigint; memo?: Uint8Array; reason: string | null }): Promise<PayResult> {
+    const { walletLuna, growLuna, memo, reason, ...rest } = plan;
+    const height = await o.rpc.blockNumber();
+    const network = NETWORK_ID[o.network];
+    const sender = o.keyPair.toAddress();
+    const txs: SentTx[] = [];
+    const signed = (tx: NimiqTx, kind: SentTx["kind"], luna: bigint) => {
+      tx.sign(o.keyPair, undefined);
+      txs.push({ kind, luna, hash: tx.hash(), hex: tx.toHex() });
+    };
+    if (walletLuna > 0n) {
+      const to = o.nimiq.Address.fromString(plan.address);
+      signed(memo ? o.nimiq.TransactionBuilder.newBasicWithData(sender, to, memo, walletLuna, fee, height, network) : o.nimiq.TransactionBuilder.newBasic(sender, to, walletLuna, fee, height, network), "wallet", walletLuna);
+    }
+    if (growLuna > 0n) {
+      // The user's own stake: the staker is the address being paid.
+      signed(o.nimiq.TransactionBuilder.newAddStake(sender, o.nimiq.Address.fromString(plan.address), growLuna, fee, height, network), "grow", growLuna);
+    }
+    const record: PayoutRecord = { ...rest, validityStartHeight: height, txs };
+    await log.put(record);
+    for (const tx of txs) await broadcast(tx);
+    await report(record);
+    return {
+      payoutId: plan.payoutId, address: plan.address, walletTx: txs.find((t) => t.kind === "wallet")?.hash ?? null, growTx: txs.find((t) => t.kind === "grow")?.hash ?? null,
+      walletLuna, growLuna, reason, repeated: false,
+    };
   }
 
   return {
     /** Throws unless the node follows the network this payer signs for. pay() checks this too; call it at startup to fail early. */
     checkNetwork,
     /**
-     * Pays `luna` to a save code (split by the user's rule) or to a plain Nimiq address. For an address,
-     * `into: "grow"` sends it all as an add-stake into that address's own stake instead of to its wallet.
+     * Pays `luna` to a save code, or to the Nimiq address you'd pay anyway. Both are split by the user's rule:
+     * an address only if its owner allowed your app in Errand, otherwise it's one normal payment. If Errand
+     * doesn't answer within 3 seconds, the address gets one normal payment too. `into: "wallet"` never asks
+     * Errand (use it for refunds); `into: "grow"` sends it all as an add-stake into that address's own stake.
      * Safe to retry with the same payoutId: the same signed transactions are resent, never new ones.
      */
     async pay(p: { to: string; luna: bigint; payoutId: string; memo?: string; into?: "wallet" | "grow" }): Promise<PayResult> {
-      if (!PAYOUT_ID.test(p.payoutId)) throw new RangeError("payoutId: 1 to 100 letters, digits or _ : . -");
-      if (p.luna <= 0n) throw new RangeError("luna must be above 0.");
       const memo = p.memo === undefined ? undefined : new TextEncoder().encode(p.memo);
       if (memo && memo.length > 64) throw new RangeError("memo: at most 64 bytes.");
-      await checkNetwork();
-
-      const done = await log.get(p.payoutId);
-      if (done) {
-        const height = await o.rpc.blockNumber();
-        for (const tx of done.txs) {
-          if (await o.rpc.transaction(tx.hash).catch(() => null)) continue;
-          if (height >= done.validityStartHeight + VALIDITY_WINDOW) {
-            throw new Error(`Payout ${p.payoutId} was signed but never confirmed, and has expired. Check before paying again.`);
-          }
-          await broadcast(tx);
-        }
-        await report(done);
-        const sum = (k: SentTx["kind"]) => done.txs.filter((t) => t.kind === k).reduce((a, t) => a + t.luna, 0n);
-        return {
-          payoutId: p.payoutId, address: done.address, walletTx: done.txs.find((t) => t.kind === "wallet")?.hash ?? null,
-          growTx: done.txs.find((t) => t.kind === "grow")?.hash ?? null, walletLuna: sum("wallet"), growLuna: sum("grow"), reason: null, repeated: true,
-        };
-      }
-
-      let code: string | null = null;
-      let address: string;
-      let walletLuna = p.luna;
-      let growLuna = 0n;
-      let staker = "";
-      let reason: string | null = null;
       const asCode = parseSaveCode(p.to);
+      const asAddress = asCode.ok ? null : parseNimiqAddress(p.to);
+      if (asAddress && !asAddress.ok) throw new RangeError("`to` must be a save code (SAVE-…) or a Nimiq address.");
+      // An add-stake carries no memo, and fails on-chain unless the address already has a stake: callers check that.
+      if (p.into === "grow" && memo) throw new RangeError("A payment into Grow can't carry a memo.");
+      const done = await begin(p);
+      if (done) return resend(done);
+
       if (asCode.ok) {
         if (!o.api) throw new SaveApiError("Paying a save code needs the Errand API (pass `api`).", 0);
         const split = await o.api.split(asCode.value, p.luna, p.payoutId);
-        code = asCode.value;
-        address = split.address;
-        walletLuna = split.walletLuna;
-        growLuna = split.growLuna;
-        staker = split.staker;
-        reason = split.reason;
-      } else {
-        const a = parseNimiqAddress(p.to);
-        if (!a.ok) throw new RangeError("`to` must be a save code (SAVE-…) or a Nimiq address.");
-        address = a.value;
-        if (p.into === "grow") {
-          // An add-stake carries no memo, and fails on-chain unless the address already has a stake: callers check that.
-          if (memo) throw new RangeError("A payment into Grow can't carry a memo.");
-          [walletLuna, growLuna, staker] = [0n, p.luna, address];
+        return send({ payoutId: p.payoutId, code: asCode.value, address: split.address, walletLuna: split.walletLuna, growLuna: split.growLuna, memo, reason: split.reason });
+      }
+      const address = asAddress!.ok ? asAddress!.value : "";
+      if (p.into === "grow") return send({ payoutId: p.payoutId, code: null, address, walletLuna: 0n, growLuna: p.luna, reason: null });
+      if (p.into === undefined && o.api) {
+        const split = await o.api.splitAddress(address, p.luna, p.payoutId).catch(() => null);
+        // A saver who allowed this app: savings went in, or the reason they couldn't is worth recording.
+        if (split && (split.growLuna > 0n || split.reason !== null)) {
+          return send({ payoutId: p.payoutId, code: null, byAddress: true, address, walletLuna: split.walletLuna, growLuna: split.growLuna, memo, reason: split.reason });
         }
       }
+      return send({ payoutId: p.payoutId, code: null, address, walletLuna: p.luna, growLuna: 0n, memo, reason: null });
+    },
 
-      const height = await o.rpc.blockNumber();
-      const network = NETWORK_ID[o.network];
-      const sender = o.keyPair.toAddress();
-      const txs: SentTx[] = [];
-      const signed = (tx: NimiqTx, kind: SentTx["kind"], luna: bigint) => {
-        tx.sign(o.keyPair, undefined);
-        txs.push({ kind, luna, hash: tx.hash(), hex: tx.toHex() });
-      };
-      if (walletLuna > 0n) {
-        const to = o.nimiq.Address.fromString(address);
-        signed(memo ? o.nimiq.TransactionBuilder.newBasicWithData(sender, to, memo, walletLuna, fee, height, network) : o.nimiq.TransactionBuilder.newBasic(sender, to, walletLuna, fee, height, network), "wallet", walletLuna);
-      }
-      if (growLuna > 0n) {
-        signed(o.nimiq.TransactionBuilder.newAddStake(sender, o.nimiq.Address.fromString(staker), growLuna, fee, height, network), "grow", growLuna);
-      }
-      const record: PayoutRecord = { payoutId: p.payoutId, code, address, validityStartHeight: height, txs };
-      // Written before sending: if the process dies mid-way, the retry resends these exact transactions.
-      await log.put(record);
-      for (const tx of txs) await broadcast(tx);
-      await report(record);
-      return {
-        payoutId: p.payoutId, address, walletTx: txs.find((t) => t.kind === "wallet")?.hash ?? null, growTx: txs.find((t) => t.kind === "grow")?.hash ?? null,
-        walletLuna, growLuna, reason, repeated: false,
-      };
+    /**
+     * Spend and save: once a user has paid you a quote's totalLuna, puts its saveLuna into their own stake. If their
+     * stake can't take it any more (it closed, or its validator left), it goes back to their wallet instead, so the
+     * saved part is never kept. Retry-safe like pay(). Needs `rpc.staker` and `rpc.validator`.
+     */
+    async saveFromSpend(p: { to: string; luna: bigint; payoutId: string }): Promise<PayResult> {
+      const a = parseNimiqAddress(p.to);
+      if (!a.ok) throw new RangeError("`to` must be the Nimiq address that paid you.");
+      if (!o.rpc.staker || !o.rpc.validator) throw new Error("saveFromSpend needs rpc.staker and rpc.validator (createNimiqRpc has both).");
+      const done = await begin(p);
+      if (done) return resend(done);
+      const staker = await o.rpc.staker(a.value);
+      const grow: GrowState = !staker ? { open: false, reason: "no-stake" } : (await o.rpc.validator(staker.delegation)) ? { open: true, staker } : { open: false, reason: "validator-gone" };
+      const split = splitPayout(p.luna, 100, grow);
+      return send({ payoutId: p.payoutId, code: null, byAddress: true, source: "spend", address: a.value, walletLuna: split.wallet, growLuna: split.grow, reason: split.reason });
     },
   };
 }

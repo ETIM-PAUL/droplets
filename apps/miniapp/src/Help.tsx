@@ -15,6 +15,14 @@ export function Help() {
           <p>Give your code to apps that pay you NIM, like games, bounties and shops. Each time one pays you, your share goes into Grow and the rest to your wallet. You can change your share or turn the code off any time, and signing costs nothing.</p>
         </div>
         <div className="help-row">
+          <strong>Apps that know it's you</strong>
+          <p>Most apps get your address from Nimiq Pay, so there's nowhere to give a code. In your saving rules, pick the apps you use: they recognise the address they already pay and save for you. Apps you didn't pick can't tell you use Errand.</p>
+        </div>
+        <div className="help-row">
+          <strong>Saving when you pay</strong>
+          <p>Choose a share, like 5%, and apps you picked add it on top when you buy something, then put it into Grow. You see the full amount before you approve it in Nimiq Pay. Only those apps can do this; paying anyone else stays as it is.</p>
+        </div>
+        <div className="help-row">
           <strong>Taking money out</strong>
           <p>Withdrawing from Grow takes 12 to 24 hours, because Nimiq releases staked NIM at the end of an epoch. Then you finish it in Savings, with two approvals in Nimiq Pay.</p>
         </div>

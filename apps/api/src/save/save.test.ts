@@ -98,7 +98,7 @@ describe("setting the rule", () => {
     expect(first).toMatchObject({ address: amaka.address, savePercent: 30 });
     expect(first.code).toMatch(/^SAVE-[0-9A-HJKMNP-TV-Z]{7}$/);
     const again = await json(await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address, { savePercent: 50 })))));
-    expect(again).toEqual({ code: first.code, address: amaka.address, savePercent: 50 });
+    expect(again).toEqual({ code: first.code, address: amaka.address, savePercent: 50, spendPercent: 0, appIds: [] });
   });
 
   it("won't give out a code before Grow is open, but an existing code keeps working if Grow closes later", async () => {
@@ -113,7 +113,7 @@ describe("setting the rule", () => {
     stake(amaka.address);
     const { code } = await json(await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address)))));
     stakers.delete(amaka.address);
-    expect(await json(await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address, { savePercent: 10 })))))).toEqual({ code, address: amaka.address, savePercent: 10 });
+    expect(await json(await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address, { savePercent: 10 })))))).toEqual({ code, address: amaka.address, savePercent: 10, spendPercent: 0, appIds: [] });
   });
 
   it("refuses a forged, foreign, stale, replayed or malformed request", async () => {
@@ -225,7 +225,7 @@ describe("receipts (for apps)", () => {
     txs.set("4".repeat(64), { hash: "4".repeat(64), from: APP_PAYOUT, to: amaka.address, ...base, executionResult: false });
     const send = (b: Record<string, string>) => app.request("/v1/save/receipts", post({ code, payoutId: "p1", ...b }, headers));
     expect((await send({ walletTx: "1".repeat(64) })).status).toBe(403);
-    expect(await errorOf(await send({ walletTx: "2".repeat(64) }))).toMatch(/didn't pay this code's address/);
+    expect(await errorOf(await send({ walletTx: "2".repeat(64) }))).toMatch(/didn't pay this saver's address/);
     expect(await errorOf(await send({ growTx: "3".repeat(64) }))).toMatch(/isn't an add-stake/);
     expect(await errorOf(await send({ walletTx: "4".repeat(64) }))).toMatch(/failed on-chain/);
     expect((await send({ walletTx: "xyz" })).status).toBe(400);
@@ -330,7 +330,7 @@ describe("savings activity", () => {
     const { code } = await json(await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address)))));
     await store.addApp({ id: "arcade", name: "Arcade", keyHash: "k", payoutAddresses: [APP_PAYOUT], createdAt: T });
     const receipt = (txHash: string, kind: "wallet" | "grow", luna: bigint, payoutId: string, at: number) =>
-      store.addReceipt({ txHash, code, address: amaka.address, appId: "arcade", kind, luna: luna.toString(), payoutId, blockNumber: 1, createdAt: at });
+      store.addReceipt({ txHash, code, address: amaka.address, appId: "arcade", kind, source: "payout", luna: luna.toString(), payoutId, blockNumber: 1, createdAt: at });
     await receipt("a".repeat(64), "wallet", NIM(1400), "bounty-81", T);
     await receipt("b".repeat(64), "grow", NIM(600), "bounty-81", T);
     await receipt("c".repeat(64), "wallet", NIM(1000), "bounty-82", T + 60_000);
@@ -341,8 +341,8 @@ describe("savings activity", () => {
 
     const r = await json(await app.request(`/v1/save/activity?address=${encodeURIComponent(amaka.address)}`));
     expect(r.payments).toEqual([
-      { payoutId: "bounty-82", app: "Arcade", walletLuna: NIM(1000).toString(), growLuna: "0", at: T + 60_000, reason: "below-minimum" },
-      { payoutId: "bounty-81", app: "Arcade", walletLuna: NIM(1400).toString(), growLuna: NIM(600).toString(), at: T, reason: null },
+      { payoutId: "bounty-82", app: "Arcade", source: "payout", walletLuna: NIM(1000).toString(), growLuna: "0", at: T + 60_000, reason: "below-minimum" },
+      { payoutId: "bounty-81", app: "Arcade", source: "payout", walletLuna: NIM(1400).toString(), growLuna: NIM(600).toString(), at: T, reason: null },
     ]);
     expect(r.grow).toEqual([
       { txHash: "e".repeat(64), kind: "withdrawal-started", luna: "0", at: T + 120_000, ok: true },
@@ -360,6 +360,94 @@ describe("savings activity", () => {
   });
 });
 
+describe("apps that recognise your address (for apps)", () => {
+  /** Arcade and Quiz Night are registered; Amaka stakes and allows only Arcade, saving 30% of payouts and 5% when she pays. */
+  async function ready() {
+    const f = setup();
+    const arcade = await withApp(f.app);
+    const quiz = { Authorization: `Bearer ${(await json(await f.app.request("/v1/admin/save/apps", post({ name: "Quiz Night", payoutAddresses: [APP_PAYOUT] }, { Authorization: "Bearer admin-secret" })))).apiKey as string}` };
+    const amaka = account();
+    f.stake(amaka.address);
+    const r = await json(await f.app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address, { spendPercent: 5, apps: ["Arcade"] })))));
+    const at = (who: Record<string, string>, path: string) => f.app.request(path, { headers: who });
+    return { ...f, arcade, quiz, amaka, code: r.code as string, at, a: encodeURIComponent(amaka.address) };
+  }
+
+  it("splits by address for an app the user allowed, without giving out the code", async () => {
+    const { at, arcade, amaka, a } = await ready();
+    expect(await json(await at(arcade, `/v1/save/split?address=${a}&luna=${NIM(2000)}`))).toEqual({
+      code: null, address: amaka.address, savePercent: 30, wallet: { luna: NIM(1400).toString() }, grow: { luna: NIM(600).toString(), staker: amaka.address }, reason: null,
+    });
+  });
+
+  it("answers the same for an app the user didn't allow as for someone who doesn't save with Errand", async () => {
+    const { at, arcade, quiz, a } = await ready();
+    const stranger = encodeURIComponent(account().address);
+    const plain = (address: string) => ({ code: null, address: decodeURIComponent(address), savePercent: 0, wallet: { luna: NIM(2000).toString() }, grow: null, reason: null });
+    expect(await json(await at(quiz, `/v1/save/split?address=${a}&luna=${NIM(2000)}`))).toEqual(plain(a));
+    expect(await json(await at(arcade, `/v1/save/split?address=${stranger}&luna=${NIM(2000)}`))).toEqual(plain(stranger));
+    expect(await json(await at(quiz, `/v1/save/spend?address=${a}&luna=${NIM(100)}`))).toMatchObject({ spendPercent: 0, save: "0", total: NIM(100).toString(), staker: null });
+    expect((await at(arcade, `/v1/save/split?code=SAVE-0000000&address=${a}&luna=1`)).status).toBe(400);
+    expect((await at(arcade, `/v1/save/split?luna=1`)).status).toBe(400);
+    expect((await at(arcade, `/v1/save/split?address=NQ00&luna=1`)).status).toBe(400);
+  });
+
+  it("quotes spend and save: the share on top, nothing when Grow can't take it", async () => {
+    const { at, arcade, amaka, a, stakers, clock } = await ready();
+    expect(await json(await at(arcade, `/v1/save/spend?address=${a}&luna=${NIM(100)}`))).toEqual({
+      address: amaka.address, spendPercent: 5, price: NIM(100).toString(), save: NIM(5).toString(), total: NIM(105).toString(), staker: amaka.address, reason: null,
+    });
+    stakers.delete(amaka.address);
+    clock.t += 2 * 60_000; // past the stake cache
+    expect(await json(await at(arcade, `/v1/save/spend?address=${a}&luna=${NIM(100)}`))).toMatchObject({ save: "0", total: NIM(100).toString(), staker: null, reason: "no-stake" });
+    expect((await at(arcade, `/v1/save/spend?address=${a}&luna=0`)).status).toBe(400);
+    expect((await at({}, `/v1/save/spend?address=${a}&luna=1`)).status).toBe(401);
+  });
+
+  it("records what an allowed app saved when the user paid it, and refuses the same from an app that wasn't allowed", async () => {
+    const { app, at, arcade, quiz, amaka, a, txs } = await ready();
+    const stakerHex = Buffer.from(nimiqAddressBytes(amaka.address)).toString("hex");
+    txs.set("f".repeat(64), {
+      hash: "f".repeat(64), blockNumber: 65_966_400, from: APP_PAYOUT, to: STAKING_CONTRACT, value: NIM(5), recipientData: `06${stakerHex}`, senderData: "",
+      executionResult: true, confirmations: 3, timestamp: T,
+    });
+    const report = (who: Record<string, string>, body: Record<string, unknown>) => app.request("/v1/save/receipts", post({ address: amaka.address, payoutId: "spend-order-7", growTx: "f".repeat(64), ...body }, who));
+    expect(await json(await report(arcade, { source: "spend" }))).toEqual({ growTx: "recorded" });
+    const refused = await report(quiz, { source: "spend" });
+    expect(refused.status).toBe(404);
+    expect(await errorOf(refused)).toMatch(/hasn't allowed your app/);
+    expect((await report(arcade, { source: "gift" })).status).toBe(400);
+    expect((await report(arcade, { code: "SAVE-0000000" })).status).toBe(400);
+
+    const me = await json(await at({}, `/v1/save/me?address=${a}`));
+    expect(me).toMatchObject({ savePercent: 30, spendPercent: 5, apps: [{ name: "Arcade" }] });
+    expect(me.receipts).toEqual([expect.objectContaining({ app: "Arcade", kind: "grow", source: "spend", luna: NIM(5).toString() })]);
+    const activity = await json(await at({}, `/v1/save/activity?address=${a}`));
+    expect(activity.payments).toEqual([expect.objectContaining({ payoutId: "spend-order-7", app: "Arcade", source: "spend", growLuna: NIM(5).toString(), walletLuna: "0" })]);
+  });
+
+  it("names the apps people can allow, and keeps names readable and unique", async () => {
+    const { app } = await ready();
+    expect((await json(await app.request("/v1/save/apps"))).apps.map((x: { name: string }) => x.name)).toEqual(["Arcade", "Quiz Night"]);
+    const add = (name: string) => app.request("/v1/admin/save/apps", post({ name, payoutAddresses: [APP_PAYOUT] }, { Authorization: "Bearer admin-secret" }));
+    expect(await errorOf(await add("arcade"))).toMatch(/already an app called arcade/);
+    expect((await add("Arcade, Quiz")).status).toBe(400);
+    expect((await add("")).status).toBe(400);
+  });
+
+  it("changes which apps are allowed with a new signed rule, refuses unknown names, and keeps them for an older rule", async () => {
+    const { app, at, arcade, quiz, amaka, a } = await ready();
+    const unknown = await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address, { spendPercent: 5, apps: ["Arcade", "Nobody"] }))));
+    expect(await errorOf(unknown)).toMatch(/doesn't know an app called Nobody/);
+    expect(await json(await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address, { spendPercent: 10, apps: ["quiz night"] })))))).toMatchObject({ spendPercent: 10 });
+    expect((await json(await at(quiz, `/v1/save/split?address=${a}&luna=${NIM(10)}`))).grow).not.toBeNull();
+    expect((await json(await at(arcade, `/v1/save/split?address=${a}&luna=${NIM(10)}`))).grow).toBeNull();
+    // A rule in the older format, without Spend and Apps, changes only the share of payouts.
+    await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address, { savePercent: 50 }))));
+    expect(await json(await at({}, `/v1/save/me?address=${a}`))).toMatchObject({ savePercent: 50, spendPercent: 10, apps: [{ name: "Quiz Night" }] });
+  });
+});
+
 async function stores(): Promise<[string, SaveStore][]> {
   const { Pool } = newDb().adapters.createPg();
   const pg = new PgSaveStore(new Pool());
@@ -370,10 +458,11 @@ async function stores(): Promise<[string, SaveStore][]> {
 describe("save stores", async () => {
   for (const [name, store] of await stores()) {
     it(`${name}: codes, nonces, apps and receipts`, async () => {
-      expect(await store.insertCode({ code: "AAAAAAA", address: "NQ1", savePercent: 30, createdAt: T, updatedAt: T, revokedAt: null })).toBe(true);
-      expect(await store.insertCode({ code: "AAAAAAA", address: "NQ2", savePercent: 10, createdAt: T, updatedAt: T, revokedAt: null })).toBe(false);
-      await store.updatePercent("AAAAAAA", 40, T + 1);
-      expect(await store.activeCodeByAddress("NQ1")).toMatchObject({ code: "AAAAAAA", savePercent: 40, updatedAt: T + 1 });
+      expect(await store.insertCode({ code: "AAAAAAA", address: "NQ1", savePercent: 30, spendPercent: 0, appIds: [], createdAt: T, updatedAt: T, revokedAt: null })).toBe(true);
+      expect(await store.insertCode({ code: "AAAAAAA", address: "NQ2", savePercent: 10, spendPercent: 0, appIds: [], createdAt: T, updatedAt: T, revokedAt: null })).toBe(false);
+      expect(await store.activeCodeByAddress("NQ1")).toMatchObject({ savePercent: 30, spendPercent: 0, appIds: [] });
+      await store.updateRule("AAAAAAA", { savePercent: 40, spendPercent: 5, appIds: ["app1", "app2"] }, T + 1);
+      expect(await store.activeCodeByAddress("NQ1")).toMatchObject({ code: "AAAAAAA", savePercent: 40, spendPercent: 5, appIds: ["app1", "app2"], updatedAt: T + 1 });
       await store.revoke("AAAAAAA", T + 2);
       expect(await store.activeCode("AAAAAAA")).toBeUndefined();
       expect(await store.activeCodeByAddress("NQ1")).toBeUndefined();
@@ -386,10 +475,12 @@ describe("save stores", async () => {
       expect(await store.appByKeyHash("h1")).toMatchObject({ id: "app1", payoutAddresses: ["NQ9", "NQ8"] });
       expect(await store.listApps()).toHaveLength(1);
 
-      const r = { txHash: "t1", code: "AAAAAAA", address: "NQ1", appId: "app1", kind: "grow" as const, luna: "600", payoutId: "p", blockNumber: 5, createdAt: T };
+      const r = { txHash: "t1", code: "AAAAAAA", address: "NQ1", appId: "app1", kind: "grow" as const, source: "payout" as const, luna: "600", payoutId: "p", blockNumber: 5, createdAt: T };
       await store.addReceipt(r);
       await store.addReceipt({ ...r, luna: "999" }); // replay is ignored
-      expect(await store.receiptsForAddress("NQ1", 10)).toEqual([r]);
+      const spent = { ...r, txHash: "t2", source: "spend" as const, luna: "5", payoutId: "spend-1", createdAt: T + 1 };
+      await store.addReceipt(spent);
+      expect(await store.receiptsForAddress("NQ1", 10)).toEqual([spent, r]);
 
       const sp = { appId: "app1", payoutId: "p1", code: "AAAAAAA", address: "NQ1", walletLuna: "2000", growLuna: "0", reason: "no-stake" as const, savePercent: 30, createdAt: T };
       await store.addSplit(sp);

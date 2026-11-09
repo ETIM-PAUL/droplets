@@ -1,8 +1,12 @@
-# Paying rewards with save codes
+# Saving with Errand: for apps that pay people, and apps people pay
 
-For Mini Apps that pay people NIM: games, bounties, quizzes, cashback.
+For Mini Apps that pay people NIM (games, bounties, quizzes, cashback), and apps that take payments (shops, entry fees).
 
-A save code (`SAVE-7KQ2XMP`) stands for one Nimiq Pay user and their rule, such as "save 30%". When you pay that code, you send two transactions from your payout account:
+Errand users set a rule, such as "save 30% of what apps pay me, and 5% more when I pay an app". You apply it in two ways:
+- **When you pay a user,** pay the address you already pay. If its owner allowed your app in Errand, the payment splits by their rule. Everyone else gets one normal payment, as now. Users can also give you a save code (`SAVE-7KQ2XMP`) where you ask for an address.
+- **When a user pays you,** ask Errand what to charge. For a user who allowed your app, a share goes on top, and you put that share into their savings once they've paid. See [Spend and save](#spend-and-save).
+
+When you pay a saver, you send two transactions from your payout account:
 - a normal payment of the rest to the user's address;
 - an add-stake of the saved share into their own stake, called **Grow** in Errand.
 
@@ -14,9 +18,13 @@ Ask the Errand team to register your app with its name and the Nimiq addresses y
 
 Errand only accepts receipts for transactions sent from the addresses you registered.
 
-## 2. Accept a code where you'd ask for an address
+## 2. Pay the address you already pay
 
-Let people paste a save code or a Nimiq address into the same field. `parseSaveCode` tells them apart and catches typos with the code's check character:
+Most Mini Apps get the user's address from Nimiq Pay (`listAccounts()[0]`) and pay it. Keep doing that, and pay through the SDK (step 3). Users who allowed your app in Errand get their split; nobody else is affected.
+
+Errand answers the same for "doesn't save with Errand" as for "didn't allow your app", so you can't find out who uses Errand.
+
+If you ask people to type or paste an address, also accept a save code there. `parseSaveCode` tells them apart and catches typos with the code's check character:
 
 ```ts
 import { parseSaveCode } from "@railkit/save";
@@ -48,7 +56,9 @@ const result = await payer.pay({ to: "SAVE-7KQ2XMP", luna: 200_000_000n, payoutI
 ```
 
 - **Amounts are luna** (100,000 luna is 1 NIM). The saved share is rounded down, and the user's wallet gets the odd luna.
-- **A plain Nimiq address works too.** `to` can be an address, which sends a single normal payment and doesn't contact Errand at all. Add `into: "grow"` to send it all as an add-stake into that address's own stake instead. That only works if the address already stakes, so check first.
+- **An address asks Errand first.** It's split if its owner allowed your app; otherwise it's one normal payment. If Errand doesn't answer within 3 seconds, it's one normal payment too, so your payouts never wait on Errand.
+- **Refunds: `into: "wallet"`.** It sends one normal payment without asking Errand. Use it for anything that isn't a reward, such as giving back an entry fee.
+- **`into: "grow"`** sends it all as an add-stake into that address's own stake, without asking Errand. That only works if the address already stakes, so check first.
 - **The memo** is optional, up to 64 bytes, and goes on the wallet payment only.
 - **`network` must match the node.** A node takes a payment signed for the other network, answers with its hash, and never includes it. So `pay()` checks once which chain the node follows, and throws without signing anything if it's the wrong one. Call `await payer.checkNetwork()` at startup to find out sooner.
 
@@ -64,6 +74,29 @@ const result = await payer.pay({ to: "SAVE-7KQ2XMP", luna: 200_000_000n, payoutI
 
 Your payout never fails because of savings.
 
+## Spend and save
+
+When a user pays you, ask what to charge before you request the payment:
+
+```ts
+const api = createSaveApi({ apiUrl: "https://<errand api>", apiKey: process.env.ERRAND_SAVE_KEY! });
+const quote = await api.spend(userAddress, 10_000_000n).catch(() => null); // a 100 NIM price
+const charge = quote?.totalLuna ?? 10_000_000n; // 105 NIM for a user saving 5% when they pay; 100 NIM for everyone else
+```
+
+Show the user both parts, for example "100 NIM + 5 NIM to your savings". Request `charge` with Nimiq Pay as usual. Once the payment has arrived, put the saved part into their stake:
+
+```ts
+if (quote && quote.saveLuna > 0n) {
+  await payer.saveFromSpend({ to: userAddress, luna: quote.saveLuna, payoutId: `order-${orderId}-save` });
+}
+```
+
+- **The saved part is the user's money.** If their stake can't take it by the time you send it (it closed, or its validator left), `saveFromSpend()` sends it back to their wallet instead. Never keep it.
+- **One quote per purchase.** Keep the quote with the order, so a retry saves the same amount. `payoutId` makes `saveFromSpend()` retry-safe, like `pay()`.
+- **If the quote fails,** charge the price alone. A purchase never waits on Errand.
+- `saveFromSpend()` reads the user's stake from your node, so pass an `rpc` from `createNimiqRpc`, which can.
+
 ## Retries
 
 `payoutId` makes retries safe. The payer writes the signed transactions to its `PayoutLog` before sending them. A retry with the same `payoutId` resends those exact transactions, so the user is never paid twice.
@@ -76,7 +109,7 @@ When `pay()` returns, the node has taken the transactions. That doesn't mean the
 
 ## Receipts
 
-`pay()` reports both transaction hashes to Errand, so the payment shows in the user's savings history as "Paid in with your code". Errand checks each one on-chain:
+`pay()` and `saveFromSpend()` report the transaction hashes to Errand, so the payment shows in the user's savings history. Errand checks each one on-chain:
 - the sender is one of your registered addresses;
 - it succeeded;
 - the wallet payment went to the user's address;
@@ -88,7 +121,7 @@ A transaction that isn't in a block yet comes back `pending`. The payer reports 
 
 If you don't use TypeScript, call the API directly with `Authorization: Bearer rk_save_…`.
 
-**`GET /v1/save/split?code=SAVE-7KQ2XMP&luna=200000000&payoutId=bounty-81`**
+**`GET /v1/save/split?code=SAVE-7KQ2XMP&luna=200000000&payoutId=bounty-81`**, or **`?address=NQ…&luna=…`** for the address you pay.
 
 `payoutId` is optional but worth sending: Errand keeps the split, so when a payment goes to the user's wallet they can ask Errand why ("Grow wasn't open"). The SDK sends it for you.
 
@@ -97,17 +130,19 @@ If you don't use TypeScript, call the API directly with `Authorization: Bearer r
   "wallet": { "luna": "140000000" }, "grow": { "luna": "60000000", "staker": "NQ…" }, "reason": null }
 ```
 
-`grow` is `null` when nothing goes to savings. A `404` means the code isn't active: pay the user's address instead.
+`grow` is `null` when nothing goes to savings. For an address, `code` is `null`, and anyone who hasn't allowed your app gets `"savePercent": 0`, `"grow": null`. For a code, a `404` means the code isn't active: pay the user's address instead.
+
+**`GET /v1/save/spend?address=NQ…&luna=10000000`** returns `{ "address", "spendPercent", "price", "save", "total", "staker", "reason" }`, luna as strings. Charge `total`; `save` is `"0"` when nothing goes on top.
 
 **Building the transactions yourself:**
 - The wallet part is a basic transaction to `address`.
 - The Grow part is an add-stake: recipient `NQ77 0000 0000 0000 0000 0000 0000 0000 0001` (the staking contract), with recipient data `06` followed by the 20 bytes of `staker`. With `@nimiq/core` that's `TransactionBuilder.newAddStake(sender, stakerAddress, value, fee, validityStartHeight, networkId)`.
 - Network ID 24 is mainnet; 5 is testnet.
 
-**`POST /v1/save/receipts`** with `{ "code", "payoutId", "walletTx"?, "growTx"? }` returns `"recorded"` or `"pending"` for each hash. A `4xx` says what didn't check out.
+**`POST /v1/save/receipts`** with `{ "code" or "address", "payoutId", "walletTx"?, "growTx"?, "source"? }` returns `"recorded"` or `"pending"` for each hash. Send `"source": "spend"` for the part saved when a user paid you. A `4xx` says what didn't check out.
 
 ## Notes
 
 - The SDK lives in the RailKit repo (`packages/save`) and isn't on npm yet.
-- Users can change their share or turn their code off at any time. Look the split up on every payment rather than caching it.
+- Users can change their rule, or stop allowing your app, at any time. Look the split up on every payment rather than caching it.
 - Never send your payout key anywhere. The SDK signs on your server and only sends Errand the transaction hashes.

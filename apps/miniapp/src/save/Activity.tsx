@@ -33,7 +33,7 @@ interface Row {
   status?: [string, "ok" | "bad" | ""];
 }
 
-/** The savings history, newest first: payments in with the save code, Grow, and weekly draw wins. */
+/** The savings history, newest first: what apps paid or saved for the user, Grow, and weekly draw wins. */
 export function ActivityTab({ address }: { address: string | null }) {
   const [save, setSave] = useState<SaveActivity | null>(null);
   const [wins, setWins] = useState<PrizeMe["wins"]>([]);
@@ -62,6 +62,15 @@ export function ActivityTab({ address }: { address: string | null }) {
   for (const p of save?.payments ?? []) {
     const grow = BigInt(p.growLuna);
     const wallet = BigInt(p.walletLuna);
+    if (p.source === "spend") {
+      // The part saved on top when the user paid the app; back to the wallet if Grow couldn't take it by then.
+      rows.push({
+        key: `spend:${p.app}:${p.payoutId}`, at: p.at, icon: grow > 0n ? "jar" : "down", incoming: true, amount: `+${nim(grow + wallet)}`,
+        title: grow > 0n ? `Saved when you paid ${p.app}` : `${p.app} gave back your saving`,
+        detail: grow > 0n ? "Into Grow, on top of what you paid" : "To your wallet: Grow couldn't take it",
+      });
+      continue;
+    }
     rows.push({
       key: `pay:${p.app}:${p.payoutId}`, at: p.at, icon: "down", incoming: true, title: `${p.app} paid you`, amount: `+${nim(grow + wallet)}`,
       detail: grow > 0n ? `${nim(grow)} to Grow, ${nim(wallet)} to your wallet` : p.reason ? ALL_TO_WALLET[p.reason] : "All to your wallet",
@@ -99,7 +108,7 @@ export function ActivityTab({ address }: { address: string | null }) {
         <>
           {save.grow === null && <p className="note">Your Grow transactions couldn't be loaded just now. Try again in a minute.</p>}
           {rows.length === 0 ? (
-            <p className="empty">Nothing yet. Payments in with your save code, and what you put in or take out of your savings, show up here.</p>
+            <p className="empty">Nothing yet. What apps pay you or save for you, and what you put in or take out of your savings, show up here.</p>
           ) : (
             <ul className="list">
               {rows.map((r) => (

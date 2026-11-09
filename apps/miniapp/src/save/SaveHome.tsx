@@ -15,7 +15,7 @@ const PRESETS = [10, 30, 50, 100];
 const PAID_IN_SHOWN = 4;
 const nim = (luna: string | bigint) => formatMoney(lunaToNimString(BigInt(luna)), "NIM");
 const shortAddress = (a: string) => `${a.slice(0, 4)} … ${a.slice(-4)}`;
-const newNonce = () => Array.from(globalThis.crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
+export const newNonce = () => Array.from(globalThis.crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
 const stakerOf = (g: NonNullable<SaveMe["grow"]>): StakerState => ({
   active: BigInt(g.active), inactive: BigInt(g.inactive), inactiveFrom: g.inactiveFrom, retired: BigInt(g.retired), delegation: g.delegation,
 });
@@ -30,7 +30,7 @@ const roughly = (blocks: number) => {
 };
 
 /** What went wrong, in words the person can act on. */
-const errorText = (e: unknown) => {
+export const errorText = (e: unknown) => {
   if (e instanceof WalletError) {
     if (e.kind === "rejected") return "You cancelled in Nimiq Pay. Nothing changed.";
     if (e.kind === "unknown") return "Nimiq Pay didn't confirm. Check its history before trying again.";
@@ -45,15 +45,18 @@ interface Props {
   start?: { intent: SaveIntent; notes: string[] } | null;
   /** Called once the request has been opened, so it isn't opened twice. */
   onStarted?: () => void;
-  /** The page heading (and the Grow / Steady and Boost switch), on this part's main screens only. */
-  head?: ReactNode;
   /** Ask Errand, on the main screen. */
   ask?: ReactNode;
+  /** The weekly draw's card, on the main screen. It doesn't need a save code. */
+  draw?: ReactNode;
   /** Opens Activity, for every payment in. */
   onSeeAll?: () => void;
 }
 
-export function SaveHome({ address, start, onStarted, head = <header className="home-head"><h1>Savings</h1></header>, ask, onSeeAll }: Props) {
+/** The page heading, on the main screens only: the screens inside have a back button instead. */
+const HEAD = <header className="home-head"><h1>Savings</h1></header>;
+
+export function SaveHome({ address, start, onStarted, ask, draw, onSeeAll }: Props) {
   const [me, setMe] = useState<SaveMe | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("home");
@@ -292,11 +295,11 @@ export function SaveHome({ address, start, onStarted, head = <header className="
 
   // ---- Screens.
 
-  if (!self?.ok) return <>{head}<p className="hint">Connecting to Nimiq Pay…</p></>;
+  if (!self?.ok) return <>{HEAD}<p className="hint">Connecting to Nimiq Pay…</p></>;
   if (!me) {
     return (
       <>
-        {head}
+        {HEAD}
         {loadError ? (
           <>
             <p className="alert" role="alert">{loadError}</p>
@@ -408,7 +411,7 @@ export function SaveHome({ address, start, onStarted, head = <header className="
   if (me.code === null) {
     return (
       <>
-        {head}
+        {HEAD}
         <section className="card save-intro">
           <h2>Save a share of every payment</h2>
           <p>Games, bounties and shops that pay you NIM can put part of it straight into your savings. You choose how much.</p>
@@ -439,6 +442,7 @@ export function SaveHome({ address, start, onStarted, head = <header className="
             )}
           </>
         )}
+        {draw}
         {ask}
       </>
     );
@@ -446,7 +450,7 @@ export function SaveHome({ address, start, onStarted, head = <header className="
 
   return (
     <>
-      {head}
+      {HEAD}
 
       <section className="balance-card" aria-label="Your Grow savings">
         <span className="label"><Icon name="jar" size={18} /> Grow savings</span>
@@ -469,7 +473,12 @@ export function SaveHome({ address, start, onStarted, head = <header className="
           </div>
         )}
         <div className="row-buttons">
-          <button type="button" className="secondary" onClick={() => void navigator.clipboard?.writeText(me.code!).then(() => setInfo("Code copied."), () => setInfo(`Your code is ${me.code}.`))}>Copy code</button>
+          <button type="button" className="secondary" onClick={() => {
+            // The clipboard needs HTTPS. Over plain http (a phone on the dev machine's Wi-Fi) there is none, so show the code instead.
+            const show = () => setInfo(`Your code is ${me.code}.`);
+            if (!navigator.clipboard) return show();
+            void navigator.clipboard.writeText(me.code!).then(() => setInfo("Code copied."), show);
+          }}>Copy code</button>
           <button type="button" className="secondary" onClick={() => go("rule")}>Change {me.savePercent}%</button>
         </div>
         <button type="button" className="text-button" aria-expanded={showQr} onClick={() => setShowQr((v) => !v)}>{showQr ? "Hide QR code" : "Show QR code"}</button>
@@ -500,6 +509,7 @@ export function SaveHome({ address, start, onStarted, head = <header className="
         </section>
       )}
 
+      {draw}
       {ask}
 
       <section className="section">

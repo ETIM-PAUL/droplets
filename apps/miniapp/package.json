@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@fontsource-variable/bricolage-grotesque": "5.3.0",
-    "@nimiq/mini-app-sdk": "^0.2.4",
+    "@nimiq/mini-app-sdk": "^0.2.5",
     "@railkit/adapters": "workspace:*",
     "@railkit/agent": "workspace:*",
     "@railkit/client": "workspace:*",

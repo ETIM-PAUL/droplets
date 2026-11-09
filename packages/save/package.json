@@ -15,5 +15,9 @@
   },
   "dependencies": {
     "@railkit/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@nimiq/core": "2.23.0",
+    "tsx": "4.23.15"
   }
 }

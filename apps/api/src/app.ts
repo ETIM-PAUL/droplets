@@ -20,7 +20,7 @@ import { airtimeToOps, payoutToOps, rampToOps } from "./ops/map";
 import { betaMetrics } from "./ops/metrics";
 import type { OpsStore } from "./ops/store";
 import { rateLimiter } from "./rate-limit";
-import { mountPoolRoutes, type PoolDeps } from "./pool/routes";
+import { mountPrizeRoutes, type PrizeDeps } from "./prize/routes";
 import { mountSaveRoutes, type SaveDeps } from "./save/routes";
 import { verifyMavapaySignature } from "./webhook";
 
@@ -48,10 +48,10 @@ export interface AppDeps {
   ramp?: { api: Pick<ChangellyFiatApi, "offers" | "validateAddress" | "createOrder" | "getOrder" | "readCallback">; countries: ReadonlySet<string>; nimTicker: string };
   /** Chat: an optional model for sentences the rules can't finish, capped per UTC day. */
   agent?: { model?: Extractor; qrModel?: QrExtractor; savingsPhraser?: SavingsPhraser; savingsClassifier?: SavingsClassifier; modelCallsPerDay?: number };
-  /** Errand Save, phase 1: save codes and Grow. Off when undefined. */
+  /** Errand Save: save codes and Grow. Off when undefined. */
   save?: SaveDeps;
-  /** Errand Save, feature 2: the Steady/Boost pool. Off when undefined. The API holds no pool keys. */
-  pool?: PoolDeps;
+  /** The weekly draw for people who keep savings in Grow. Off when undefined. The API holds no prize key. */
+  prize?: PrizeDeps;
   log?: (msg: string, data?: Record<string, unknown>) => void;
   now?: () => number;
 }
@@ -62,7 +62,7 @@ const safeEqual = (a: string, b: string) => a.length === b.length && timingSafeE
 
 const ORDER_ID = /^[0-9A-Za-z-]{6,64}$/;
 
-const bad = (message: string, status: 400 | 401 | 403 | 404 | 429 | 502 | 503 = 400) =>
+const bad = (message: string, status: 400 | 401 | 403 | 404 | 409 | 429 | 502 | 503 = 400) =>
   Response.json({ error: { message } }, { status });
 
 function readRecipient(x: unknown): PayoutRecipient | null {
@@ -522,8 +522,8 @@ export function createApp(d: AppDeps) {
 
   if (d.save) mountSaveRoutes(app, d.save, { bad, clientKey, admin, now, log, phraser: d.agent?.savingsPhraser, classifier: d.agent?.savingsClassifier, allowModel });
   else app.all("/v1/save/*", () => bad("Savings is switched off on this server.", 503));
-  if (d.pool) mountPoolRoutes(app, d.pool, { bad, clientKey, admin, now, log });
-  else app.all("/v1/pool/*", () => bad("Steady and Boost are switched off on this server.", 503));
+  if (d.prize) mountPrizeRoutes(app, d.prize, { bad, clientKey, admin, now, log });
+  else app.all("/v1/prize/*", () => bad("The weekly draw is switched off on this server.", 503));
 
   return app;
 }

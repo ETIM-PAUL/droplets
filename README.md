@@ -1,6 +1,6 @@
 # Errand Save
 
-Savings inside Nimiq Pay. Errand is a Mini App that keeps a share of every NIM payment other apps send you, staked in your own account. It also offers a pool where savings can keep their dollar value.
+Savings inside Nimiq Pay. Errand is a Mini App that keeps a share of every NIM payment other apps send you, staked in your own account.
 
 Built for the Save track of Nimiq's Mini App competition (Cycle 3). MIT licensed.
 
@@ -8,19 +8,18 @@ Built for the Save track of Nimiq's Mini App competition (Cycle 3). MIT licensed
 
 **Save codes and Grow.** You choose how much of each payment to save, say 30%, and sign that choice once in Nimiq Pay. Errand gives you a save code such as `SAVE-7KQ2XMP`. Games, bounties and shops that pay you NIM can pay your code instead of your address: 30% goes into Grow and the rest to your wallet. Grow is NIM staked from your own account with a validator you pick. It earns staking rewards, and only you can move it.
 
-**Steady and Boost.** A two-sided pool for NIM. Steady keeps its dollar value. Boost takes NIM's price moves for both sides: about twice NIM's ups and downs when the two sides are the same size. Unlike Grow, Errand holds this pool's NIM, so it is off by default and runs on testnet until a legal review.
+**The weekly draw.** Join on Savings, then keep at least 1,000 NIM in Grow on 5 of the 7 days to be in Sunday's draw at 11:59 pm (West Africa Time). One saver wins 1,000 NIM, paid straight into their Grow. Keeping more gives more tickets: 10 times as much adds one, up to 4. Nobody can lose anything, because savings never leave the saver's own account.
 
 **Ask Errand.** A chat about your savings. "Save 30% of what apps pay me" or "Put 500 NIM in Grow" opens the right screen with the values filled in. "When can I get my money?" is answered from your own savings. Nothing moves until you approve it in Nimiq Pay.
 
-**Activity.** Payments in with your code, each split into its Grow and wallet parts; your own Grow transactions, read from the chain; and your Steady and Boost orders.
+**Activity.** Payments in with your code, each split into its Grow and wallet parts; your own Grow transactions, read from the chain; and draw wins.
 
 ## Status (November 2026)
 
 | Part | State |
 |---|---|
 | Save codes, Grow, Ask Errand, and the SDK for apps that pay | Built. Testnet first (`SAVE_NETWORK`). |
-| Steady and Boost | Built. Off by default, and testnet only until a legal review. |
-| Steady as a destination for save codes | Planned. Codes pay into Grow only for now. |
+| The weekly draw | Built. Testnet first; prizes are paid with `pnpm pay-prizes`. |
 | Lightning: Bitcoin in, NIM savings out | Planned. Depends on a swap partner (Fastspot). |
 
 The full plan, with the facts it rests on: [Errand Save — Product Plan.md](Errand%20Save%20%E2%80%94%20Product%20Plan.md).
@@ -53,22 +52,24 @@ sequenceDiagram
 
 Building an app that pays NIM? The integration guide is [packages/save/README.md](packages/save/README.md).
 
-## How Steady and Boost work
+## How the weekly draw works
 
-- **Deposits.** You pay NIM to the pool's address with an order memo, and Nimiq Pay shows both before you approve. A payment counts once it's 60 blocks deep.
-- **Daily settlement.** Once a day, at 12:00 UTC by default, at the median of three prices: CoinGecko, KuCoin and Gate. At least two must answer. The settlement waits, and alerts, if the prices disagree by more than 5% or moved more than 50% since the last one.
-- **What happens at a settlement,** in this order:
-  1. NIM's price move: Steady keeps its dollars and Boost absorbs the move.
-  2. The fee: 1% a year by default.
-  3. Orders, at that day's price: Steady withdrawals, Boost withdrawals, Boost deposits, Steady deposits.
-- **Cover.** Steady is protected while Boost has enough NIM to cover it:
-  - Steady deposits that Boost can't cover are refunded.
-  - Boost withdrawals wait while Steady needs the cover.
-  - If NIM falls past the cover in one day, Steady shares what's in the pool and Boost loses everything.
-- **Withdrawals** are requests you sign in Nimiq Pay. They're paid out after the next settlement.
-- **Pilot caps,** by default: $100 per person and $2,000 in total in Steady, and 2,000,000 NIM per person in Boost.
-- **Reserves.** `GET /v1/pool/reserves` compares the pool's NIM on-chain with everything it owes.
-- **The settlement maths uses whole numbers only:** luna and millionths of a dollar. A test runs 300 random settlements and checks that no NIM is ever created or lost.
+- **Joining** is a message signed in Nimiq Pay, plus Nimiq Pay's identifier for the phone, so each phone enters once.
+- **A day counts** if the person's active stake never went under the minimum (`PRIZE_MIN_NIM`) at any moment that day. Errand reads that from the chain:
+  - only the owner can lower their active stake, and only with a set-active-stake transaction, which records the new amount;
+  - others can only add to a stake, so leaving their add-stakes out can only make a day look lower, never higher;
+  - Errand also reads stakes every few hours and whenever the person opens Errand, which catches rises such as app payouts and rewards.
+- **Tickets** follow the amount kept on 5 days, so a one-day top-up doesn't change them: 1 ticket at the minimum, one more for each 10 times as much, up to 4.
+- **The draw** is at Sunday 23:59, in the time zone set by `PRIZE_UTC_OFFSET_MINUTES`. Entries are numbered in address order, and the winning ticket is the hash of the first block made after the draw time, modulo the total. Each draw is stored with its entries, so it can be worked out again. It doesn't matter when the API gets round to it, which is why sleeping on Render's free plan is fine: the block decides.
+- **Paying** is done by `pnpm pay-prizes`, which holds the prize wallet's key outside the API:
+  1. it asks the API who won;
+  2. it stores what it signs with the API before sending, so a retry resends the same transaction;
+  3. it pays into the winner's Grow, or their wallet if their validator has gone;
+  4. the API marks the prize paid once the chain shows it.
+- **Limits:**
+  - someone with several phones can enter several accounts;
+  - an account with more than 500 transactions in a week can't be scored that week;
+  - prize draws are regulated in many countries, so get legal advice before paying real prizes on mainnet.
 
 ## Ask Errand
 
@@ -79,28 +80,21 @@ Building an app that pays NIM? The integration guide is [packages/save/README.md
 
 ## What Errand will not do
 
-- **Hold your Grow savings.** They stay staked in your own account.
+- **Hold your savings.** They stay staked in your own account.
 - **Move your NIM.** Every action is a tap that opens Nimiq Pay's own approval window. Neither the Mini App nor the API holds a wallet key.
 - **Let the chat move money.** Its output only opens a screen.
 - **Send money or buy NIM.** It's a savings app.
 
-Steady and Boost works differently: Errand holds that pool's NIM. So:
-- it's off by default, and testnet only until a legal review;
-- mainnet needs `POOL_ALLOW_MAINNET=true` as well as `POOL_NETWORK=mainnet`;
-- deposits are capped;
-- the only process with the pool's key is a separate worker that isn't reachable from the internet;
-- anyone can check the reserves.
-
 ### How that's enforced
 
-- **Signed requests.** Rule changes and pool withdrawals are messages the user signs in Nimiq Pay. The API checks that the signature belongs to the address, that the request is less than 10 minutes old, and that it hasn't been used before.
-- **No payout goes out twice.** The payout SDK and the pool worker store each signed transaction before sending it, and resend that same transaction on a retry. A payout counts as paid only once it's on-chain.
+- **Signed requests.** Rule changes, and joining or leaving the draw, are messages the user signs in Nimiq Pay. The API checks that the signature belongs to the address, that the request is less than 10 minutes old, and that it hasn't been used before.
+- **No payout goes out twice.** The payout SDK stores each signed transaction before sending it, and resends that same transaction on a retry. A payout counts as paid only once it's on-chain.
 - **The signing guard.** `pnpm check:signing` fails the build if:
   - code uses a raw signing or key API;
   - server code, or code that reads untrusted input, imports a wallet;
   - a wallet action is created anywhere other than the Savings screens' tap handlers;
   - a wallet package calls a Nimiq Pay or wallet method that isn't on its approved list;
-  - a key pair appears anywhere but the payout SDK (`packages/save/src/payer.ts`) and the pool worker;
+  - a key pair appears anywhere but the payout SDK (`packages/save/src/payer.ts`);
   - the Mini App or the API imports the payout SDK.
 
 ## Run it locally
@@ -118,24 +112,8 @@ pnpm --filter @railkit/miniapp dev  # the Mini App, on http://localhost:5173
 - **Storage.** Without `DATABASE_URL`, the API keeps everything in memory and forgets it on restart.
 - **The model.** `OPENAI_API_KEY` is optional. Without it, Ask Errand uses its rules only.
 - **Registering an app that pays.** Send `POST /v1/admin/save/apps` with `Authorization: Bearer <ADMIN_TOKEN>` and `{"name": "…", "payoutAddresses": ["NQ…"]}`. It returns the app's key, once.
-
-### Steady and Boost on testnet
-
-1. Make a pool wallet, and keep the key somewhere safe:
-   ```sh
-   pnpm --filter @railkit/pool-worker exec node -e "import('@nimiq/core').then(N=>{const k=N.PrivateKey.generate();console.log(N.KeyPair.derive(k).toAddress().toUserFriendlyAddress(), k.toHex())})"
-   ```
-2. In `.env`, set:
-   - `POOL_ENABLED=true`, `POOL_NETWORK=testnet` and `POOL_ADDRESS=<address>`;
-   - `VITE_POOL_ENABLED=true`;
-   - a Postgres `DATABASE_URL`, which the worker needs;
-   - optionally `POOL_SETTLE_EVERY_MINUTES=30`, to settle every half hour while you try it.
-3. Start the worker with the key in its own environment, so the API never sees it:
-   ```sh
-   POOL_KEY=<key> pnpm --filter @railkit/pool-worker dev
-   ```
-
-The worker refuses to start if the key doesn't belong to the address, or if its Nimiq node follows the other network.
+- **Paying draw prizes.** `pnpm pay-prizes` pays any unpaid prizes; add `--watch` to keep it running. On testnet, the first run makes a prize wallet in `.env.prize` (gitignored), fills it from the faucet, and prints the address to set as `PRIZE_ADDRESS`.
+- **Trying a payment without building an app.** `pnpm pay-save-code SAVE-XXXXXXX 2000` plays an app that pays 2,000 NIM to a save code, on testnet. The first run gives it a wallet from the testnet faucet and registers it with your local API, which needs `ADMIN_TOKEN`.
 
 ## Checks
 
@@ -150,14 +128,13 @@ pnpm run ci   # typecheck, tests, build, licence check, signing guard
 
 ## Deploy on Render
 
-[render.yaml](render.yaml) is a Render Blueprint for four services:
+[render.yaml](render.yaml) is a Render Blueprint for three services:
 
 | Service | What it runs | Plan |
 |---|---|---|
 | `errand-api` | The API | Free |
 | `errand-miniapp` | The Mini App, as a static site | Static site |
 | `errand-db` | Postgres | Free |
-| `errand-pool-worker` | Steady and Boost's worker | Starter (Render has no free workers) |
 
 1. Push the repo to GitHub. `.env` is gitignored and never leaves your machine.
 2. In Render, choose **New > Blueprint** and pick the repo. Render asks once for each secret (`sync: false`). The keys for the earlier ramp providers (Mavapay, Bitrefill, Changelly) can stay empty.
@@ -167,7 +144,6 @@ pnpm run ci   # typecheck, tests, build, licence check, signing guard
 4. For a closed beta, on `errand-api`:
    - set `BETA_REQUIRED=true` and a long random `SESSION_SECRET`;
    - create invite codes with `node scripts/new-invites.mjs "Name"` and put the output in `BETA_INVITES`.
-5. `errand-pool-worker` does nothing until Steady and Boost is switched on, so you can suspend it until then.
 
 Free services sleep after about 15 minutes idle, after which the first request takes about a minute. Free Postgres is time-limited. Move to paid plans before a public launch.
 
@@ -179,17 +155,14 @@ This repository is RailKit. It started as a toolkit for on- and off-ramps, and E
 |---|---|
 | `apps/miniapp` | The Errand Mini App (React and Vite). |
 | `apps/api` | The Errand API (Hono on Node). Holds no wallet keys. |
-| `apps/pool-worker` | Steady and Boost's worker: watches deposits, settles and pays out. The only process with the pool's key. |
-| `packages/core` | Shared logic: save codes and signed rules, payment splits, the pool's settlement maths, Nimiq addresses, and a Nimiq RPC client. |
+| `packages/core` | Shared logic: save codes and signed rules, payment splits, the weekly draw's rules, Nimiq addresses, and a Nimiq RPC client. |
 | `packages/agent` | Ask Errand: the rules, savings answers, the optional model, and the eval set. |
 | `packages/client` | A typed client for the API. |
 | `packages/wallet-nimiq` | The Nimiq Pay actions. Each one opens Nimiq Pay's approval window. |
-| `packages/save` | The SDK for apps that pay with save codes, and its server-side payer. Not on npm yet. |
-| `packages/pool` | Steady and Boost's books and jobs. |
-| `packages/adapters` | The pool's price sources, plus provider adapters from the ramp work. |
+| `packages/save` | The SDK for apps that pay with save codes, and its server-side payer. Not on npm yet. Also the tools behind `pnpm pay-save-code` and `pnpm pay-prizes`. |
 
 **Left from the ramp work, and not used by Errand Save:**
-- the ramp routes in the API, which stay off without provider keys;
+- the ramp routes in the API, which stay off without provider keys, and their provider adapters in `packages/adapters`;
 - `packages/wallet-evm`;
 - the order engine and Lightning parsers in `packages/core`.
 

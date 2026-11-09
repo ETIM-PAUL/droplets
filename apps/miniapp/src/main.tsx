@@ -7,13 +7,11 @@ import { Help } from "./Help";
 import { connectHost, type HostState } from "./host";
 import { InviteGate } from "./InviteGate";
 import { ActivityTab } from "./save/Activity";
-import { SavingsTab } from "./save/SavingsTab";
+import { DrawCard } from "./save/Draw";
+import { SaveHome } from "./save/SaveHome";
 import { sessionToken } from "./storage";
 import { ChatInput, Hexagon, TabBar, type Tab } from "./ui";
 import "./styles.css";
-
-/** Steady and Boost (the two-sided pool), inside Savings. Needs POOL_ENABLED on the API and the pool worker. */
-const POOL = import.meta.env.VITE_POOL_ENABLED === "true";
 
 type View = { name: "tabs" } | { name: "chat"; text: string };
 
@@ -106,17 +104,17 @@ function App() {
     <div className="screen with-tabs">
       {host?.status === "error" && <p className="alert" role="alert">{host.message}</p>}
       {tab === "home" && (
-        <SavingsTab
+        <SaveHome
           address={address}
-          pool={POOL}
           start={saveStart}
           onStarted={() => setSaveStart(null)}
+          draw={<DrawCard address={address} />}
           ask={<AskCard onAsk={(text) => setView({ name: "chat", text })} />}
           onSeeAll={() => setTab("activity")}
         />
       )}
-      {tab === "activity" && <ActivityTab address={address} pool={POOL} />}
-      {tab === "help" && <Help pool={POOL} />}
+      {tab === "activity" && <ActivityTab address={address} />}
+      {tab === "help" && <Help />}
       <TabBar tab={tab} onTab={setTab} />
     </div>
   );

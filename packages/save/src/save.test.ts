@@ -101,6 +101,16 @@ describe("createSavePayer", () => {
     expect(r).toMatchObject({ address: USER, walletLuna: NIM(5), growTx: null });
   });
 
+  it("pays a plain address straight into its Grow when asked", async () => {
+    const { nimiq, built } = fakeNimiq();
+    const { rpc } = fakeRpc();
+    const payer = createSavePayer({ rpc, nimiq, keyPair: KEYPAIR, network: "main" });
+    const r = await payer.pay({ to: USER, luna: NIM(1000), payoutId: "prize-2026-11-09", into: "grow" });
+    expect(built).toEqual([["addStake", `addr(${PAYOUT})`, `addr(${USER})`, NIM(1000), 0n, 1_000, 24]]);
+    expect(r).toMatchObject({ address: USER, walletTx: null, walletLuna: 0n, growLuna: NIM(1000), growTx: "1".padStart(64, "0") });
+    await expect(payer.pay({ to: USER, luna: NIM(1), payoutId: "p3", into: "grow", memo: "hi" })).rejects.toThrow(/memo/);
+  });
+
   it("never pays twice: a retry with the same payoutId resends the same signed transactions", async () => {
     const { nimiq, built } = fakeNimiq();
     const { rpc, sent, onChain } = fakeRpc();

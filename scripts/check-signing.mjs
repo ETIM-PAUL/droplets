@@ -29,23 +29,21 @@ const PROVIDER_KEY_FILES = new Set(["packages/adapters/src/changelly/api.ts", "a
 const EXECUTOR_FILES = new Map([
   // Errand Save: each savings action is a tap handler that opens Nimiq Pay's own dialog.
   ["apps/miniapp/src/save/SaveHome.tsx", ["saveRule", "openGrow", "addToGrow", "startWithdrawal", "finishWithdrawal", "revokeCode"]],
-  // Steady and Boost: a deposit is a payment to the pool with its memo; a withdrawal is a signed request.
-  ["apps/miniapp/src/save/PoolHome.tsx", ["depositToPool", "withdrawFromPool"]],
+  // The weekly draw: joining and leaving are messages the person signs.
+  ["apps/miniapp/src/save/Draw.tsx", ["joinDraw", "leaveDraw"]],
 ]);
 // 3. Code that reads untrusted text (chat, QR, providers) or runs on the server must not touch the wallet.
-const NO_WALLET = [/^packages\/(agent|adapters|core|client|save|pool)\//, /^apps\/(api|pool-worker)\//, /^apps\/miniapp\/src\/Chat\.tsx$/];
+const NO_WALLET = [/^packages\/(agent|adapters|core|client|save)\//, /^apps\/api\//, /^apps\/miniapp\/src\/Chat\.tsx$/];
 const WALLET_IMPORT = /from\s+["'](@railkit\/wallet-[\w-]+|@nimiq\/mini-app-sdk)["']/;
 // 4. Wallet executors may only call methods that open the native dialog.
 // sign and the staking calls open Nimiq Pay's confirmation too (checked in Nimiq Pay's useMiniAppHost.ts).
 const ALLOWED_PROVIDER_CALLS = new Set([
   "payLightningInvoice", "sendBasicTransaction", "isConsensusEstablished", "request",
   "sign", "sendNewStakerTransaction", "sendStakeTransaction", "sendSetActiveStakeTransaction", "sendRetireStakeTransaction", "sendRemoveStakeTransaction",
-  "sendBasicTransactionWithData",
 ]);
-// 6. Server payouts (@railkit/save/payer) sign with the paying app's or the pool's own key: only those files may
-//    hold a key pair, and neither the phone nor the RailKit API may import the payer.
-// The pool worker holds the pool's own payout key; it isn't reachable from the internet (see render.yaml).
-const KEYPAIR_FILES = new Set(["packages/save/src/payer.ts", "apps/pool-worker/src/index.ts"]);
+// 6. Server payouts (@railkit/save/payer) sign with the paying app's own key: only that file may hold a key pair,
+//    and neither the phone nor the RailKit API may import the payer.
+const KEYPAIR_FILES = new Set(["packages/save/src/payer.ts"]);
 const NO_PAYER = [/^apps\/miniapp\//, /^packages\/client\//, /^apps\/api\//];
 const ALLOWED_EVM_METHODS = new Set(["eth_chainId", "eth_requestAccounts", "eth_sendTransaction", "wallet_switchEthereumChain", "eth_accounts"]);
 

@@ -450,12 +450,11 @@ describe("add money (Changelly)", () => {
 });
 
 describe("switched off", () => {
-  it("says Savings and Steady and Boost are off when this server doesn't run them", async () => {
+  it("says Savings is off when this server doesn't run it", async () => {
     const { app } = setup();
     const save = await app.request("/v1/save/me?address=NQ00");
     expect(save.status).toBe(503);
     expect(((await save.json()) as { error: { message: string } }).error.message).toMatch(/Savings is switched off/);
-    expect((await app.request("/v1/pool/state")).status).toBe(503);
   });
 
   it("makes no model call for a payment sentence when no corridor is served", async () => {

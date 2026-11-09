@@ -48,7 +48,7 @@ const result = await payer.pay({ to: "SAVE-7KQ2XMP", luna: 200_000_000n, payoutI
 ```
 
 - **Amounts are luna** (100,000 luna is 1 NIM). The saved share is rounded down, and the user's wallet gets the odd luna.
-- **A plain Nimiq address works too.** `to` can be an address, which sends a single normal payment and doesn't contact Errand at all.
+- **A plain Nimiq address works too.** `to` can be an address, which sends a single normal payment and doesn't contact Errand at all. Add `into: "grow"` to send it all as an add-stake into that address's own stake instead. That only works if the address already stakes, so check first.
 - **The memo** is optional, up to 64 bytes, and goes on the wallet payment only.
 - **`network` must match the node.** A node takes a payment signed for the other network, answers with its hash, and never includes it. So `pay()` checks once which chain the node follows, and throws without signing anything if it's the wrong one. Call `await payer.checkNetwork()` at startup to find out sooner.
 

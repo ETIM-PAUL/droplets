@@ -2,23 +2,21 @@
 
 Working name. Written 4 November 2026. Replaces the earlier save-codes plan.
 
+Updated 8 November: Steady and Boost, a two-sided pool, are dropped. Boost was a bet on NIM's price rather than saving, and Errand would have held the pool's NIM.
+
 ## What it is
 
-One savings account inside Nimiq Pay, with three ways in and two places to keep the money.
+One savings account inside Nimiq Pay, with three ways in.
 
 **Ways in**
 1. **Save code.** Other Mini Apps pay rewards, bounties and cashback using the user's code. Each payment splits by the user's rule, for example 30% to savings and 70% to the wallet.
 2. **Bitcoin Lightning.** The same code is also a Lightning address. Anyone can send sats from any Lightning wallet, and they arrive as NIM savings. Users with a supported wallet can also save automatically every week.
 3. **Direct.** The user moves NIM from their own wallet into savings.
 
-**Places to keep it**
-- **Grow:** staked NIM in the user's own account. It earns staking rewards and follows NIM's price. Withdrawing takes 12 to 24 hours.
-- **Steady:** NIM counted in dollars. Its dollar value stays the same because the other side of the pool, **Boost**, absorbs NIM's price moves. Withdrawals go out at the next daily settlement.
+**Where it's kept:** in **Grow**, NIM staked in the user's own account. It earns staking rewards and follows NIM's price, and only the user can move it. Withdrawing takes 12 to 24 hours.
 
-**Boost** is for NIM holders who want more upside. They take the Steady side's price moves, for about 2x NIM's gains and losses when both sides are the same size.
-
-**Example.** Amaka sets "save 30%, half Grow, half Steady".
-- An arcade game pays her 2,000 NIM with her code. 600 NIM goes to savings (300 Grow, 300 Steady) and 1,400 NIM to her wallet.
+**Example.** Amaka sets "save 30%".
+- An arcade game pays her 2,000 NIM with her code. 600 NIM goes into Grow and 1,400 NIM to her wallet.
 - Her uncle in London sends 20,000 sats to `7kq2xmp@<our domain>` from his Lightning wallet. They arrive as NIM and follow the same rule.
 
 ## One code, two forms
@@ -26,28 +24,23 @@ One savings account inside Nimiq Pay, with three ways in and two places to keep 
 - **Save code:** `SAVE-7KQ2XMP`, entered in any Mini App that pays NIM.
 - **Lightning address:** `7kq2xmp@<our domain>`, used from any Lightning wallet.
 
-Both point to the same user and the same rule. The rule has two settings:
-- **How much to save:** 0 to 100% of each payment.
-- **Where savings go:** Grow, Steady, or a mix (for example 50/50).
+Both point to the same user and the same rule: how much of each payment to save, from 0 to 100%.
 
-The code is 6 random characters plus 1 check character, using Crockford base32 (`0-9`, `A-Z` without `I L O U`) with a Luhn mod 32 check character. That allows about 1.07 billion codes. Input ignores case, spaces and dashes, and reads `O` as `0` and `I`/`L` as `1`. There is one active code per address; users can revoke it and get a new one. The code isn't a secret: a lookup reveals only the address, the rule and which savings are open. Lookups need an app key and are rate-limited.
+The code is 6 random characters plus 1 check character, using Crockford base32 (`0-9`, `A-Z` without `I L O U`) with a Luhn mod 32 check character. That allows about 1.07 billion codes. Input ignores case, spaces and dashes, and reads `O` as `0` and `I`/`L` as `1`. There is one active code per address; users can revoke it and get a new one. The code isn't a secret: a lookup reveals only the address, the rule and whether Grow is open. Lookups need an app key and are rate-limited.
 
 ## Routing: where each payment goes
 
 Every payment, whether NIM from an app or sats from Lightning, is split by the same function:
 
-1. **Savings part:** `floor(amount × savePercent / 100)` in luna. The wallet gets the rest.
-2. **Within the savings part:** the Steady share goes to Steady and the rest to Grow.
-3. **Fallbacks, applied in order:**
-   - If **Grow isn't open** (no stake, or the user's validator was deleted), the Grow part goes to Steady if the user uses Steady, otherwise to the wallet. Codes are only given out once Grow is open, so this only happens if Grow closes later.
-   - If **Steady is full** (Boost can't cover more, see below), the Steady part goes to Grow if it's open, otherwise to the wallet.
+1. **Savings part:** `floor(amount × savePercent / 100)` in luna, into Grow. The wallet gets the rest.
+2. **Fallbacks:**
+   - If **Grow can't take it**, the whole payment goes to the wallet. That happens when Grow isn't open (no stake, or the user's validator was deleted) or would stay under 100 NIM. Codes are only given out once Grow is open, so this only happens if Grow closes later.
    - If a part comes out at 0, it isn't sent.
 
 | Destination | From an app (save code) | From Lightning |
 |---|---|---|
 | Wallet | Normal payment to the user's address | Our swap account pays the user's address |
 | Grow | The app sends an add-stake into the user's stake | Our swap account sends an add-stake into the user's stake |
-| Steady | The app pays the pool address with a memo naming the user | Already in our hands after the swap; credited to the user's Steady balance |
 
 Add-stake needs no signature from the user, so apps (and our swap account) can pay straight into a user's Grow savings. Staking pools do this daily on mainnet.
 
@@ -65,44 +58,16 @@ Grow works the same as in the save-codes plan:
   What's left must be 0 or at least 100 NIM.
 - **Rewards** come from the user's chosen validator pool, under that pool's terms.
 
-## Steady and Boost: the two-sided pool
+## Weekly draw
 
-### How it works
+A prize-linked savings draw. Nobody can lose anything: savings stay in each person's own stake, and only the prize is chance.
 
-One pool of NIM, held at a public address we control.
-
-- **Steady** balances are kept in dollars. At each daily settlement, every Steady user is owed `dollar balance ÷ NIM price` in NIM.
-- **Boost** balances are shares of whatever NIM is left after Steady is covered.
-
-Example, with NIM at $0.000278. Ada puts 1,000,000 NIM ($278) into Steady and Tunde puts 1,000,000 NIM into Boost.
-
-| NIM price next day | Ada (Steady) | Tunde (Boost) |
-|---|---|---|
-| Falls 20% | 1,250,000 NIM, still $278 | 750,000 NIM, down 40% in dollars |
-| Rises 20% | 833,333 NIM, still $278 | 1,166,667 NIM, up 40% in dollars |
-
-### Rules
-
-- **Daily settlement** at a fixed time, for example 12:00 UTC.
-- **Price** is the median of several sources (CoinGecko plus exchange APIs). Settlement pauses if the sources disagree by more than a set margin or the price moves abnormally.
-- **Orders fill at the next settlement price,** never the last one. That includes deposits, withdrawals and switches between sides, so nobody can enter Steady after seeing a fall coming.
-- **Cover rule.** Steady accepts new money only while Boost NIM is at least equal to the NIM Steady is owed. With equal sides, Steady is protected against any one-day fall of up to 50%.
-- **A crash beyond cover.** If Steady is owed more NIM than the pool holds, Steady users share the whole pool in proportion to their dollar balances, and Boost gets nothing. This must be shown to users before they join.
-- **Fee:** for example 1% a year on both sides, taken daily.
-
-### Settlement maths
-
-At price `P` (USD per NIM), with the pool holding `N` NIM:
-
-- Steady is owed `C = Σ Steady dollars ÷ P`.
-- If `C ≤ N`: each Steady user gets `their dollars ÷ P`, and Boost users share `N − C` by their shares.
-- If `C > N`: Steady users share `N` by their dollar balances (their dollar balances shrink to match), and Boost gets 0.
-
-Then the daily fee is applied to both sides, and the queued deposits, withdrawals and switches fill at `P`.
-
-### Proof of reserves
-
-A public page shows two figures every day: the pool address's on-chain balance, and the total NIM owed to both sides. Anyone can check that the first covers the second.
+- **Rules.** Join with a signed message. Keep at least 1,000 NIM in Grow on 5 of the 7 days (Monday to Sunday, West Africa Time) to be in Sunday's draw at 23:59. The winner gets 1,000 NIM, paid as an add-stake into their Grow.
+- **Bigger savers.** 1 ticket at the minimum and one more for each 10 times as much, up to 4, so the biggest savers can't win every week. Tickets follow the amount kept on 5 days, so a one-day top-up doesn't count.
+- **Kept days come from the chain.** Only the owner can lower their active stake, with a set-active-stake transaction that records the new amount. Others can only add. So Errand's reconstruction of each day's lowest stake errs low, never high, even if the API was asleep.
+- **The winner** is the ticket at (first block hash after the draw time) modulo the total, with entries in address order. Anyone can redo it from the stored entries.
+- **One entry per phone,** using Nimiq Pay's device identifier. Someone with several phones can still enter several accounts.
+- **Funding.** At first, Errand's launch budget (1,000 NIM is a few cents at today's price). Later: sponsors, or the fee of an Errand staking pool. Prize-linked savings raised savers' total savings by about 38% in South Africa (Cole, Iverson & Tufano).
 
 ## Lightning: Bitcoin in, NIM savings out
 
@@ -130,29 +95,13 @@ The user approves once. Each week, a job creates a swap invoice and asks the wal
 - **First choice: Fastspot**, Nimiq Pay's own swap partner. Its client library models Lightning on either side of a swap. Whether it offers Lightning to NIM to an outside service, and on what terms, hasn't been confirmed; that's the first open question below.
 - **Fallback:** exchange APIs or our own NIM inventory. Both mean holding users' funds and running an exchange service, with the licensing that comes with it.
 
-## Withdrawals
-
-| From | How | Timing |
-|---|---|---|
-| Grow | The three Nimiq Pay steps above | 12 to 24 hours; up to 4 days if the validator is jailed |
-| Steady | Request in Errand; paid in NIM to the user's wallet at the next settlement | Up to 24 hours |
-| Steady → Grow | Request in Errand; the pool sends an add-stake into the user's stake at the next settlement | Up to 24 hours |
-| Boost | Same as Steady | Up to 24 hours |
-
 ## System design
 
 ### API (`apps/api`)
 
-- **Codes and rules:** create, update and revoke a code with a signed message, the same as the earlier plan. The signed text includes the rule: "Save: 30%, Steady: 50%".
-- **`GET /v1/save/split?code=&luna=`:** returns the wallet, Grow and Steady parts, plus whether each destination is open. It applies the fallbacks.
-- **Receipts:** apps report transaction hashes, and we verify each on-chain. Add-stakes paid by others don't appear in a staker's own history, so receipts are how the "saved, by source" view works. Pool deposits are checked against the pool address's history.
-- **Pool service:**
-  - a deposit watcher for the pool address, reading memos;
-  - a ledger of positions;
-  - the price feed;
-  - the daily settlement job;
-  - payouts;
-  - the reserves page.
+- **Codes and rules:** create, update and revoke a code with a signed message, the same as the earlier plan. The signed text includes the rule: "Save: 30%".
+- **`GET /v1/save/split?code=&luna=`:** returns the wallet and Grow parts and, when Grow can't take its part, why. It applies the fallbacks.
+- **Receipts:** apps report transaction hashes, and we verify each on-chain. Add-stakes paid by others don't appear in a staker's own history, so receipts are how the "saved, by source" view works.
 - **Lightning service:**
   - the LNURL-pay endpoints (`/.well-known/lnurlp/<code>`);
   - the swap orchestrator;
@@ -160,80 +109,67 @@ The user approves once. Each week, a job creates a swap invoice and asks the wal
 
 **Storage.** Postgres (`DATABASE_URL`, following `PgOpsStore`):
 - `save_codes`, `save_apps`, `save_receipts`, `save_nonces`;
-- `pool_positions`, `pool_orders`, `pool_settlements`;
 - `ln_swaps`, `nwc_connections`.
 
 ### SDK for paying apps (`@railkit/save`)
 
-`payer.pay({ code, luna, payoutId })` looks up the split and sends up to three transactions:
+`payer.pay({ code, luna, payoutId })` looks up the split and sends up to two transactions:
 - a basic payment to the wallet;
-- an add-stake for Grow;
-- a payment to the pool address, with a memo, for Steady.
+- an add-stake for Grow.
 
 It then reports the receipts. Retrying with the same `payoutId` reuses the transactions already sent. The app's key never leaves its server.
 
 ### Keys
 
-- **Pool wallet.** Keep most funds in a cold address and only the next day's expected withdrawals in the hot address. Withdrawals are batched at settlement, so the hot balance can stay small.
 - **Swap account.** It only receives NIM from swaps and forwards it within seconds. Alert if its balance doesn't return to near zero.
 
 ## Screens in Errand
 
 - **Savings home:**
-  - Grow balance in NIM, and Steady balance in dollars and naira;
+  - Grow balance in NIM;
   - money in, by source (apps, Lightning, direct);
   - the code and Lightning address card;
   - "Change rule".
 - **Set up:**
   1. Open Grow with at least 100 NIM, unless the user already stakes. No code is given out before Grow is open.
-  2. Choose how much to save and where (Grow, Steady or a mix), with an example.
+  2. Choose how much to save, with an example.
   3. Sign.
   4. Get the code and Lightning address.
 - **Share:** the code, the Lightning address, a QR code for each, and copy and share buttons.
 - **Weekly auto-save:** connect a wallet (Alby Hub), pick an amount, and see the connection's status.
-- **Steady:** the balance, how protection works, the cover level today, the next settlement time, and deposit and withdraw.
-- **Boost:** for NIM holders. Shows the balance, the current leverage, the risks in plain words, and deposit and withdraw.
-- **Withdraw:** one flow per destination, with the timing shown.
-- **Reserves:** the public proof-of-reserves page.
+- **Withdraw:** the Grow steps, with the timing shown.
 
 ## Rollout
 
 | Phase | Depends on | What ships |
 |---|---|---|
-| 1. Save codes + Grow | Nothing external | Codes, rules, routing, receipts, the SDK and screens; testnet first, then a mainnet pilot with three apps that already pay NIM. Competition entries are open source, so we can open the integration pull requests ourselves. |
-| 2. Steady and Boost pilot (built for testnet; off by default) | Legal review before mainnet | The pool with deposit caps, the price feed, daily settlement and the reserves page; Steady added as a code destination. Our team seeds Boost so Steady has cover from day one. |
-| 3. Lightning | Fastspot's answer | Lightning addresses for one-off sends, then weekly auto-save through NWC. This phase moves earlier if Fastspot agrees quickly. |
+| 1. Save codes + Grow + the weekly draw | Nothing external | Codes, rules, routing, receipts, the SDK, the draw and screens; testnet first, then a mainnet pilot with three apps that already pay NIM. Competition entries are open source, so we can open the integration pull requests ourselves. |
+| 2. Lightning | Fastspot's answer | Lightning addresses for one-off sends, then weekly auto-save through NWC. This phase moves earlier if Fastspot agrees quickly. |
 
 Ask Fastspot now, in parallel with Phase 1.
 
 ## What the team earns
 
-- **Pool fee:** for example 1% a year on Steady and Boost balances.
 - **Lightning swap fee:** for example 1% on top of Fastspot's fee.
 - **Later:** a fee from our own staking pool as the default Grow validator, and Community Council funding.
 
 ## Risks and open questions
 
-- **Fastspot (blocks Phase 3):**
+- **Fastspot (blocks Phase 2):**
   - Do they offer Lightning to NIM swaps through the API?
   - Can a third-party service get a partner key and swap on behalf of its users?
   - Can the NIM be released straight to the end user, or must it come to us first?
-- **Legal (blocks mainnet for Phases 2 and 3):**
-  - Steady and Boost are likely to be seen as a derivative, and we hold the pool.
+- **Legal (blocks mainnet for Phase 2, and real prizes in the draw):**
+  - The weekly draw is a prize promotion, and prize draws are regulated in most countries.
   - The Lightning swap service may count as an exchange service.
   - Get advice for Nigeria (SEC), Kenya (CMA) and the EU (MiCA) before real money.
-- **Pool:**
-  - **Price feed:** NIM trades thinly; use the median of several sources and the pause rule.
-  - **Not enough Boost:** if Boost demand is low, Steady fills up, and the routing falls back to Grow.
-  - **Our own Boost:** if our team seeds Boost, we carry 2x NIM price risk.
 - **Adoption:** save codes only work if paying apps integrate. Do the first integrations ourselves.
-- **Access:** Grow takes 12 to 24 hours to withdraw, and up to 4 days if the validator is jailed. Steady and Boost take up to a day. Show this before anyone deposits.
+- **Access:** Grow takes 12 to 24 hours to withdraw, and up to 4 days if the validator is jailed. Show this before anyone deposits.
 - **Auto-save reach:** confirmed only for Alby Hub. No African Lightning wallet supports NWC yet, so auto-save mainly reaches Bitcoin users outside Africa; Africans can still make one-off sends.
 - **To test on testnet:**
   - an add-stake from an outside account into a real Nimiq Pay user's stake;
   - whether Nimiq Pay's history shows those payments;
-  - the deep-link format for opening Errand from a shared code;
-  - a full settlement cycle with deposits and withdrawals.
+  - the deep-link format for opening Errand from a shared code.
 
 ## Facts checked (4 November 2026)
 
@@ -247,4 +183,3 @@ Ask Fastspot now, in parallel with Phase 1.
 | The public node's `sendRawTransaction` answers with the transaction's hash for anything it can parse: a payment from an empty wallet, a duplicate, one signed for mainnet, and one long expired. None of them land, so only `getTransactionByHash` proves a payment went through. The latest block's `network` field names the chain (`MainAlbatross`, `TestAlbatross`). | Testnet check with empty throwaway wallets; `getLatestBlock` on both networks |
 | Fastspot is run by Inuit International Operations Ltd (UK). It uses non-custodial atomic swaps and requires a partner API key. Its terms allow trading only assets "that belong to you". Lightning (`BTC_LN`) is modelled on both sides of a swap in its client library; whether Lightning to NIM is live for outside services is unconfirmed. | fastspot.io/terms; `@nimiq/fastspot-api` 1.10.3 and 2.0.0-beta.2; public `/assets` |
 | Alby Hub's `/apps/new` link supports `max_amount` (millisats per period), `budget_renewal` (`daily`, `weekly`, `monthly`, `yearly`), `expires_at` and `request_methods`. 20 wallets support NWC; budget support elsewhere is unconfirmed. | Alby Hub README; awesome-nwc list |
-| NIM price $0.000278 on 3 November 2026. | CoinGecko |

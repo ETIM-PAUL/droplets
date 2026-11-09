@@ -74,8 +74,6 @@ export interface NimiqSaverProvider extends Pick<NimiqProviderLike, "isConsensus
   sendSetActiveStakeTransaction(tx: { newActiveBalance: number }): Promise<string>;
   sendRetireStakeTransaction(tx: { retireStake: number }): Promise<string>;
   sendRemoveStakeTransaction(tx: { value: number }): Promise<string>;
-  /** A payment with a short text memo (up to 64 bytes), shown in Nimiq Pay's dialog. */
-  sendBasicTransactionWithData(tx: { recipient: string; value: number; data: string }): Promise<string>;
 }
 
 function toLuna(amount: bigint, allowZero = false): number {
@@ -97,7 +95,7 @@ export function createNimiqSaver(provider: NimiqSaverProvider, options: NimiqExe
     }
   };
   return {
-    /** Signs an Errand request (the save rule, or a pool withdrawal). Returns the key Nimiq Pay signed with, so the server can check it's this address. */
+    /** Signs an Errand request: setting or revoking the save rule, or joining or leaving the weekly draw. Returns the key Nimiq Pay signed with, so the server can check it's this address. */
     signRule: (message: string) => run(() => provider.sign(message), false),
     /** Opens Grow: stakes at least 100 NIM with the chosen validator. */
     openGrow: (validator: string, luna: bigint) => run(() => provider.sendNewStakerTransaction({ delegation: validator, value: toLuna(luna) })),
@@ -108,11 +106,6 @@ export function createNimiqSaver(provider: NimiqSaverProvider, options: NimiqExe
     retire: (luna: bigint) => run(() => provider.sendRetireStakeTransaction({ retireStake: toLuna(luna) })),
     /** Step 3: the retired stake goes back to the wallet. Must be the whole retired amount. */
     remove: (luna: bigint) => run(() => provider.sendRemoveStakeTransaction({ value: toLuna(luna) })),
-    /** A payment with a memo, for Steady and Boost deposits: the memo tells the pool which order it pays. */
-    payWithMemo: (recipient: string, luna: bigint, memo: string) => {
-      if (new TextEncoder().encode(memo).length > 64) throw new WalletError("failed", "That memo is too long for a Nimiq payment.");
-      return run(() => provider.sendBasicTransactionWithData({ recipient, value: toLuna(luna), data: memo }));
-    },
   };
 }
 

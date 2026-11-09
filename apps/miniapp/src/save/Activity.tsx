@@ -1,10 +1,9 @@
-import type { PoolMe, SaveActivity } from "@railkit/client";
+import type { PrizeMe, SaveActivity } from "@railkit/client";
 import { lunaToNimString, parseNimiqAddress } from "@railkit/core";
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { formatMoney } from "../format";
 import { Icon, type IconName } from "../ui";
-import { ORDER_STATUS, PAYOUT_STATUS, SIDE_NAME } from "./PoolHome";
 
 const nim = (luna: string | bigint) => formatMoney(lunaToNimString(BigInt(luna)), "NIM");
 const day = (ms: number) => new Date(ms).toLocaleDateString(undefined, { day: "numeric", month: "short" });
@@ -34,10 +33,10 @@ interface Row {
   status?: [string, "ok" | "bad" | ""];
 }
 
-/** The savings history, newest first: payments in with the save code, Grow, and Steady and Boost orders. */
-export function ActivityTab({ address, pool }: { address: string | null; pool: boolean }) {
+/** The savings history, newest first: payments in with the save code, Grow, and weekly draw wins. */
+export function ActivityTab({ address }: { address: string | null }) {
   const [save, setSave] = useState<SaveActivity | null>(null);
-  const [poolMe, setPoolMe] = useState<PoolMe | null>(null);
+  const [wins, setWins] = useState<PrizeMe["wins"]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const self = address ? parseNimiqAddress(address) : null;
@@ -45,10 +44,10 @@ export function ActivityTab({ address, pool }: { address: string | null; pool: b
     if (!self?.ok) return;
     setError(null);
     try {
-      // The pool's part is a bonus: if it can't load, the rest still shows.
-      const [s, p] = await Promise.all([api.saveActivity(self.value), pool ? api.poolMe(self.value).catch(() => null) : null]);
+      // Draw wins are a bonus: if they can't load (or the draw is off), the rest still shows.
+      const [s, p] = await Promise.all([api.saveActivity(self.value), api.prizeMe(self.value).catch(() => null)]);
       setSave(s);
-      setPoolMe(p);
+      setWins(p?.wins ?? []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong. Try again.");
     }
@@ -76,14 +75,10 @@ export function ActivityTab({ address, pool }: { address: string | null; pool: b
       status: g.ok ? undefined : ["Didn't go through", "bad"],
     });
   }
-  for (const o of poolMe?.orders ?? []) {
-    const payout = poolMe!.payouts.find((p) => p.orderId === o.id);
-    const deposit = o.kind === "deposit";
+  for (const w of wins) {
     rows.push({
-      key: `pool:${o.id}`, at: o.createdAt, icon: deposit ? "plus" : "send",
-      title: deposit ? `Added to ${SIDE_NAME[o.side]}` : `Withdrawal from ${SIDE_NAME[o.side]}`,
-      amount: deposit ? (o.nim ? `+${formatMoney(o.nim, "NIM")}` : undefined) : o.all ? "All" : o.usd ? `−$${o.usd}` : o.nim ? `−${formatMoney(o.nim, "NIM")}` : undefined,
-      detail: payout ? `${PAYOUT_STATUS[payout.status]}, ${formatMoney(payout.nim, "NIM")}` : ORDER_STATUS[o.status],
+      key: `prize:${w.week}`, at: w.drawAt, icon: "spark", incoming: true, title: "Won the weekly draw", amount: `+${nim(w.prizeLuna)}`,
+      detail: w.paid ? "Paid to you" : "Paying out soon",
     });
   }
   rows.sort((a, b) => b.at - a.at);

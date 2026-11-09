@@ -49,22 +49,45 @@ export interface SaveValidator {
   numStakers: number;
 }
 
-/** Steady and Boost: the pool's latest settlement and settings. */
-export interface PoolStateView {
-  network: "mainnet" | "testnet";
-  poolAddress: string;
-  paused: boolean;
-  settlement: { seq: number; at: number; priceUsd: string; coverBps: number | null; steadyUsd: string; boostNim: string; boostLeveragePct: number | null } | null;
-  nextSettlementAt: number;
-  feeBpsPerYear: number;
-  caps: { steadyUsdPerAddress: string | null; steadyUsdTotal: string | null; boostNimPerAddress: string | null };
+/** One week's draw. Luna amounts are decimal strings; times are ms since 1970. */
+export interface PrizeDraw {
+  /** The week's Monday, e.g. "2026-11-09". */
+  week: string;
+  drawAt: number;
+  /** The first block made after the draw time: its hash picked the winning ticket. */
+  blockNumber: number;
+  blockHash: string;
+  /** People who qualified. */
+  entries: number;
+  totalTickets: number;
+  winningTicket: number | null;
+  /** Shortened, e.g. "NQ12 … AB34"; null when nobody qualified. */
+  winner: string | null;
+  youWon: boolean;
+  prizeLuna: string;
+  paid: boolean;
+  payoutTx: string | null;
 }
 
-export interface PoolMe {
-  steady: { usd: string; nimAtLastPrice: string };
-  boost: { nim: string; leveragePct: number | null };
-  orders: { id: string; side: "steady" | "boost"; kind: "deposit" | "withdraw"; status: "awaiting_payment" | "queued" | "filled" | "refunded" | "rejected" | "expired"; note: string | null; createdAt: number; txHash: string | null; nim: string | null; usd: string | null; all: boolean }[];
-  payouts: { id: string; orderId: string; nim: string; reason: "withdrawal" | "refund"; status: "pending" | "sent" | "confirmed" | "failed"; txHash: string | null }[];
+/** The weekly draw, for one person. */
+export interface PrizeMe {
+  rules: { minLuna: string; daysNeeded: number; prizeLuna: string; maxTickets: number; utcOffsetMinutes: number; prizeAddress: string | null };
+  joined: boolean;
+  /** This week so far; null until the person joins. */
+  week: {
+    week: string;
+    drawAt: number;
+    /** Days kept so far, today included while it's still on track. */
+    daysKept: number;
+    keptLuna: string;
+    /** Tickets if the week ended now: 0 until enough days are kept. */
+    tickets: number;
+    days: { day: string; status: "kept" | "missed" | "today" | "ahead"; lowLuna: string | null }[];
+    /** The account has too many transactions this week for its history to be read back. */
+    tooManyTransactions: boolean;
+  } | null;
+  lastDraw: PrizeDraw | null;
+  wins: { week: string; drawAt: number; prizeLuna: string; paid: boolean; payoutTx: string | null }[];
 }
 
 export interface RailkitClientOptions {
@@ -141,17 +164,13 @@ export function createRailkitClient(o: RailkitClientOptions) {
     saveRule: (signed: { message: string; publicKey: string; signature: string }) =>
       call<{ code: string; address: string; savePercent: number } | { revoked: true }>("/v1/save/rule", json(signed)),
     saveValidators: async () => (await call<{ validators: SaveValidator[] }>("/v1/save/validators")).validators,
-    /** Steady and Boost. */
-    poolState: () => call<PoolStateView>("/v1/pool/state"),
-    poolMe: (address: string) => call<PoolMe>(`/v1/pool/me?address=${encodeURIComponent(address)}`),
-    /** A deposit order: the user then pays `nim` to `poolAddress` with `memo` in Nimiq Pay. */
-    poolDeposit: (req: { address: string; side: "steady" | "boost"; nim: string }) =>
-      call<{ orderId: string; poolAddress: string; memo: string; nim: string; luna: string; settlesAt: number }>("/v1/pool/deposits", json(req)),
-    poolWithdraw: (signed: { message: string; publicKey: string; signature: string }) => call<{ orderId: string; settlesAt: number }>("/v1/pool/withdrawals", json(signed)),
-    poolReserves: () => call<{ poolAddress: string; onChainNim: string; owedNim: string; covered: boolean; surplusNim: string; lastSettlement: { seq: number; at: number } }>("/v1/pool/reserves"),
     /** A question about the user's own savings, answered from their data. `kind` is what the chat already worked out. */
     saveAsk: (req: { address: string; question: string; kind?: SaveQuestion; period?: SavePeriod; tzOffsetMinutes: number }) =>
       call<{ answer: string; question: SaveQuestion; source: "rules" | "model" }>("/v1/save/ask", json(req)),
+    /** The weekly draw: this week for one person, the latest draw and their wins. */
+    prizeMe: (address: string) => call<PrizeMe>(`/v1/prize/me?address=${encodeURIComponent(address)}`),
+    /** Joins or leaves the draw with the message signed in Nimiq Pay. Joining also sends Nimiq Pay's identifier for the phone. */
+    prizeJoin: (signed: { message: string; publicKey: string; signature: string; device?: string }) => call<{ joined: boolean }>("/v1/prize/join", json(signed)),
     banks: async () => (await call<{ banks: { name: string; code: string }[] }>("/v1/payouts/banks?country=NG")).banks,
     nameEnquiry: (accountNumber: string, bankCode: string) =>
       call<{ accountName: string }>(`/v1/payouts/name-enquiry?accountNumber=${encodeURIComponent(accountNumber)}&bankCode=${encodeURIComponent(bankCode)}`),

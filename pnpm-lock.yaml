@@ -190,9 +190,6 @@ importers:
       '@railkit/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@railkit/pool':
-        specifier: workspace:*
-        version: link:../../packages/pool
       hono:
         specifier: 4.13.14
         version: 4.13.14
@@ -220,8 +217,8 @@ importers:
         specifier: 5.3.0
         version: 5.3.0
       '@nimiq/mini-app-sdk':
-        specifier: ^0.2.4
-        version: 0.2.4
+        specifier: ^0.2.5
+        version: 0.2.5
       '@railkit/adapters':
         specifier: workspace:*
         version: link:../../packages/adapters
@@ -239,7 +236,7 @@ importers:
         version: link:../../packages/wallet-nimiq
       '@satora/swap':
         specifier: ^1.7.1
-        version: 1.7.1(typescript@5.9.3)
+        version: 1.7.1(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)
       qr-scanner:
         specifier: 1.4.2
         version: 1.4.2
@@ -268,34 +265,6 @@ importers:
       vite:
         specifier: ^7.0.0
         version: 7.3.7(@types/node@22.20.5)(tsx@4.23.15)
-
-  apps/pool-worker:
-    dependencies:
-      '@nimiq/core':
-        specifier: 2.23.0
-        version: 2.23.0(vite@7.3.7(@types/node@22.20.5)(tsx@4.23.15))
-      '@railkit/adapters':
-        specifier: workspace:*
-        version: link:../../packages/adapters
-      '@railkit/core':
-        specifier: workspace:*
-        version: link:../../packages/core
-      '@railkit/pool':
-        specifier: workspace:*
-        version: link:../../packages/pool
-      '@railkit/save':
-        specifier: workspace:*
-        version: link:../../packages/save
-      pg:
-        specifier: 8.23.1
-        version: 8.23.1
-    devDependencies:
-      '@types/pg':
-        specifier: 8.23.1
-        version: 8.23.1
-      tsx:
-        specifier: 4.23.15
-        version: 4.23.15
 
   packages/adapters:
     dependencies:
@@ -333,24 +302,18 @@ importers:
         specifier: ^2.4.0
         version: 2.4.0
 
-  packages/pool:
-    dependencies:
-      '@railkit/core':
-        specifier: workspace:*
-        version: link:../core
-    devDependencies:
-      '@types/pg':
-        specifier: 8.23.1
-        version: 8.23.1
-      pg-mem:
-        specifier: 3.0.14
-        version: 3.0.14
-
   packages/save:
     dependencies:
       '@railkit/core':
         specifier: workspace:*
         version: link:../core
+    devDependencies:
+      '@nimiq/core':
+        specifier: 2.23.0
+        version: 2.23.0(vite@7.3.7(@types/node@22.20.5)(tsx@4.23.15))
+      tsx:
+        specifier: 4.23.15
+        version: 4.23.15
 
   packages/wallet-evm:
     dependencies:
@@ -734,8 +697,8 @@ packages:
       vite:
         optional: true
 
-  '@nimiq/mini-app-sdk@0.2.4':
-    resolution: {integrity: sha512-gDumiC+5OiN5rIaWXS2moNmDKTav8evrAvs2qLMfcSyTVgIKtX7Prmcgj7k9PXrMyGk0JMmIKaG1lbPkSg8/Ew==}
+  '@nimiq/mini-app-sdk@0.2.5':
+    resolution: {integrity: sha512-C5ckwhUrOJkdGb97lStd93Mxt+6FyC0YjXUK9/7MlZFJEuiqquccp1r3wMKzg8YlF1DIMHRszhJOPDhFLc/gRw==}
 
   '@noble/ciphers@1.3.0':
     resolution: {integrity: sha512-2I0gnIVPtfnMw9ee9h1dJG7tp81+8Ob3OJb3Mv37rx5L40/b0i7djjCVvGOVqc9AEIQyvyu1i6ypKdFw8R8gQw==}
@@ -1853,7 +1816,7 @@ snapshots:
 
   '@adraffy/ens-normalize@1.11.1': {}
 
-  '@arkade-os/sdk@0.4.79':
+  '@arkade-os/sdk@0.4.79(bufferutil@4.1.0)(utf-8-validate@5.0.10)':
     dependencies:
       '@bitcoinerlab/descriptors-scure': 3.1.7
       '@marcbachmann/cel-js': 8.0.0
@@ -1864,7 +1827,7 @@ snapshots:
       '@scure/btc-signer': 2.4.1
       bip68: 1.0.4
       micro-packed: 0.11.1
-      ws-electrumx-client: 1.0.5
+      ws-electrumx-client: 1.0.5(bufferutil@4.1.0)(utf-8-validate@5.0.10)
     transitivePeerDependencies:
       - '@ledgerhq/ledger-bitcoin'
       - bip32
@@ -2118,19 +2081,19 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
 
-  '@lendasat/lendaswap-sdk-pure@2.6.1(typescript@5.9.3)':
+  '@lendasat/lendaswap-sdk-pure@2.6.1(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)':
     dependencies:
-      '@arkade-os/sdk': 0.4.79
+      '@arkade-os/sdk': 0.4.79(bufferutil@4.1.0)(utf-8-validate@5.0.10)
       '@noble/curves': 2.4.0
       '@noble/hashes': 2.4.0
       '@scure/base': 2.4.0
       '@scure/bip32': 2.4.0
       '@scure/bip39': 2.4.0
       '@scure/btc-signer': 2.4.1
-      '@zerodev/sdk': 5.5.11(viem@2.52.2(typescript@5.9.3))
+      '@zerodev/sdk': 5.5.11(viem@2.52.2(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10))
       dexie: 4.4.4
       openapi-fetch: 0.17.0
-      viem: 2.52.2(typescript@5.9.3)
+      viem: 2.52.2(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)
     optionalDependencies:
       better-sqlite3: 12.11.1
     transitivePeerDependencies:
@@ -2163,7 +2126,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@nimiq/mini-app-sdk@0.2.4': {}
+  '@nimiq/mini-app-sdk@0.2.5': {}
 
   '@noble/ciphers@1.3.0': {}
 
@@ -2258,14 +2221,14 @@ snapshots:
   '@rollup/rollup-win32-x64-msvc@4.65.0':
     optional: true
 
-  '@satora/swap@1.7.1(typescript@5.9.3)':
+  '@satora/swap@1.7.1(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)':
     dependencies:
-      '@arkade-os/sdk': 0.4.79
-      '@lendasat/lendaswap-sdk-pure': 2.6.1(typescript@5.9.3)
+      '@arkade-os/sdk': 0.4.79(bufferutil@4.1.0)(utf-8-validate@5.0.10)
+      '@lendasat/lendaswap-sdk-pure': 2.6.1(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)
       '@noble/hashes': 2.4.0
       '@scure/base': 2.4.0
       '@scure/btc-signer': 2.4.1
-      viem: 2.52.2(typescript@5.9.3)
+      viem: 2.52.2(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)
     transitivePeerDependencies:
       - '@circle-fin/adapter-viem-v2'
       - '@circle-fin/bridge-kit'
@@ -2419,10 +2382,10 @@ snapshots:
       loupe: 3.2.1
       tinyrainbow: 2.0.0
 
-  '@zerodev/sdk@5.5.11(viem@2.52.2(typescript@5.9.3))':
+  '@zerodev/sdk@5.5.11(viem@2.52.2(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10))':
     dependencies:
       semver: 7.8.5
-      viem: 2.52.2(typescript@5.9.3)
+      viem: 2.52.2(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)
 
   abitype@1.2.3(typescript@5.9.3):
     optionalDependencies:
@@ -2720,13 +2683,13 @@ snapshots:
 
   isarray@2.0.5: {}
 
-  isomorphic-ws@5.0.0(ws@8.22.0):
+  isomorphic-ws@5.0.0(ws@8.22.0(bufferutil@4.1.0)(utf-8-validate@5.0.10)):
     dependencies:
-      ws: 8.22.0
+      ws: 8.22.0(bufferutil@4.1.0)(utf-8-validate@5.0.10)
 
-  isows@1.0.7(ws@8.20.1):
+  isows@1.0.7(ws@8.20.1(bufferutil@4.1.0)(utf-8-validate@5.0.10)):
     dependencies:
-      ws: 8.20.1
+      ws: 8.20.1(bufferutil@4.1.0)(utf-8-validate@5.0.10)
 
   js-tokens@4.0.0: {}
 
@@ -3131,16 +3094,16 @@ snapshots:
     dependencies:
       uint8array-tools: 0.0.10
 
-  viem@2.52.2(typescript@5.9.3):
+  viem@2.52.2(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10):
     dependencies:
       '@noble/curves': 1.9.1
       '@noble/hashes': 1.8.0
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0
       abitype: 1.2.3(typescript@5.9.3)
-      isows: 1.0.7(ws@8.20.1)
+      isows: 1.0.7(ws@8.20.1(bufferutil@4.1.0)(utf-8-validate@5.0.10))
       ox: 0.14.29(typescript@5.9.3)
-      ws: 8.20.1
+      ws: 8.20.1(bufferutil@4.1.0)(utf-8-validate@5.0.10)
     optionalDependencies:
       typescript: 5.9.3
     transitivePeerDependencies:
@@ -3246,17 +3209,23 @@ snapshots:
   wrappy@1.0.2:
     optional: true
 
-  ws-electrumx-client@1.0.5:
+  ws-electrumx-client@1.0.5(bufferutil@4.1.0)(utf-8-validate@5.0.10):
     dependencies:
-      isomorphic-ws: 5.0.0(ws@8.22.0)
-      ws: 8.22.0
+      isomorphic-ws: 5.0.0(ws@8.22.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))
+      ws: 8.22.0(bufferutil@4.1.0)(utf-8-validate@5.0.10)
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
 
-  ws@8.20.1: {}
+  ws@8.20.1(bufferutil@4.1.0)(utf-8-validate@5.0.10):
+    optionalDependencies:
+      bufferutil: 4.1.0
+      utf-8-validate: 5.0.10
 
-  ws@8.22.0: {}
+  ws@8.22.0(bufferutil@4.1.0)(utf-8-validate@5.0.10):
+    optionalDependencies:
+      bufferutil: 4.1.0
+      utf-8-validate: 5.0.10
 
   xtend@4.0.2: {}
 

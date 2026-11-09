@@ -15,7 +15,9 @@
     "test:contract": "MAVAPAY_CONTRACT=1 node --env-file=.env node_modules/vitest/vitest.mjs run packages/adapters/src/mavapay/contract.test.ts packages/adapters/src/bitrefill/contract.test.ts packages/adapters/src/changelly/contract.test.ts",
     "check:signing": "node scripts/check-signing.mjs",
     "eval:model": "cd apps/api && pnpm exec tsx --env-file=../../.env ../../packages/agent/src/evals/model-eval.ts",
-    "test:changelly": "CHANGELLY_CONTRACT=1 node --env-file=.env node_modules/vitest/vitest.mjs run packages/adapters/src/changelly/contract.test.ts"
+    "test:changelly": "CHANGELLY_CONTRACT=1 node --env-file=.env node_modules/vitest/vitest.mjs run packages/adapters/src/changelly/contract.test.ts",
+    "pay-save-code": "cd packages/save && pnpm exec tsx --env-file=../../.env tools/pay-save-code.mts",
+    "pay-prizes": "cd packages/save && pnpm exec tsx --env-file=../../.env tools/pay-prizes.mts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

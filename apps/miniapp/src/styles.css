@@ -55,7 +55,7 @@ body {
 button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
 :focus-visible { outline: 3px solid var(--slot); outline-offset: 2px; }
-.num, .ledger dd, .amount-input, .balance-amount, .row-amount { font-variant-numeric: tabular-nums; }
+.num, .amount-input, .balance-amount, .row-amount { font-variant-numeric: tabular-nums; }
 
 /* Page frame */
 .screen {
@@ -199,12 +199,6 @@ button { cursor: pointer; }
 /* Panels */
 .card { background: var(--surface); border-radius: var(--radius); padding: 16px; display: flex; flex-direction: column; gap: 6px; }
 
-/* Review ledger: plain rows, numbers aligned right */
-.ledger { margin: 0; display: grid; grid-template-columns: 1fr auto; row-gap: 12px; column-gap: 16px; background: var(--surface); border-radius: var(--radius); padding: 16px; }
-.ledger dt { color: var(--ink-soft); font-size: 15px; }
-.ledger dd { margin: 0; text-align: right; font-size: 15px; }
-.ledger .total { font-weight: 700; color: var(--ink); font-size: 17px; }
-
 /* Tracking is a real sequence, so it is drawn as one */
 .timeline { list-style: none; margin: 0; padding: 16px 16px 0; display: flex; flex-direction: column; background: var(--surface); border-radius: var(--radius); }
 .timeline li { position: relative; padding: 0 0 20px 30px; color: var(--ink-soft); font-size: 15px; }
@@ -312,7 +306,18 @@ button { cursor: pointer; }
 .qr-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 8px 0 4px; text-align: center; }
 .qr { display: block; max-width: 100%; height: auto; border-radius: var(--radius-sm); }
 .code-card .text-button { align-self: flex-start; padding-left: 0; }
-.segments { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; background: var(--surface); border-radius: var(--radius); padding: 4px; margin-top: 8px; }
-.segments button { background: none; border: 0; border-radius: var(--radius-sm); padding: 10px 0; font-weight: 600; font-size: 15px; color: var(--ink-soft); }
-.segments button[aria-selected="true"] { background: var(--slot); color: var(--slot-ink); }
-.pool-side .pool-amount { margin: 0; font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* The weekly draw: a week of days, each kept or missed */
+.draw-title { display: flex; align-items: center; gap: 8px; }
+.draw-title strong { font-size: 17px; }
+.draw-badge { display: inline-grid; place-items: center; width: 30px; height: 30px; flex: none; border-radius: 50%; background: var(--slot-wash); color: var(--slot); }
+.week-strip { list-style: none; margin: 6px 0 2px; padding: 0; display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.week-strip .day {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 44px;
+  border: 1px solid var(--line); border-radius: var(--radius-sm); color: var(--ink-soft); font-size: 13px; font-weight: 600;
+}
+.week-strip .day.kept { background: var(--slot); border-color: var(--slot); color: var(--slot-ink); }
+.week-strip .day.missed { border-color: var(--error); color: var(--error); }
+.week-strip .day.today { border: 2px solid var(--slot); color: var(--ink); }
+.week-strip .day.ahead { border-style: dashed; }
+.draw-status { margin: 0; font-size: 15px; font-weight: 600; }

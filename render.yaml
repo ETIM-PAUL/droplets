@@ -85,12 +85,19 @@ services:
         sync: false
       - key: SAVE_VALIDATORS
         sync: false
-      # Errand Save, feature 2: Steady and Boost. The API only takes orders; errand-pool-worker settles and pays.
-      - key: POOL_ENABLED
-        value: "false"
-      - key: POOL_NETWORK
-        value: testnet
-      - key: POOL_ADDRESS
+      # The weekly draw. PRIZE_ADDRESS is the prize wallet: its key stays with `pnpm pay-prizes`, never here.
+      # Sleeping on the free plan is fine: each draw is decided by a block, and kept days are read from the chain.
+      - key: PRIZE_ENABLED
+        value: "true"
+      - key: PRIZE_NIM
+        value: "1000"
+      - key: PRIZE_MIN_NIM
+        value: "1000"
+      - key: PRIZE_DAYS
+        value: "5"
+      - key: PRIZE_UTC_OFFSET_MINUTES
+        value: "60"
+      - key: PRIZE_ADDRESS
         sync: false
 
   - type: web
@@ -105,43 +112,10 @@ services:
       # The API's public address (set after the first deploy), e.g. https://errand-api.onrender.com
       - key: VITE_RAILKIT_API_URL
         sync: false
-      # Shows Steady and Boost inside Savings. Turn on together with POOL_ENABLED on the API and the worker.
-      - key: VITE_POOL_ENABLED
-        value: "false"
     headers:
       - path: /*
         name: X-Content-Type-Options
         value: nosniff
-
-  # Steady and Boost's worker: settles once a day and pays out. The only service with the pool's key;
-  # a background worker has no public URL. Needs the same POOL_* settings as errand-api.
-  - type: worker
-    name: errand-pool-worker
-    runtime: node
-    plan: starter
-    buildCommand: corepack enable && pnpm install --frozen-lockfile
-    startCommand: pnpm --filter @railkit/pool-worker start
-    autoDeploy: true
-    envVars:
-      - key: NODE_VERSION
-        value: "22"
-      - key: POOL_ENABLED
-        value: "false"
-      - key: POOL_NETWORK
-        value: testnet
-      - key: POOL_ADDRESS
-        sync: false
-      # The pool wallet's 32-byte key, as hex. Only this service ever has it.
-      - key: POOL_KEY
-        sync: false
-      - key: NIMIQ_RPC_URL
-        sync: false
-      - key: ALERT_WEBHOOK_URL
-        sync: false
-      - key: DATABASE_URL
-        fromDatabase:
-          name: errand-db
-          property: connectionString
 
 databases:
   - name: errand-db

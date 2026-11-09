@@ -139,10 +139,11 @@ export function createSavePayer(o: SavePayerOptions) {
     /** Throws unless the node follows the network this payer signs for. pay() checks this too; call it at startup to fail early. */
     checkNetwork,
     /**
-     * Pays `luna` to a save code (split by the user's rule) or to a plain Nimiq address.
+     * Pays `luna` to a save code (split by the user's rule) or to a plain Nimiq address. For an address,
+     * `into: "grow"` sends it all as an add-stake into that address's own stake instead of to its wallet.
      * Safe to retry with the same payoutId: the same signed transactions are resent, never new ones.
      */
-    async pay(p: { to: string; luna: bigint; payoutId: string; memo?: string }): Promise<PayResult> {
+    async pay(p: { to: string; luna: bigint; payoutId: string; memo?: string; into?: "wallet" | "grow" }): Promise<PayResult> {
       if (!PAYOUT_ID.test(p.payoutId)) throw new RangeError("payoutId: 1 to 100 letters, digits or _ : . -");
       if (p.luna <= 0n) throw new RangeError("luna must be above 0.");
       const memo = p.memo === undefined ? undefined : new TextEncoder().encode(p.memo);
@@ -187,6 +188,11 @@ export function createSavePayer(o: SavePayerOptions) {
         const a = parseNimiqAddress(p.to);
         if (!a.ok) throw new RangeError("`to` must be a save code (SAVE-…) or a Nimiq address.");
         address = a.value;
+        if (p.into === "grow") {
+          // An add-stake carries no memo, and fails on-chain unless the address already has a stake: callers check that.
+          if (memo) throw new RangeError("A payment into Grow can't carry a memo.");
+          [walletLuna, growLuna, staker] = [0n, p.luna, address];
+        }
       }
 
       const height = await o.rpc.blockNumber();

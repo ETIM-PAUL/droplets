@@ -1,7 +1,6 @@
 import { serve } from "@hono/node-server";
 import { createBitrefillApi, createMavapayApi, ProviderError } from "@railkit/adapters";
-import { createNimiqRpc, parseNimiqAddress } from "@railkit/core";
-import { MemoryPoolStore, PgPoolStore, poolConfigFromEnv, type PoolStore } from "@railkit/pool";
+import { createNimiqRpc, nimStringToLuna, parseNimiqAddress } from "@railkit/core";
 import { createChangellyFiatApi } from "@railkit/adapters/server";
 import pg from "pg";
 import { openAiExtractor, openAiQrExtractor, openAiSavingsClassifier, openAiSavingsPhraser } from "@railkit/agent";
@@ -9,7 +8,8 @@ import { createApp } from "./app";
 import { parseInvites, type BetaConfig } from "./ops/beta";
 import { airtimeToOps, payoutToOps, rampToOps } from "./ops/map";
 import { MemoryOpsStore, PgOpsStore, type OpsStore } from "./ops/store";
-import type { PoolDeps } from "./pool/routes";
+import { checkStakes, runDraw, type PrizeDeps } from "./prize/routes";
+import { MemoryPrizeStore, PgPrizeStore, type PrizeStore } from "./prize/store";
 import type { SaveDeps } from "./save/routes";
 import { MemorySaveStore, PgSaveStore, type SaveStore } from "./save/store";
 import { watchOnce, webhookAlerter } from "./ops/watcher";
@@ -77,29 +77,49 @@ async function saveDeps(): Promise<SaveDeps | undefined> {
     const a = parseNimiqAddress(address);
     return a.ok && name ? [{ address: a.value, name }] : [];
   });
-  const url = process.env.NIMIQ_RPC_URL || (network === "testnet" ? "https://rpc.testnet.nimiqwatch.com" : "https://rpc.nimiqwatch.com");
-  return { store, chain: createNimiqRpc({ url }), network, recommended };
+  return { store, chain: createNimiqRpc({ url: rpcUrl(network) }), network, recommended };
 }
+const rpcUrl = (network: "mainnet" | "testnet") =>
+  process.env.NIMIQ_RPC_URL || (network === "testnet" ? "https://rpc.testnet.nimiqwatch.com" : "https://rpc.nimiqwatch.com");
 const save = await saveDeps();
 
-// Errand Save, feature 2: Steady and Boost. Off unless POOL_ENABLED=true. The worker (apps/pool-worker) settles and pays out.
-async function poolDeps(): Promise<PoolDeps | undefined> {
-  const cfg = poolConfigFromEnv(process.env);
-  if (!cfg) return undefined;
-  let store: PoolStore;
+// The weekly draw for people who keep savings in Grow. Off unless PRIZE_ENABLED=true; needs savings on.
+async function prizeDeps(): Promise<PrizeDeps | undefined> {
+  if (process.env.PRIZE_ENABLED !== "true" || !save) return undefined;
+  const nim = (name: string, fallback: string) => {
+    const v = nimStringToLuna(process.env[name] || fallback);
+    if (!v.ok) throw new Error(`${name}: ${v.error.message}`);
+    return v.value;
+  };
+  const whole = (name: string, fallback: number, ok: (n: number) => boolean) => {
+    const n = Number(process.env[name] || fallback);
+    if (!Number.isInteger(n) || !ok(n)) throw new Error(`${name} is out of range.`);
+    return n;
+  };
+  const address = process.env.PRIZE_ADDRESS ? parseNimiqAddress(process.env.PRIZE_ADDRESS) : null;
+  if (address && !address.ok) throw new Error(`PRIZE_ADDRESS: ${address.error.message}`);
+  let store: PrizeStore;
   if (pool) {
-    const pgStore = new PgPoolStore(pool);
+    const pgStore = new PgPrizeStore(pool);
     await pgStore.migrate();
     store = pgStore;
   } else {
-    // Without Postgres the worker can't see these orders: fine for trying the screens, not for money.
-    console.warn(JSON.stringify({ msg: "DATABASE_URL not set: pool orders are in memory and no worker can settle them" }));
-    store = new MemoryPoolStore();
+    console.warn(JSON.stringify({ msg: "DATABASE_URL not set: draw entries are in memory and lost on restart" }));
+    store = new MemoryPrizeStore();
   }
-  const url = process.env.NIMIQ_RPC_URL || (cfg.network === "testnet" ? "https://rpc.testnet.nimiqwatch.com" : "https://rpc.nimiqwatch.com");
-  return { store, rpc: createNimiqRpc({ url }), cfg };
+  return {
+    store,
+    chain: createNimiqRpc({ url: rpcUrl(save.network) }),
+    rules: {
+      minLuna: nim("PRIZE_MIN_NIM", "1000"),
+      daysNeeded: whole("PRIZE_DAYS", 5, (n) => n >= 1 && n <= 7),
+      prizeLuna: nim("PRIZE_NIM", "1000"),
+      utcOffsetMinutes: whole("PRIZE_UTC_OFFSET_MINUTES", 60, (n) => Math.abs(n) <= 14 * 60),
+    },
+    prizeAddress: address?.ok ? address.value : null,
+  };
 }
-const poolSide = await poolDeps();
+const prize = await prizeDeps();
 
 const beta: BetaConfig | undefined =
   process.env.BETA_REQUIRED === "true"
@@ -121,7 +141,7 @@ if (practice && !/staging/.test(process.env.MAVAPAY_BASE_URL ?? "")) {
 
 const app = createApp({
   save,
-  pool: poolSide,
+  prize,
   simulatePayIn: practice
     ? async (orderId) => {
         const res = await fetch(`${process.env.MAVAPAY_BASE_URL}/simulation/pay-in`, {
@@ -159,7 +179,7 @@ const app = createApp({
 
 const port = Number(process.env.PORT ?? 8787);
 serve({ fetch: app.fetch, port }, () => {
-  console.log(JSON.stringify({ msg: "railkit api listening", port, corridors, save: save ? save.network : "off", pool: poolSide ? poolSide.cfg.network : "off" }));
+  console.log(JSON.stringify({ msg: "railkit api listening", port, corridors, save: save ? save.network : "off", prize: prize ? "on" : "off" }));
 });
 
 // Every 2 minutes: catch payments made after the app closed, and alert on stuck or failed orders.
@@ -181,3 +201,19 @@ setInterval(() => {
             : null,
   }).catch((e) => console.error(JSON.stringify({ msg: "watcher failed", error: String(e) })));
 }, 120_000);
+
+if (prize) {
+  const logLine = (msg: string, data?: Record<string, unknown>) => console.log(JSON.stringify({ msg, ...data }));
+  const run = (what: string, job: () => Promise<unknown>) => void job().catch((e) => console.error(JSON.stringify({ msg: `${what} failed`, error: String(e) })));
+  // Stakes are read now and then: drops are read from the chain itself, so these readings only catch rises.
+  const checks = () => run("prize checks", () => checkStakes(prize, Date.now(), logLine));
+  // The draw runs once its week's Sunday 23:59 has passed and the deciding block has settled.
+  const draw = () =>
+    run("prize draw", async () => {
+      const d = await runDraw(prize, Date.now(), logLine);
+      if (d?.winner) await alert(`Weekly draw ${d.week}: ${d.entries.length} savers, ${d.totalTickets} tickets. Winner ${d.winner}. Pay it with pnpm pay-prizes.`);
+    });
+  setTimeout(() => (checks(), draw()), 10_000);
+  setInterval(checks, 15 * 60_000);
+  setInterval(draw, 60_000);
+}

@@ -39,11 +39,21 @@ export interface NimiqTransaction {
   timestamp: number;
 }
 
+/** A block's place, fingerprint and time. */
+export interface NimiqBlock {
+  number: number;
+  hash: string;
+  /** Ms since 1970. Blocks come about one a second. */
+  timestamp: number;
+}
+
 interface RawStaker { balance: number; inactiveBalance: number; inactiveFrom: number | null; retiredBalance: number; delegation: string }
 interface RawValidator { address: string; balance: number; numStakers: number; jailedFrom: number | null; retired: boolean }
+interface RawBlock { number: number; hash: string; timestamp: number }
 interface RawTx { hash: string; blockNumber: number; from: string; to: string; value: number; recipientData: string | null; senderData: string | null; executionResult: boolean; confirmations: number; timestamp: number }
 
 const toBig = (n: number | string) => BigInt(n);
+const toBlock = (b: RawBlock): NimiqBlock => ({ number: b.number, hash: b.hash, timestamp: b.timestamp });
 const toTx = (t: RawTx): NimiqTransaction => ({
   hash: t.hash, blockNumber: t.blockNumber, from: t.from, to: t.to, value: toBig(t.value), recipientData: t.recipientData ?? "",
   senderData: t.senderData ?? "", executionResult: t.executionResult, confirmations: t.confirmations, timestamp: t.timestamp ?? 0,
@@ -84,6 +94,9 @@ export function createNimiqRpc(o: NimiqRpcOptions) {
 
   return {
     blockNumber: () => call<number>("getBlockNumber", []),
+
+    latestBlock: async (): Promise<NimiqBlock> => toBlock(await call<RawBlock>("getLatestBlock", [false])),
+    block: async (number: number): Promise<NimiqBlock> => toBlock(await call<RawBlock>("getBlockByNumber", [number, false])),
 
     async staker(address: string): Promise<StakerState | null> {
       const s = await orNull(call<RawStaker>("getStakerByAddress", [address]), /^No staker/i);

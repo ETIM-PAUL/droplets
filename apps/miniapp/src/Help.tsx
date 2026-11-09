@@ -1,7 +1,7 @@
 import { ReportProblem } from "./ReportProblem";
 
 /** What Errand does with people's money, in plain words. */
-export function Help({ pool }: { pool: boolean }) {
+export function Help() {
   return (
     <>
       <header className="home-head"><h1>Help</h1></header>
@@ -18,12 +18,10 @@ export function Help({ pool }: { pool: boolean }) {
           <strong>Taking money out</strong>
           <p>Withdrawing from Grow takes 12 to 24 hours, because Nimiq releases staked NIM at the end of an epoch. Then you finish it in Savings, with two approvals in Nimiq Pay.</p>
         </div>
-        {pool && (
-          <div className="help-row">
-            <strong>Steady and Boost</strong>
-            <p>Steady keeps its dollar value. Boost takes NIM's ups and downs for both sides, about twice as much when both sides are the same size. Unlike Grow, Errand holds the NIM in this pool. The reserves check shows what the pool holds against what it owes.</p>
-          </div>
-        )}
+        <div className="help-row">
+          <strong>The weekly draw</strong>
+          <p>Join it on Savings. If you keep the minimum in Grow on enough days of the week, you're in that Sunday's draw, and keeping more gives you more tickets. The card on Savings shows the minimum, the days and the prize. The winner is picked with a Nimiq block made after the draw time, so nobody can know it in advance, and you never risk any of your savings.</p>
+        </div>
         <div className="help-row">
           <strong>Ask Errand</strong>
           <p>Type things like "Save 30% of what apps pay me" or "When can I get my money?". Errand answers, or opens the right screen with your request filled in. Nothing moves until you approve it in Nimiq Pay.</p>

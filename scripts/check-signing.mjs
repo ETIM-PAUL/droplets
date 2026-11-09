@@ -31,6 +31,9 @@ const EXECUTOR_FILES = new Map([
   ["apps/miniapp/src/save/SaveHome.tsx", ["saveRule", "openGrow", "addToGrow", "startWithdrawal", "finishWithdrawal", "revokeCode", "saveCatchUp"]],
   // The weekly draw: joining and leaving are messages the person signs.
   ["apps/miniapp/src/save/Draw.tsx", ["joinDraw", "leaveDraw"]],
+  // Ask Errand's Confirm card: the chat hands it a change already read by rules, shown with its exact values, and only
+  // the user's tap on Confirm opens Nimiq Pay. Chat.tsx itself stays wallet-free (rule 3).
+  ["apps/miniapp/src/save/Confirm.tsx", ["confirmChange"]],
 ]);
 // 3. Code that reads untrusted text (chat, QR, providers) or runs on the server must not touch the wallet.
 const NO_WALLET = [/^packages\/(agent|adapters|core|client|save)\//, /^apps\/api\//, /^apps\/miniapp\/src\/Chat\.tsx$/];

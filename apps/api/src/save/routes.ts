@@ -209,7 +209,7 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
     try {
       const { grow } = await growState(address, true);
       if (!grow.open || grow.staker.active + grow.staker.inactive < MIN_STAKE_LUNA) {
-        return bad("Open Grow first: stake at least 100 NIM, then get your save code.", 403);
+        return bad("Open your savings first: stake at least 100 NIM, then get your save code.", 403);
       }
     } catch (e) {
       log("save grow check failed", { error: String(e) });

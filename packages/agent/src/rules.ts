@@ -257,7 +257,9 @@ export function parseSave(input: string): { save: SaveIntent; notes: string[] } 
   const asking = SAVE_QUESTION.test(input.trim());
   // Two questions about savings that don't say "savings": "when can I get my money?", "why did it go to my wallet?"
   const savingsQuestion = asking && (SAVE_WHEN_MONEY.test(text) || (SAVE_WHY_WALLET.test(text) && /\b(pay|paid|payment|money|went|go|gone)\b/i.test(text)));
-  if (!noun && !SAVE_VERB.test(text) && !savingsQuestion) return null;
+  // Errand only holds savings, so taking NIM out ("withdraw 200 NIM", "unstake everything") means out of savings.
+  const takeOut = SAVE_WITHDRAW.test(text) && /\b(nim|unstake)\b/i.test(text);
+  if (!noun && !SAVE_VERB.test(text) && !savingsQuestion && !takeOut) return null;
   if (NOT_SAVE.test(text) || /\+?\d(?:[ -]?\d){8,14}/.test(text)) return null;
   // Buying NIM is a top-up, even when it's for savings: Add money first, then savings.
   if (/\bbuy\b/i.test(text)) return null;

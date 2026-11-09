@@ -1,42 +1,39 @@
+import "@fontsource-variable/mulish";
 import type { SaveIntent } from "@railkit/agent";
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { api, SIGNED_OUT } from "./api";
-import { Chat, SUGGESTIONS } from "./Chat";
+import { Chat } from "./Chat";
+import { demoTab } from "./demo";
 import { Help } from "./Help";
 import { connectHost, type HostState } from "./host";
 import { InviteGate } from "./InviteGate";
 import { ActivityTab } from "./save/Activity";
-import { DrawCard } from "./save/Draw";
+import { DrawCard, DrawTab } from "./save/Draw";
 import { SaveHome } from "./save/SaveHome";
 import { sessionToken } from "./storage";
-import { ChatInput, Hexagon, TabBar, type Tab } from "./ui";
+import { AppBar, Hexagon, TabBar, type Tab } from "./ui";
 import "./styles.css";
 
-type View = { name: "tabs" } | { name: "chat"; text: string };
-
-/** Ask Errand, on Savings: a request opens the right screen filled in, and a question gets an answer. */
-function AskCard({ onAsk }: { onAsk: (text: string) => void }) {
-  const [text, setText] = useState("");
-  return (
-    <section className="section" aria-label="Ask Errand">
-      <h2 className="section-title">Ask Errand</h2>
-      <div className="ask-card">
-        <ChatInput label="Ask Errand" placeholder="Ask about your savings…" value={text} onChange={setText} onSend={() => onAsk(text.trim())} size="compact" />
-        <div className="suggestions">
-          {SUGGESTIONS.map((t) => (
-            <button key={t} type="button" className="suggestion" onClick={() => onAsk(t)}>{t}</button>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
+/** The tabs, or one screen over them: Ask Errand, or Help. */
+type View = { name: "tabs" } | { name: "chat"; text: string } | { name: "help" };
+const TABS: Tab[] = ["home", "activity", "draw", "profile"];
+const firstTab = (): Tab => {
+  const t = import.meta.env.DEV ? demoTab() : null;
+  return TABS.includes(t as Tab) ? (t as Tab) : "home";
+};
 
 function App() {
   const [host, setHost] = useState<HostState | null>(null);
   const [view, setView] = useState<View>({ name: "tabs" });
-  const [tab, setTab] = useState<Tab>("home");
+  const [tab, setTab] = useState<Tab>(firstTab);
+  /** An inner savings screen is open: it has its own back button, so the tab bar steps aside. */
+  const [inner, setInner] = useState(false);
+  const openTab = (t: Tab) => {
+    setTab(t);
+    setInner(false);
+    window.scrollTo({ top: 0 });
+  };
   // A savings request from the chat ("put 500 NIM in Grow"): Savings opens the screen for it.
   const [saveStart, setSaveStart] = useState<{ intent: SaveIntent; notes: string[] } | null>(null);
   // null while we ask the server whether the beta needs an invite.
@@ -79,11 +76,12 @@ function App() {
     );
   }
 
-  if (signedIn === null) return <div className="screen"><p className="hint">Opening Errand…</p></div>;
+  if (signedIn === null) return <div className="screen"><p className="hint loading-line">Opening Errand…</p></div>;
   if (!signedIn) return <InviteGate onIn={() => setSignedIn(true)} />;
 
   const address = host?.status === "ready" ? host.address : null;
   const home = () => setView({ name: "tabs" });
+  const ask = () => setView({ name: "chat", text: "" });
 
   if (view.name === "chat") {
     return (
@@ -92,7 +90,7 @@ function App() {
         address={address}
         onSave={(intent, notes) => {
           setSaveStart({ intent, notes });
-          setTab("home");
+          openTab("home");
           home();
         }}
         onCancel={home}
@@ -100,22 +98,36 @@ function App() {
     );
   }
 
+  if (view.name === "help") {
+    return (
+      <div className="screen">
+        <AppBar title="How Errand works" onBack={home} />
+        <Help />
+      </div>
+    );
+  }
+
+  // Home and Profile are two views of the same savings: one keeps them in step.
+  const savings = tab === "home" || tab === "profile";
   return (
-    <div className="screen with-tabs">
+    <div className={`screen${inner ? "" : " with-tabs"}`}>
       {host?.status === "error" && <p className="alert" role="alert">{host.message}</p>}
-      {tab === "home" && (
+      {savings && (
         <SaveHome
           address={address}
+          tab={tab}
           start={saveStart}
           onStarted={() => setSaveStart(null)}
-          draw={<DrawCard address={address} />}
-          ask={<AskCard onAsk={(text) => setView({ name: "chat", text })} />}
-          onSeeAll={() => setTab("activity")}
+          draw={<DrawCard address={address} compact onOpen={() => openTab("draw")} />}
+          onTab={openTab}
+          onAsk={ask}
+          onHelp={() => setView({ name: "help" })}
+          onInner={setInner}
         />
       )}
       {tab === "activity" && <ActivityTab address={address} />}
-      {tab === "help" && <Help />}
-      <TabBar tab={tab} onTab={setTab} />
+      {tab === "draw" && <DrawTab address={address} />}
+      {!inner && <TabBar tab={tab} onTab={openTab} />}
     </div>
   );
 }

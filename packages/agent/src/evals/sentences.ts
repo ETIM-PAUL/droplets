@@ -118,6 +118,8 @@ export const EVAL_CASES: EvalCase[] = [
   { text: "send 50 NIM to my savings", tags: ["save"], intent: "save", save: { action: "add", nim: "50" }, expect: {} },
   { text: "Take 200 NIM out of savings", tags: ["save"], intent: "save", save: { action: "withdraw", nim: "200" }, expect: {} },
   { text: "withdraw all my savings", tags: ["save"], intent: "save", save: { action: "withdraw", all: true }, expect: {} },
+  { text: "Withdraw 200 NIM", tags: ["save"], intent: "save", save: { action: "withdraw", nim: "200" }, expect: {} },
+  { text: "withdraw 200 NIM to my bank", tags: ["trap"], expect: {} },
   { text: "take 100 NIM out of Grow and 50 more", tags: ["save", "trap"], intent: "save", save: { action: "withdraw" }, expect: {} },
   { text: "turn off my save code", tags: ["save"], intent: "save", save: { action: "revoke" }, expect: {} },
   { text: "stop saving", tags: ["save"], intent: "save", save: { action: "revoke" }, expect: {} },

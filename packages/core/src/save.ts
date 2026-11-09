@@ -245,9 +245,9 @@ export function releaseBlock(inactiveFrom: number, validatorJailedFrom: number |
 /** Checks a withdrawal from active stake: what stays behind must be 0 or at least 100 NIM. */
 export function checkWithdrawal(staker: StakerState, luna: bigint): Result<{ newActive: bigint }> {
   if (luna <= 0n) return fail("bad_amount", "Enter an amount to withdraw.");
-  if (luna > staker.active) return fail("bad_amount", "That's more than you have in Grow.");
+  if (luna > staker.active) return fail("bad_amount", "That's more than you have in savings.");
   const left = staker.active + staker.inactive - luna;
-  if (left !== 0n && left < MIN_STAKE_LUNA) return fail("bad_amount", "Leave at least 100 NIM in Grow, or withdraw all of it.");
+  if (left !== 0n && left < MIN_STAKE_LUNA) return fail("bad_amount", "Leave at least 100 NIM in savings, or withdraw all of it.");
   return ok({ newActive: staker.active - luna });
 }
 

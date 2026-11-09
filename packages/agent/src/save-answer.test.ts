@@ -18,11 +18,11 @@ const ask = (question: Parameters<typeof answerSavingsQuestion>[0]["question"], 
 
 describe("answers worked out from the user's own data", () => {
   it("balance", () => {
-    expect(ask("balance")).toBe("You have 500 NIM in Grow, all of it earning staking rewards.");
+    expect(ask("balance")).toBe("You have 500 NIM in savings, all of it earning staking rewards.");
     expect(ask("balance", facts({ grow: { active: NIM(300), inactive: NIM(150), retired: NIM(50), releaseBlock: 1, validatorJailed: false } }))).toBe(
-      "You have 500 NIM in Grow: 300 NIM earning, 150 NIM on its way out, 50 NIM ready to move to your wallet.",
+      "You have 500 NIM in savings: 300 NIM earning, 150 NIM on its way out, 50 NIM ready to move to your wallet.",
     );
-    expect(ask("balance", facts({ grow: null, growClosed: "no-stake" }))).toMatch(/don't have Grow savings open yet/);
+    expect(ask("balance", facts({ grow: null, growClosed: "no-stake" }))).toMatch(/haven't opened your savings yet/);
     expect(ask("balance", facts({ grow: null, growClosed: "validator-gone" }))).toMatch(/validator you staked with shut down/);
   });
 
@@ -33,9 +33,9 @@ describe("answers worked out from the user's own data", () => {
       { app: "Bounty Board", kind: "grow" as const, luna: 15_050_000n, at: Date.UTC(2026, 10, 1, 2) },
       { app: "Arcade", kind: "grow" as const, luna: NIM(99), at: Date.UTC(2026, 9, 20) },
     ];
-    expect(ask("period", facts({ receipts }), "month")).toBe("This month, apps paid 750.5 NIM into your Grow savings, in 2 payments. Another 1,400 NIM went to your wallet.");
-    expect(ask("period", facts({ receipts }), "last-month")).toBe("Last month, apps paid 99 NIM into your Grow savings, in 1 payment.");
-    expect(ask("period", facts({ receipts }), "today")).toBe("Today, no app paid into your Grow savings.");
+    expect(ask("period", facts({ receipts }), "month")).toBe("This month, apps paid 750.5 NIM into your savings, in 2 payments. Another 1,400 NIM went to your wallet.");
+    expect(ask("period", facts({ receipts }), "last-month")).toBe("Last month, apps paid 99 NIM into your savings, in 1 payment.");
+    expect(ask("period", facts({ receipts }), "today")).toBe("Today, no app paid into your savings.");
   });
 
   it("when withdrawn money is ready", () => {
@@ -45,24 +45,24 @@ describe("answers worked out from the user's own data", () => {
     expect(ask("release", g({ inactive: NIM(200), releaseBlock: 65_999_000 }))).toMatch(/^200 NIM is ready now/);
     expect(ask("release", g({ retired: NIM(200) }))).toMatch(/^200 NIM is ready now/);
     expect(ask("release", g({ inactive: NIM(200), releaseBlock: 66_000_000 + 600, validatorJailed: true }))).toMatch(/about 10 minutes.*up to 4 days/);
-    expect(ask("release", facts({ grow: null, growClosed: "no-stake" }))).toBe("You don't have anything in Grow to withdraw.");
+    expect(ask("release", facts({ grow: null, growClosed: "no-stake" }))).toBe("You don't have anything in savings to withdraw.");
   });
 
   it("why a payment went to the wallet", () => {
     const split = (over: Partial<SavingsFacts["splits"][number]>) => ({ app: "Arcade", walletLuna: NIM(2000), growLuna: 0n, reason: null, savePercent: 30, at: Date.UTC(2026, 10, 3, 9), ...over });
-    expect(ask("why-wallet", facts({ splits: [split({ reason: "no-stake" })] }))).toBe("Your 2,000 NIM from Arcade on 3 Nov all went to your wallet because Grow wasn't open.");
+    expect(ask("why-wallet", facts({ splits: [split({ reason: "no-stake" })] }))).toBe("Your 2,000 NIM from Arcade on 3 Nov all went to your wallet because your savings weren't open.");
     expect(ask("why-wallet", facts({ splits: [split({ reason: "validator-gone" })] }))).toMatch(/validator you staked with had shut down/);
     expect(ask("why-wallet", facts({ splits: [split({ reason: "below-minimum" })] }))).toMatch(/100 NIM minimum/);
     expect(ask("why-wallet", facts({ splits: [split({ savePercent: 0 })] }))).toMatch(/share to save was 0%/);
     expect(ask("why-wallet", facts({ splits: [split({ walletLuna: NIM(1400), growLuna: NIM(600) })] }))).toBe(
-      "Your last payment, from Arcade on 3 Nov, did save: 600 NIM went to Grow and 1,400 NIM to your wallet.",
+      "Your last payment, from Arcade on 3 Nov, did save: 600 NIM went to savings and 1,400 NIM to your wallet.",
     );
     expect(ask("why-wallet", facts({ receipts: [{ app: "Arcade", kind: "wallet", luna: NIM(5), at: NOW }] }))).toMatch(/can't tell why/);
     expect(ask("why-wallet")).toMatch(/hasn't seen a payment/);
   });
 
   it("code, share, apps, rewards and a general question", () => {
-    expect(ask("code")).toBe("Your save code is SAVE-7KQ2XMP. Apps pay 30% of what they send you into Grow.");
+    expect(ask("code")).toBe("Your save code is SAVE-7KQ2XMP. Apps pay 30% of what they send you into savings.");
     expect(ask("code", facts({ code: null, savePercent: null }))).toMatch(/don't have a save code yet/);
     expect(ask("share")).toBe("You save 30% of every payment an app makes to your save code.");
     const receipts = [
@@ -71,8 +71,8 @@ describe("answers worked out from the user's own data", () => {
       { app: "Quiz", kind: "grow" as const, luna: 1n, at: NOW },
     ];
     expect(ask("apps", facts({ receipts }))).toBe("Apps that paid you with your save code: Arcade (2 payments), Quiz (1 payment).");
-    expect(ask("rewards")).toMatch(/can't separate them.*Your Grow total is 500 NIM\.$/);
-    expect(ask("other")).toBe("You have 500 NIM in Grow, all of it earning staking rewards. Your save code is SAVE-7KQ2XMP. Apps pay 30% of what they send you into Grow.");
+    expect(ask("rewards")).toMatch(/can't separate them.*Your savings total is 500 NIM\.$/);
+    expect(ask("other")).toBe("You have 500 NIM in savings, all of it earning staking rewards. Your save code is SAVE-7KQ2XMP. Apps pay 30% of what they send you into savings.");
   });
 
   it("knows its own numbers, without the code's digits", () => {

@@ -1,10 +1,12 @@
 import type { SaveIntent } from "@railkit/agent";
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
+import { ConfirmCard } from "./save/Confirm";
+import { canConfirm } from "./save/confirm-plan";
 import { AppBar, ChatInput } from "./ui";
 
 /** Things to try. Each is one the chat's rules already read as a savings request or question. */
-export const SUGGESTIONS = ["Save 30% of what apps pay me", "Put 500 NIM in Grow", "How much have I saved?", "When can I get my money?"];
+export const SUGGESTIONS = ["How much have I saved?", "Save 30% of what apps pay me", "Put 500 NIM in savings", "When can I get my money?"];
 
 const NOT_SAVINGS = "Errand is for saving, so it can't send money or buy NIM. Ask about your savings, or tell me how much to save.";
 
@@ -34,6 +36,8 @@ export function Chat({ first, address, onSave, onCancel }: Props) {
   // After an answer: a way into Savings. After something Errand doesn't do: things to try instead.
   const [after, setAfter] = useState<"savings" | "suggestions" | null>(null);
   const started = useRef(false);
+  /** A change ready to confirm: shown as a card with the exact values, which is the only thing that can reach Nimiq Pay. */
+  const [pending, setPending] = useState<{ intent: SaveIntent; notes: string[]; id: number } | null>(null);
   const end = useRef<HTMLDivElement>(null);
 
   const say = (...l: Line[]) => setLines((x) => [...x, ...l]);
@@ -46,7 +50,12 @@ export function Chat({ first, address, onSave, onCancel }: Props) {
   useEffect(() => {
     if (started.current) return;
     started.current = true;
-    void turn(first);
+    if (first.trim()) void turn(first);
+    else {
+      // Opened from a button: a greeting and things to try, nothing sent yet.
+      say({ from: "errand", text: "Ask about your savings, or tell me what to change. Nothing moves without your approval in Nimiq Pay." });
+      setAfter("suggestions");
+    }
     // Only the first message, once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -55,13 +64,18 @@ export function Chat({ first, address, onSave, onCancel }: Props) {
     say({ from: "you", text });
     setBusy(true);
     setAfter(null);
+    setPending(null);
     try {
       const r = await api.understand(text);
       if (r.intent !== "save") {
         say({ from: "errand", text: NOT_SAVINGS });
         setAfter("suggestions");
       } else if (r.save?.action !== "ask") {
-        return onSave(r.save ?? { action: "show" }, r.notes);
+        const s = r.save ?? { action: "show" };
+        // Only a complete request with nothing in doubt gets a Confirm button; anything else opens its form, filled in.
+        if (!address || !canConfirm(s) || r.notes.length > 0) return onSave(s, r.notes);
+        // The card says what it is: the change to confirm, or why it needs the form.
+        setPending({ intent: s, notes: r.notes, id: Date.now() });
       } else if (!address) {
         say({ from: "errand", text: "Open Errand inside Nimiq Pay to ask about your savings." });
       } else {
@@ -96,11 +110,28 @@ export function Chat({ first, address, onSave, onCancel }: Props) {
           <div ref={end} />
         </div>
 
+        {!busy && pending && (
+          <ConfirmCard
+            key={pending.id}
+            intent={pending.intent}
+            address={address}
+            onDone={(text) => {
+              setPending(null);
+              say({ from: "errand", text });
+              setAfter("savings");
+            }}
+            onForm={() => onSave(pending.intent, pending.notes)}
+            onCancel={() => {
+              setPending(null);
+              say({ from: "errand", text: "Cancelled. Nothing changed." });
+            }}
+          />
+        )}
         {!busy && after === "savings" && (
           <div className="choices">
             <button type="button" className="choice" onClick={() => onSave({ action: "show" }, [])}>
-              Open Savings
-              <small>Your Grow balance, save code and payments in</small>
+              Open your savings
+              <small>Your balance, save code and payments in</small>
             </button>
           </div>
         )}

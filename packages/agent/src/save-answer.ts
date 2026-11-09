@@ -74,24 +74,24 @@ export function answerSavingsQuestion(
   const verbatim: string[] = [];
   const closed = () =>
     f.growClosed === "validator-gone"
-      ? "Your Grow savings are closed because the validator you staked with shut down. Move your stake to another validator in Nimiq Pay."
-      : "You don't have Grow savings open yet. Open Grow in Savings with at least 100 NIM.";
+      ? "Your savings are closed because the validator you staked with shut down. Move your stake to another validator in Nimiq Pay."
+      : "You haven't opened your savings yet. Open them on Home with at least 100 NIM.";
 
   const balance = (): string => {
     const g = f.grow;
     if (!g) return closed();
     const total = g.active + g.inactive + g.retired;
-    if (g.inactive === 0n && g.retired === 0n) return `You have ${nim(total)} in Grow, all of it earning staking rewards.`;
+    if (g.inactive === 0n && g.retired === 0n) return `You have ${nim(total)} in savings, all of it earning staking rewards.`;
     const parts = [`${nim(g.active)} earning`];
     if (g.inactive > 0n) parts.push(`${nim(g.inactive)} on its way out`);
     if (g.retired > 0n) parts.push(`${nim(g.retired)} ready to move to your wallet`);
-    return `You have ${nim(total)} in Grow: ${parts.join(", ")}.`;
+    return `You have ${nim(total)} in savings: ${parts.join(", ")}.`;
   };
 
   const codeLine = (): string => {
-    if (!f.code) return "You don't have a save code yet. Open Grow in Savings, then get your code.";
+    if (!f.code) return "You don't have a save code yet. Open your savings on Home, then get your code.";
     verbatim.push(f.code);
-    return `Your save code is ${f.code}. Apps pay ${f.savePercent ?? 0}% of what they send you into Grow.`;
+    return `Your save code is ${f.code}. Apps pay ${f.savePercent ?? 0}% of what they send you into savings.`;
   };
 
   let text: string;
@@ -108,16 +108,16 @@ export function answerSavingsQuestion(
       const wallet = sum(inside.filter((r) => r.kind === "wallet").map((r) => r.luna));
       const label = PERIOD_WORDS[period];
       text = grow.length
-        ? `${label}, apps paid ${nim(sum(grow.map((r) => r.luna)))} into your Grow savings, in ${plural(grow.length, "payment")}.` +
+        ? `${label}, apps paid ${nim(sum(grow.map((r) => r.luna)))} into your savings, in ${plural(grow.length, "payment")}.` +
           (wallet > 0n ? ` Another ${nim(wallet)} went to your wallet.` : "")
-        : `${label}, no app paid into your Grow savings.` + (wallet > 0n ? ` Apps paid ${nim(wallet)} to your wallet.` : "");
+        : `${label}, no app paid into your savings.` + (wallet > 0n ? ` Apps paid ${nim(wallet)} to your wallet.` : "");
       break;
     }
 
     case "release": {
       const g = f.grow;
       if (!g || g.active + g.inactive + g.retired === 0n) {
-        text = "You don't have anything in Grow to withdraw.";
+        text = "You don't have anything in savings to withdraw.";
       } else if (g.retired > 0n) {
         text = `${nim(g.retired)} is ready now. Open Savings and tap Finish withdrawal to move it to your wallet.`;
       } else if (g.inactive > 0n && g.releaseBlock !== null) {
@@ -138,10 +138,10 @@ export function answerSavingsQuestion(
           ? "Errand can't tell why for that payment: the app didn't say which payout it was."
           : "Errand hasn't seen a payment with your save code yet.";
       } else if (last.growLuna > 0n) {
-        text = `Your last payment, from ${last.app} on ${day(last.at)}, did save: ${nim(last.growLuna)} went to Grow and ${nim(last.walletLuna)} to your wallet.`;
+        text = `Your last payment, from ${last.app} on ${day(last.at)}, did save: ${nim(last.growLuna)} went to savings and ${nim(last.walletLuna)} to your wallet.`;
       } else {
         const why =
-          last.reason === "no-stake" ? "Grow wasn't open"
+          last.reason === "no-stake" ? "your savings weren't open"
           : last.reason === "validator-gone" ? "the validator you staked with had shut down"
           : last.reason === "below-minimum" ? "it would have left your stake under Nimiq's 100 NIM minimum"
           : last.savePercent === 0 ? "your share to save was 0%"
@@ -157,7 +157,7 @@ export function answerSavingsQuestion(
 
     case "share":
       text = f.savePercent === null
-        ? "You haven't chosen a share yet. Open Grow in Savings, then pick how much to save."
+        ? "You haven't chosen a share yet. Open your savings on Home, then pick how much to save."
         : `You save ${f.savePercent}% of every payment an app makes to your save code.`;
       break;
 
@@ -172,7 +172,7 @@ export function answerSavingsQuestion(
 
     case "rewards":
       text = "Staking rewards come from your validator and go straight into your stake, so Errand can't separate them from what apps paid in yet. " +
-        (f.grow ? `Your Grow total is ${nim(f.grow.active + f.grow.inactive + f.grow.retired)}.` : "You don't have Grow savings open yet.");
+        (f.grow ? `Your savings total is ${nim(f.grow.active + f.grow.inactive + f.grow.retired)}.` : "You haven't opened your savings yet.");
       break;
 
     default:

@@ -6,6 +6,7 @@ import {
   NimiqProviderError,
   type Network,
 } from "@nimiq/mini-app-sdk";
+import { DEMO_ADDRESS, isDemo } from "./demo";
 
 const LUNA_PER_NIM = 100_000n;
 
@@ -42,6 +43,9 @@ export function lunaToNim(luna: number): string {
 }
 
 export async function connectHost(sdk: HostSdk = defaultSdk): Promise<HostState> {
+  if (import.meta.env.DEV && isDemo()) {
+    return { status: "ready", network: "testnet", language: "en", fiat: "NGN", address: DEMO_ADDRESS, balanceNim: "1250.5", accounts: [{ address: DEMO_ADDRESS, nim: "1250.5" }] };
+  }
   // The host seeds these before page scripts run; absent outside Nimiq Pay.
   const network = sdk.getHostNetwork() ?? "mainnet";
   const language = sdk.getHostLanguage() ?? navigator.language.split("-")[0] ?? "en";

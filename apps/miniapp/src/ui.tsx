@@ -20,6 +20,14 @@ const PATHS = {
   close: "M6 6l12 12M18 6L6 18",
   down: "M12 5v14M5 12l7 7 7-7",
   jar: "M8 3h8M9 3v3L7 8.5V19a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V8.5L15 6V3M7 12h10",
+  user: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4.5 20a7.5 7.5 0 0 1 15 0",
+  chat: "M20 11.5a7.5 7.5 0 0 1-10.9 6.7L4 19.5l1.4-4.6A7.5 7.5 0 1 1 20 11.5z",
+  gift: "M20 12v7a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-7M3 8h18v4H3zM12 20V8M12 8H8a2 2 0 1 1 0-4c2.5 0 4 4 4 4zM12 8h4a2 2 0 1 0 0-4c-2.5 0-4 4-4 4z",
+  copy: "M9 9h10v10H9zM15 9V5H5v10h4",
+  qr: "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2v2h-2zM18 14h2M14 18h2M18 18h2v2h-2z",
+  apps: "M5 5h5v5H5zM14 5h5v5h-5zM5 14h5v5H5zM14 14h5v5h-5z",
+  repeat: "M17 2l3 3-3 3M4 11V9a4 4 0 0 1 4-4h12M7 22l-3-3 3-3M20 13v2a4 4 0 0 1-4 4H4",
+  tag: "M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9-9-9zM7.5 7.5h.01",
 } as const;
 
 export type IconName = keyof typeof PATHS;
@@ -47,20 +55,20 @@ export function AppBar({ title, onBack, backLabel = "Back", right }: { title: st
   );
 }
 
-/** "home" is Savings. */
-export type Tab = "home" | "activity" | "help";
+export type Tab = "home" | "activity" | "draw" | "profile";
 
 export function TabBar({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
   const items: { id: Tab; label: string; icon: IconName }[] = [
-    { id: "home", label: "Savings", icon: "jar" },
+    { id: "home", label: "Home", icon: "home" },
     { id: "activity", label: "Activity", icon: "list" },
-    { id: "help", label: "Help", icon: "help" },
+    { id: "draw", label: "Draw", icon: "gift" },
+    { id: "profile", label: "Profile", icon: "user" },
   ];
   return (
     <nav className="tabbar" aria-label="Main">
       {items.map((i) => (
         <button key={i.id} type="button" className="tab" aria-current={tab === i.id ? "page" : undefined} onClick={() => onTab(i.id)}>
-          <Icon name={i.icon} />
+          <span className="tab-icon"><Icon name={i.icon} /></span>
           <span>{i.label}</span>
         </button>
       ))}
@@ -79,6 +87,28 @@ export function QrCode({ text, label, size = 200 }: { text: string; label: strin
       <rect width={n} height={n} fill="#fff" />
       <path d={d} fill="#000" />
     </svg>
+  );
+}
+
+/** A main tab's heading, with anything that belongs beside it on the right. */
+export function PageHead({ title, children }: { title: string; children?: ReactNode }) {
+  return (
+    <header className="page-head">
+      <h1>{title}</h1>
+      {children}
+    </header>
+  );
+}
+
+/** A setting or link in a grouped list: what it is on the left, its current value and a chevron on the right. */
+export function SettingRow({ icon, label, value, onClick, danger }: { icon?: IconName; label: string; value?: string; onClick: () => void; danger?: boolean }) {
+  return (
+    <button type="button" className={`setting${danger ? " danger" : ""}`} onClick={onClick}>
+      {icon && <span className="setting-icon"><Icon name={icon} size={20} /></span>}
+      <span className="setting-label">{label}</span>
+      {value && <span className="setting-value">{value}</span>}
+      <span className="setting-chevron"><Icon name="chevron" size={18} /></span>
+    </button>
   );
 }
 

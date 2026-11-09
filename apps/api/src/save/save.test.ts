@@ -106,7 +106,7 @@ describe("setting the rule", () => {
     const amaka = account();
     const refused = await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address))));
     expect(refused.status).toBe(403);
-    expect(await errorOf(refused)).toMatch(/Open Grow first/);
+    expect(await errorOf(refused)).toMatch(/Open your savings first/);
     // A stake that's all on its way out doesn't count as open either.
     stake(amaka.address, { active: 0n, retired: NIM(500) });
     expect((await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address))))).status).toBe(403);
@@ -245,8 +245,8 @@ describe("questions about your own savings", () => {
 
   it("answers from the user's own data", async () => {
     const { ask, code } = await ready();
-    expect(await json(await ask("how much have I saved?"))).toEqual({ answer: "You have 500 NIM in Grow, all of it earning staking rewards.", question: "balance", source: "rules" });
-    expect((await json(await ask("what's my save code"))).answer).toBe(`Your save code is ${code}. Apps pay 30% of what they send you into Grow.`);
+    expect(await json(await ask("how much have I saved?"))).toEqual({ answer: "You have 500 NIM in savings, all of it earning staking rewards.", question: "balance", source: "rules" });
+    expect((await json(await ask("what's my save code"))).answer).toBe(`Your save code is ${code}. Apps pay 30% of what they send you into savings.`);
     expect((await json(await ask("when can I get my money?"))).answer).toMatch(/haven't started a withdrawal/);
   });
 
@@ -256,7 +256,7 @@ describe("questions about your own savings", () => {
     clock.t += 2 * 60_000; // past the stake cache
     const split = await json(await app.request(`/v1/save/split?code=${code}&luna=${NIM(2000)}&payoutId=bounty-81`, { headers }));
     expect(split.reason).toBe("no-stake");
-    expect((await json(await ask("why did that payment go to my wallet?"))).answer).toBe(`Your 2,000 NIM from Arcade on ${new Date(clock.t).getUTCDate()} Nov all went to your wallet because Grow wasn't open.`);
+    expect((await json(await ask("why did that payment go to my wallet?"))).answer).toBe(`Your 2,000 NIM from Arcade on ${new Date(clock.t).getUTCDate()} Nov all went to your wallet because your savings weren't open.`);
     const me = await json(await app.request(`/v1/save/me?address=${encodeURIComponent(amaka.address)}`));
     expect(me.splits).toEqual([expect.objectContaining({ payoutId: "bounty-81", app: "Arcade", walletLuna: NIM(2000).toString(), growLuna: "0", reason: "no-stake" })]);
     expect((await app.request(`/v1/save/split?code=${code}&luna=1&payoutId=has spaces`, { headers })).status).toBe(400);
@@ -276,7 +276,7 @@ describe("questions about your own savings", () => {
     f.stake(amaka.address);
     const { code } = await json(await f.app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address)))));
     const r = await json(await f.app.request("/v1/save/ask", post({ address: amaka.address, question: swahili })));
-    expect(r).toEqual({ answer: `Nambari yako ya kuokoa ni ${code}. Apps pay 30% of what they send you into Grow.`, question: "code", source: "model" });
+    expect(r).toEqual({ answer: `Nambari yako ya kuokoa ni ${code}. Apps pay 30% of what they send you into savings.`, question: "code", source: "model" });
     // The chat already knows the kind: no second classification.
     const noClassifier = setup({ phraser: async (_q, english) => english });
     noClassifier.stake(amaka.address);

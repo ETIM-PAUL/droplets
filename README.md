@@ -6,15 +6,15 @@ Droplets is a Nimiq Pay Mini App that puts part of every payment into savings yo
 
 Built for the Save track of the [Nimiq Mini Apps Competition](https://miniappscompetition.com) (Cycle III).
 
-[![Licence: MIT](https://img.shields.io/badge/licence-MIT-0b7a75.svg)](LICENSE)
-[![Node 22+](https://img.shields.io/badge/node-%E2%89%A522-1f2348.svg)](package.json)
-[![pnpm 12](https://img.shields.io/badge/pnpm-12-1f2348.svg)](package.json)
 
 <p align="center">
-  <img src=".github/screenshots/home.png" width="200" alt="Home: your savings balance, quick actions, a catch-up to save, the weekly draw and recent payments" />
-  <img src=".github/screenshots/activity.png" width="200" alt="Activity: every payment in and out of savings, grouped by day" />
-  <img src=".github/screenshots/draw.png" width="200" alt="Weekly draw: this week's days kept and missed, and how the draw works" />
-  <img src=".github/screenshots/profile.png" width="200" alt="Profile: your save code and your saving rules" />
+  <img src=".github/screenshots/home.png" width="21%" alt="Home: your savings balance, quick actions, a catch-up to save, the weekly draw and recent payments" />
+  &nbsp;&nbsp;
+  <img src=".github/screenshots/activity.png" width="21%" alt="Activity: every payment in and out of savings, grouped by day" />
+  &nbsp;&nbsp;
+  <img src=".github/screenshots/draw.png" width="21%" alt="Weekly draw: this week's days kept and missed, and how the draw works" />
+  &nbsp;&nbsp;
+  <img src=".github/screenshots/profile.png" width="21%" alt="Profile: your save code and your saving rules" />
 </p>
 <p align="center"><sub>Home, Activity, Draw and Profile, with demo data.</sub></p>
 

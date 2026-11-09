@@ -330,3 +330,119 @@ button:disabled { cursor: default; }
 @media (prefers-reduced-motion: reduce) {
   .skeleton { animation: none; }
 }
+
+/* ---- Landing: what a browser shows outside Nimiq Pay. The one wide page, so it has its own frame. */
+.lp { min-height: 100dvh; display: flex; flex-direction: column; }
+.lp-top, .lp-hero, .lp-section, .lp-band-inner, .lp-foot { width: min(100% - 40px, 1080px); margin-inline: auto; }
+.lp h1, .lp h2, .lp h3 { margin: 0; text-wrap: balance; }
+.lp p { margin: 0; }
+.lp a { color: inherit; }
+
+.lp-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 0; }
+.lp-brand { display: inline-flex; align-items: center; gap: 8px; font-size: 19px; font-weight: 800; letter-spacing: -0.01em; text-decoration: none; }
+.lp-brand.small { font-size: 16px; }
+.lp-top-link { padding: 9px 16px; border-radius: 999px; background: var(--teal-wash); color: var(--teal) !important; font-size: 15px; font-weight: 800; text-decoration: none; }
+
+.lp-hero { display: grid; gap: 40px; padding: 20px 0 56px; }
+.lp-hero h1 { max-width: 11ch; font-size: clamp(42px, 8vw, 70px); line-height: 1.02; font-weight: 900; letter-spacing: -0.035em; }
+.lp-lede { max-width: 34em; margin-top: 20px !important; font-size: 18px; line-height: 1.55; color: var(--ink-soft); }
+.lp-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; margin-top: 28px; }
+.lp-button { display: inline-flex; align-items: center; padding: 15px 26px; border-radius: var(--r-md); background: var(--teal); color: var(--teal-ink) !important; font-size: 16px; font-weight: 800; text-decoration: none; }
+.lp-button:active { filter: brightness(0.94); }
+.lp-quiet { font-weight: 700; text-decoration: underline; text-decoration-color: var(--line); text-decoration-thickness: 2px; text-underline-offset: 5px; }
+@media (min-width: 860px) {
+  .lp-hero { grid-template-columns: 1.15fr 0.85fr; align-items: center; gap: 64px; padding: 48px 0 56px; }
+}
+
+/* The hero's example: payments at the top, a droplet falling from each, savings filling below. */
+.drip { margin: 0; padding: 14px 16px 16px; border: 1px solid var(--line); border-radius: 28px; background: var(--surface); box-shadow: var(--lift); }
+.drip-rows { margin: 0; padding: 0; list-style: none; }
+.drip-rows li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 4px; border-bottom: 1px solid var(--line); }
+.drip-rows li:last-child { border-bottom: 0; }
+.drip-what { display: flex; flex-direction: column; min-width: 0; }
+.drip-what strong { font-size: 15px; }
+.drip-what small { font-size: 13px; color: var(--ink-soft); }
+.drip-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: none; }
+.drip-amount { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.drip-saved {
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: 999px; background: var(--teal-wash); color: var(--teal);
+  font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; opacity: 0; transform: translateY(-4px) scale(0.92); transition: opacity 0.3s, transform 0.3s;
+}
+.drip-rows li.on .drip-saved { opacity: 1; transform: none; }
+.drip-channel { position: relative; height: 60px; }
+.drip-channel::before { content: ""; position: absolute; left: calc(50% - 1px); top: 4px; bottom: 4px; width: 2px; background: repeating-linear-gradient(to bottom, var(--line) 0 4px, transparent 4px 9px); }
+.drip-fall {
+  position: absolute; left: calc(50% - 7px); top: 0; width: 14px; height: 17px; background: var(--teal);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 28'%3E%3Cpath d='M12 2c5 6 9 11 9 15.5a9 9 0 0 1-18 0C3 13 7 8 12 2z'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 28'%3E%3Cpath d='M12 2c5 6 9 11 9 15.5a9 9 0 0 1-18 0C3 13 7 8 12 2z'/%3E%3C/svg%3E") center / contain no-repeat;
+  animation: drip-fall 0.55s cubic-bezier(0.5, 0, 0.9, 0.5) forwards;
+}
+@keyframes drip-fall {
+  0% { opacity: 0; transform: translateY(-4px); }
+  20% { opacity: 1; }
+  85% { opacity: 1; transform: translateY(46px) scale(0.92, 1.08); }
+  100% { opacity: 0; transform: translateY(56px) scale(1.2, 0.6); }
+}
+.drip-pool { position: relative; isolation: isolate; overflow: hidden; display: flex; flex-direction: column; gap: 2px; min-height: 160px; padding: 18px 20px; border-radius: 20px; background: var(--navy); color: #fff; }
+.drip-label { font-size: 14px; font-weight: 700; color: rgba(255, 255, 255, 0.78); }
+.drip-total { font-size: 30px; font-weight: 900; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.drip-water { position: absolute; z-index: -1; left: 0; right: 0; bottom: 0; background: linear-gradient(180deg, #14968e, #0b7a75); transition: height 0.7s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.drip-wave { position: absolute; bottom: calc(100% - 1px); left: 0; width: 100%; height: 8px; display: block; fill: #14968e; }
+
+/* Sections */
+.lp-section { padding: 56px 0; }
+.lp-section h2, .lp-band h2 { font-size: clamp(28px, 4.2vw, 40px); line-height: 1.12; font-weight: 850; letter-spacing: -0.025em; }
+.lp-intro { max-width: 36em; margin-top: 12px !important; font-size: 17px; color: var(--ink-soft); }
+@media (min-width: 860px) { .lp-section { padding: 88px 0; } }
+
+.lp-ways { display: grid; gap: 0 56px; margin: 32px 0 0; padding: 0; list-style: none; }
+.lp-ways li { display: grid; grid-template-columns: 44px 1fr; column-gap: 16px; padding: 22px 0 26px; border-top: 1px solid var(--line); }
+.lp-way-icon { grid-row: span 2; width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; background: var(--teal-wash); color: var(--teal); }
+.lp-ways h3 { margin-top: 2px; font-size: 18px; font-weight: 800; }
+.lp-ways p { margin-top: 6px; font-size: 15.5px; line-height: 1.55; color: var(--ink-soft); }
+@media (min-width: 720px) { .lp-ways { grid-template-columns: 1fr 1fr; } }
+
+/* The one navy band: like the balance card, navy means your money. */
+.lp-band { padding: 56px 0; background: var(--navy); color: #fff; }
+.lp-band h2 { max-width: 18ch; }
+.lp-facts { display: grid; gap: 28px 40px; margin: 32px 0 0; padding: 0; list-style: none; }
+.lp-facts li { padding-top: 16px; border-top: 2px solid rgba(255, 255, 255, 0.18); }
+.lp-facts strong { font-size: 17px; }
+.lp-facts p { margin-top: 6px; font-size: 15.5px; line-height: 1.55; color: rgba(255, 255, 255, 0.76); }
+@media (min-width: 860px) { .lp-band { padding: 80px 0; } .lp-facts { grid-template-columns: repeat(3, 1fr); } }
+
+/* Gold is the draw, as in the app. */
+.lp-draw { display: grid; gap: 16px; align-items: start; }
+@media (min-width: 720px) { .lp-draw { grid-template-columns: 56px 1fr; gap: 20px; } }
+.lp-draw-mark { width: 56px; height: 56px; display: grid; place-items: center; border-radius: 50%; background: var(--gold-wash); color: var(--gold-text); }
+.lp-draw p, .lp-builders p { max-width: 40em; margin-top: 12px !important; font-size: 17px; line-height: 1.6; color: var(--ink-soft); }
+
+.lp-shots { display: grid; grid-auto-flow: column; grid-auto-columns: 62%; gap: 16px; margin: 28px 0 0; padding: 0 0 10px; list-style: none; overflow-x: auto; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; }
+.lp-shots li { display: flex; flex-direction: column; align-items: center; gap: 10px; scroll-snap-align: start; }
+.lp-shots img { width: 100%; height: auto; border: 1px solid var(--line); border-radius: 22px; background: var(--surface); box-shadow: var(--lift); }
+.lp-shots span { font-size: 14px; font-weight: 700; color: var(--ink-soft); }
+@media (min-width: 720px) { .lp-shots { grid-auto-flow: row; grid-template-columns: repeat(4, 1fr); overflow: visible; } }
+
+.lp-builders { border-top: 1px solid var(--line); }
+
+/* A real sequence, so it's numbered. */
+.lp-steps { max-width: 640px; margin: 28px 0 0; padding: 0; list-style: none; counter-reset: step; }
+.lp-steps li { position: relative; padding: 0 0 28px 56px; counter-increment: step; }
+.lp-steps li::before {
+  content: counter(step); position: absolute; left: 0; top: 0; width: 36px; height: 36px; display: grid; place-items: center;
+  border-radius: 50%; background: var(--teal); color: var(--teal-ink); font-weight: 800;
+}
+.lp-steps li:not(:last-child)::after { content: ""; position: absolute; left: 17px; top: 42px; bottom: 6px; width: 2px; background: var(--line); }
+.lp-steps h3 { padding-top: 5px; font-size: 18px; font-weight: 800; }
+.lp-steps p { margin-top: 6px; font-size: 15.5px; line-height: 1.55; color: var(--ink-soft); }
+.lp-address { display: flex; align-items: center; justify-content: space-between; gap: 12px; max-width: 440px; margin-top: 12px; padding: 8px 8px 8px 16px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); }
+.lp-address span { min-width: 0; font-weight: 800; overflow-wrap: anywhere; }
+.lp-address button { display: inline-flex; align-items: center; gap: 6px; flex: none; padding: 10px 14px; border: 0; border-radius: var(--r-sm); background: var(--teal-wash); color: var(--teal); font-size: 14px; font-weight: 800; }
+
+.lp-foot { display: flex; flex-direction: column; gap: 8px; margin-top: auto; padding: 28px 0 40px; border-top: 1px solid var(--line); }
+.lp-foot p { font-size: 14px; color: var(--ink-soft); }
+
+@media (prefers-reduced-motion: reduce) {
+  .drip-saved, .drip-water { transition: none; }
+  .drip-fall { animation: none; display: none; }
+}

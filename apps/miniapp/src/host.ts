@@ -42,6 +42,15 @@ export function lunaToNim(luna: number): string {
   return frac ? `${whole}.${frac}` : `${whole}`;
 }
 
+/**
+ * Whether Nimiq Pay looks present. It sets these before page scripts run, so an ordinary browser can be told apart at once,
+ * without waiting for connectHost to time out. connectHost still decides: this only picks what to show meanwhile.
+ */
+export function hostInjected(): boolean {
+  if (import.meta.env.DEV && isDemo()) return true;
+  return typeof window !== "undefined" && ("nimiq" in window || "nimiqPay" in window);
+}
+
 export async function connectHost(sdk: HostSdk = defaultSdk): Promise<HostState> {
   if (import.meta.env.DEV && isDemo()) {
     return { status: "ready", network: "testnet", language: "en", fiat: "NGN", address: DEMO_ADDRESS, balanceNim: "1250.5", accounts: [{ address: DEMO_ADDRESS, nim: "1250.5" }] };

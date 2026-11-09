@@ -6,13 +6,14 @@ import { api, SIGNED_OUT } from "./api";
 import { Chat } from "./Chat";
 import { demoTab } from "./demo";
 import { Help } from "./Help";
-import { connectHost, type HostState } from "./host";
+import { connectHost, hostInjected, type HostState } from "./host";
 import { InviteGate } from "./InviteGate";
+import { Landing } from "./Landing";
 import { ActivityTab } from "./save/Activity";
 import { DrawCard, DrawTab } from "./save/Draw";
 import { SaveHome } from "./save/SaveHome";
 import { sessionToken } from "./storage";
-import { AppBar, Droplet, TabBar, type Tab } from "./ui";
+import { AppBar, TabBar, type Tab } from "./ui";
 import "./styles.css";
 
 /** The tabs, or one screen over them: Ask Droplets, or Help. */
@@ -25,6 +26,8 @@ const firstTab = (): Tab => {
 
 function App() {
   const [host, setHost] = useState<HostState | null>(null);
+  /** An ordinary browser: show the landing page at once instead of waiting 3 seconds for a wallet that isn't there. */
+  const [browser] = useState(() => !hostInjected());
   const [view, setView] = useState<View>({ name: "tabs" });
   const [tab, setTab] = useState<Tab>(firstTab);
   /** An inner savings screen is open: it has its own back button, so the tab bar steps aside. */
@@ -64,17 +67,8 @@ function App() {
     void connectHost().then(setHost);
   }, []);
 
-  if (host?.status === "outside-nimiq-pay") {
-    return (
-      <div className="screen">
-        <div className="hero">
-          <Droplet size={44} />
-          <h2>Droplets runs inside Nimiq Pay</h2>
-          <p className="hint">Open Nimiq Pay, go to Mini Apps, and open Droplets from there.</p>
-        </div>
-      </div>
-    );
-  }
+  // Outside Nimiq Pay, Droplets can't do anything, so it explains itself instead.
+  if (host?.status === "outside-nimiq-pay" || (host === null && browser)) return <Landing />;
 
   if (signedIn === null) return <div className="screen"><p className="hint loading-line">Opening Droplets…</p></div>;
   if (!signedIn) return <InviteGate onIn={() => setSignedIn(true)} />;

@@ -717,7 +717,7 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
       {!me.code && (
         <section className="card start-card" aria-label="Get started">
           <h2>Start saving</h2>
-          <p className="hint">Games, bounties and shops that pay you NIM can put part of it straight into your savings. You choose how much.</p>
+          <p className="hint">Apps that work with Droplets, like games, bounties and shops, can put part of what they pay you straight into your savings. You choose how much.</p>
           <ol className="steps">
             <li className={g ? "done" : "now"}>
               <span className="step-mark">{g ? <Icon name="check" size={16} /> : "1"}</span>

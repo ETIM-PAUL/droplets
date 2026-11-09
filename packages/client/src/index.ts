@@ -71,6 +71,27 @@ export type SaveCatchUp =
 export interface SaveApp {
   id: string;
   name: string;
+  /** Its website or Mini App address, if it gave one. */
+  url?: string | null;
+}
+
+/** An app signing itself up to save with Droplets. */
+export interface SaveAppSignUp {
+  name: string;
+  /** Its website or Mini App address: https only. Optional. */
+  url?: string;
+  /** How to reach the developer for the review: never shown publicly. */
+  contact: string;
+  /** The Nimiq addresses it pays from, 1 to 5. */
+  payoutAddresses: string[];
+}
+
+/** The key is shown only this once, and works once the app is approved. */
+export interface SaveAppKey {
+  id: string;
+  name: string;
+  apiKey: string;
+  status: "pending";
 }
 
 export interface SaveValidator {
@@ -200,6 +221,8 @@ export function createRailkitClient(o: RailkitClientOptions) {
       call<SaveCatchUp>(`/v1/save/catchup?address=${encodeURIComponent(address)}&tzOffsetMinutes=${tzOffsetMinutes}${fresh ? "&fresh=1" : ""}`),
     /** The apps that save with Droplets, by name. */
     saveApps: async () => (await call<{ apps: SaveApp[] }>("/v1/save/apps")).apps,
+    /** Sign an app up. It waits for review; its key works once it's approved. */
+    registerSaveApp: (form: SaveAppSignUp) => call<SaveAppKey>("/v1/save/apps/register", json(form)),
     saveValidators: async () => (await call<{ validators: SaveValidator[] }>("/v1/save/validators")).validators,
     /** A question about the user's own savings, answered from their data. `kind` is what the chat already worked out. */
     saveAsk: (req: { address: string; question: string; kind?: SaveQuestion; period?: SavePeriod; tzOffsetMinutes: number }) =>

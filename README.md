@@ -36,7 +36,7 @@ Built for the Save track of the [Nimiq Mini Apps Competition](https://miniappsco
 ## Features
 
 - **Savings you own.** Your savings are NIM staked from your own account, with a validator Droplets suggests or one you choose. Droplets never holds them, and withdrawing takes 12 to 24 hours, so savings are never one tap from being spent.
-- **Save from what apps pay you.** Choose a share, such as 30%. Games, bounties and shops that pay you NIM put that share straight into your savings: either the apps you allow, which recognise the address they already pay, or any app you give your save code (`SAVE-7KQ2XMP`).
+- **Save from what apps pay you.** Choose a share, such as 30%. Games, bounties and shops that work with Droplets put that share straight into your savings: either the apps you allow, which recognise the address they already pay, or the apps you give your save code (`SAVE-7KQ2XMP`). Apps register with Droplets first, and their key works once they're approved.
 - **Save when you pay.** Apps you allow add a share, such as 5%, on top of what you buy, and put it into your savings.
 - **The catch-up.** For payments anywhere else, Droplets adds up your share daily, weekly, every two weeks or monthly, and asks you to save it with one approval.
 - **The weekly draw.** Keep at least 1,000 NIM saved on 5 of the 7 days to be in Sunday's draw for 1,000 NIM. Saving more gives more tickets, and you never risk your savings.
@@ -161,7 +161,21 @@ const quote = await api.spend(userAddress, 10_000_000n);
 await payer.saveFromSpend({ to: userAddress, luna: quote.saveLuna, payoutId: "order-7-save" });
 ```
 
-The SDK signs with your own payout key on your server, is safe to retry, and never waits on Droplets: if Droplets doesn't answer, it pays normally. Ask the Droplets team for an app key. The SDK isn't on npm yet.
+The SDK signs with your own payout key on your server, is safe to retry, and never waits on Droplets: if Droplets doesn't answer, it pays normally. The SDK isn't on npm yet.
+
+### Registering an app
+
+Apps sign up on the landing page, the page Droplets shows in an ordinary browser, under **For apps > Register your app**. They give a name, an optional https link, a way to reach them, and up to 5 addresses they pay from. They get their key at once, shown only that time. The key works only after the team approves the app; until then the app isn't in the public list and users can't pick it. That way, signing up can't be used to try save codes and find out who uses Droplets. Only completed sign-ups count toward the limit of 3 an hour from one place.
+
+When an app signs up, the API posts to `ALERT_WEBHOOK_URL` if you set it. Review and approve with the admin token:
+
+```bash
+curl -H "Authorization: Bearer $ADMIN_TOKEN" https://droplets-api.onrender.com/v1/admin/save/apps                    # every app, with pending, url and contact
+curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" https://droplets-api.onrender.com/v1/admin/save/apps/APP_ID/approve
+curl -X DELETE -H "Authorization: Bearer $ADMIN_TOKEN" https://droplets-api.onrender.com/v1/admin/save/apps/APP_ID     # remove it; its key stops working
+```
+
+Apps the team adds itself with `POST /v1/admin/save/apps` are approved straight away.
 
 ## API
 
@@ -173,11 +187,12 @@ The API ([apps/api](apps/api)) is Hono on Node. It holds no wallet keys.
 | `GET /v1/save/me` | The Mini App | The savings screens: balance, code, rules, payments in. |
 | `GET /v1/save/activity` | The Mini App | The history, newest first. |
 | `GET /v1/save/catchup` | The Mini App | The catch-up for spending elsewhere. |
-| `GET /v1/save/apps`, `GET /v1/save/validators` | The Mini App | Apps users can allow, and validators to stake with. |
+| `GET /v1/save/apps`, `GET /v1/save/validators` | The Mini App, the landing page | Approved apps users can allow, and validators to stake with. |
+| `POST /v1/save/apps/register` | The landing page | An app signs up. It waits for review, and its key works once approved. |
 | `POST /v1/save/ask` | The Mini App | Ask Droplets' answers about the user's own savings. |
 | `GET /v1/save/split`, `GET /v1/save/spend`, `POST /v1/save/receipts` | Paying apps (app key) | How to split a payment, what to charge, and what was sent. |
 | `POST /v1/prize/join`, `GET /v1/prize/me`, `GET /v1/prize/draws` | The Mini App | The weekly draw. |
-| `/v1/admin/save/apps`, `/v1/admin/prize/*` | Admin token | Registering apps, and the prize payout tool. |
+| `/v1/admin/save/apps`, `/v1/admin/prize/*` | Admin token | Adding, approving and removing apps, and the prize payout tool. |
 
 ## Project structure
 

@@ -448,6 +448,73 @@ describe("apps that recognise your address (for apps)", () => {
   });
 });
 
+describe("apps signing up (from the landing page)", () => {
+  const ADMIN = { Authorization: "Bearer admin-secret" };
+  const form = (over: Record<string, unknown> = {}) => ({ name: "Treasure Hunt", url: "https://hunt.example", contact: "dev@hunt.example", payoutAddresses: [APP_PAYOUT], ...over });
+
+  it("gives a key that works only once the app is approved, and lists it only then", async () => {
+    const { app, stake } = setup();
+    const amaka = account();
+    stake(amaka.address);
+    const { code } = await json(await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address)))));
+
+    const r = await app.request("/v1/save/apps/register", post(form()));
+    expect(r.status).toBe(200);
+    const signedUp = await json(r);
+    expect(signedUp).toMatchObject({ name: "Treasure Hunt", status: "pending" });
+    expect(signedUp.apiKey).toMatch(/^rk_save_[0-9a-f]{64}$/);
+    const key = { Authorization: `Bearer ${signedUp.apiKey as string}` };
+
+    const early = await app.request(`/v1/save/split?code=${code}&luna=${NIM(10)}`, { headers: key });
+    expect(early.status).toBe(403);
+    expect(await errorOf(early)).toMatch(/waiting for review/);
+    expect((await json(await app.request("/v1/save/apps"))).apps).toEqual([]);
+    // People can't pick it in a signed rule yet.
+    const pick = await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address, { spendPercent: 5, apps: ["Treasure Hunt"], catchUp: "weekly" }))));
+    expect(await errorOf(pick)).toMatch(/doesn't know an app called Treasure Hunt/);
+
+    // What the team sees, without the key.
+    const listed = await json(await app.request("/v1/admin/save/apps", { headers: ADMIN }));
+    expect(listed.apps).toEqual([expect.objectContaining({ id: signedUp.id, pending: true, contact: "dev@hunt.example", url: "https://hunt.example/" })]);
+    expect(JSON.stringify(listed)).not.toContain("keyHash");
+
+    expect((await app.request(`/v1/admin/save/apps/${signedUp.id as string}/approve`, { method: "POST" })).status).toBe(404); // admin only
+    expect((await app.request(`/v1/admin/save/apps/${signedUp.id as string}/approve`, { method: "POST", headers: ADMIN })).status).toBe(200);
+    expect((await app.request(`/v1/save/split?code=${code}&luna=${NIM(10)}`, { headers: key })).status).toBe(200);
+    expect((await json(await app.request("/v1/save/apps"))).apps).toEqual([{ id: signedUp.id, name: "Treasure Hunt", url: "https://hunt.example/" }]);
+
+    expect((await app.request(`/v1/admin/save/apps/${signedUp.id as string}`, { method: "DELETE" })).status).toBe(404); // admin only
+    expect((await app.request(`/v1/admin/save/apps/${signedUp.id as string}`, { method: "DELETE", headers: ADMIN })).status).toBe(200);
+    expect((await app.request(`/v1/save/split?code=${code}&luna=${NIM(10)}`, { headers: key })).status).toBe(401);
+    expect((await app.request("/v1/admin/save/apps/nope/approve", { method: "POST", headers: ADMIN })).status).toBe(404);
+  });
+
+  it("checks the form, and keeps names unique across approved and waiting apps", async () => {
+    const { app } = setup();
+    const send = (over: Record<string, unknown>) => app.request("/v1/save/apps/register", post(form(over)));
+    expect(await errorOf(await send({ name: "Hunt, Inc" }))).toMatch(/name of up to 40/);
+    expect(await errorOf(await send({ url: "http://hunt.example" }))).toMatch(/https:\/\//);
+    expect(await errorOf(await send({ url: "not a link" }))).toMatch(/https:\/\//);
+    expect(await errorOf(await send({ contact: "" }))).toMatch(/how to reach you/);
+    expect(await errorOf(await send({ payoutAddresses: ["NQ00 nope"] }))).toMatch(/1 to 5 Nimiq addresses/);
+    expect(await errorOf(await send({ payoutAddresses: Array(6).fill(APP_PAYOUT) }))).toMatch(/1 to 5 Nimiq addresses/);
+    expect(await errorOf(await send({ payoutAddresses: [] }))).toMatch(/1 to 5 Nimiq addresses/);
+  });
+
+  it("refuses a name that's taken, and limits sign-ups from one place", async () => {
+    const { app } = setup();
+    await withApp(app); // "Arcade", added by the team
+    const send = (over: Record<string, unknown>) => app.request("/v1/save/apps/register", post(form(over)));
+    expect(await errorOf(await send({ name: "arcade" }))).toMatch(/already an app called arcade/);
+    expect((await send({ name: "One", url: "" })).status).toBe(200); // the link is optional
+    expect(await errorOf(await send({ name: "ONE" }))).toMatch(/already an app called ONE/);
+    // Three sign-ups an hour from one place; the refused tries above don't count.
+    expect((await send({ name: "Two" })).status).toBe(200);
+    expect((await send({ name: "Three" })).status).toBe(200);
+    expect(await errorOf(await send({ name: "Four" }))).toMatch(/Too many sign-ups/);
+  });
+});
+
 describe("the catch-up", () => {
   const HTLC = "NQ89 4VDF DQ8Q JEGL KX8U A1HC DE6K A78Y CJR5";
   const SHOP = "NQ09 XHGH TP20 4444 4444 4444 4444 4444 4444";
@@ -570,6 +637,15 @@ describe("save stores", async () => {
 
       await store.addApp({ id: "app1", name: "Arcade", keyHash: "h1", payoutAddresses: ["NQ9", "NQ8"], createdAt: T });
       expect(await store.appByKeyHash("h1")).toMatchObject({ id: "app1", payoutAddresses: ["NQ9", "NQ8"] });
+      expect(await store.listApps()).toHaveLength(1);
+      await store.addApp({ id: "app2", name: "Quiz", keyHash: "h2", payoutAddresses: ["NQ7"], createdAt: T + 1, pending: true, url: "https://quiz.example/", contact: "@quiz" });
+      expect(await store.appByKeyHash("h2")).toMatchObject({ pending: true, url: "https://quiz.example/", contact: "@quiz" });
+      expect(await store.appByKeyHash("h1")).toMatchObject({ pending: false });
+      expect(await store.approveApp("app2")).toBe(true);
+      expect(await store.appByKeyHash("h2")).toMatchObject({ pending: false });
+      expect(await store.approveApp("nope")).toBe(false);
+      expect(await store.removeApp("app2")).toBe(true);
+      expect(await store.removeApp("app2")).toBe(false);
       expect(await store.listApps()).toHaveLength(1);
 
       const r = { txHash: "t1", code: "AAAAAAA", address: "NQ1", appId: "app1", kind: "grow" as const, source: "payout" as const, luna: "600", payoutId: "p", blockNumber: 5, createdAt: T };

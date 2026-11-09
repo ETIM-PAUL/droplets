@@ -30,6 +30,12 @@ export interface SaveApp {
   /** The addresses it pays from; receipts from anywhere else are refused. */
   payoutAddresses: string[];
   createdAt: number;
+  /** Signed up on the landing page and not approved yet: its key doesn't work, and people can't pick it. */
+  pending?: boolean;
+  /** Its website or Mini App address, shown in the public list of apps. */
+  url?: string | null;
+  /** How to reach its developer, for the review. Never shown publicly. */
+  contact?: string | null;
 }
 
 /** One verified payment an app made to a saver, as shown in the user's history. */
@@ -82,6 +88,10 @@ export interface SaveStore {
   addApp(app: SaveApp): Promise<void>;
   appByKeyHash(keyHash: string): Promise<SaveApp | undefined>;
   listApps(): Promise<SaveApp[]>;
+  /** False when there's no such app. */
+  approveApp(id: string): Promise<boolean>;
+  /** False when there's no such app. Its key stops working. */
+  removeApp(id: string): Promise<boolean>;
   /** Ignores a receipt it already has. */
   addReceipt(r: SaveReceipt): Promise<void>;
   receiptsForAddress(address: string, limit: number): Promise<SaveReceipt[]>;
@@ -131,13 +141,22 @@ export class MemorySaveStore implements SaveStore {
     return true;
   }
   async addApp(app: SaveApp) {
-    this.apps.set(app.id, { ...app });
+    // As Postgres gives them back: approved unless it says otherwise, and null for what's missing.
+    this.apps.set(app.id, { ...app, pending: app.pending === true, url: app.url ?? null, contact: app.contact ?? null });
   }
   async appByKeyHash(keyHash: string) {
     return [...this.apps.values()].find((a) => a.keyHash === keyHash);
   }
   async listApps() {
     return [...this.apps.values()].sort((a, b) => a.createdAt - b.createdAt);
+  }
+  async approveApp(id: string) {
+    const a = this.apps.get(id);
+    if (a) this.apps.set(id, { ...a, pending: false });
+    return a !== undefined;
+  }
+  async removeApp(id: string) {
+    return this.apps.delete(id);
   }
   async addReceipt(r: SaveReceipt) {
     if (!this.receipts.has(r.txHash)) this.receipts.set(r.txHash, { ...r });
@@ -212,6 +231,9 @@ ALTER TABLE save_receipts ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 
 ALTER TABLE save_codes ADD COLUMN IF NOT EXISTS catchup_every TEXT NOT NULL DEFAULT 'weekly';
 ALTER TABLE save_codes ADD COLUMN IF NOT EXISTS catchup_from BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE save_codes ADD COLUMN IF NOT EXISTS tz_offset INTEGER;
+ALTER TABLE save_apps ADD COLUMN IF NOT EXISTS pending BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE save_apps ADD COLUMN IF NOT EXISTS url TEXT;
+ALTER TABLE save_apps ADD COLUMN IF NOT EXISTS contact TEXT;
 CREATE TABLE IF NOT EXISTS save_catchups (
   tx_hash TEXT PRIMARY KEY,
   address TEXT NOT NULL,
@@ -224,7 +246,7 @@ CREATE INDEX IF NOT EXISTS save_catchups_address ON save_catchups (address, peri
 type Num = string | number;
 interface CodeRow { code: string; address: string; save_percent: Num; spend_percent: Num; app_ids: string; catchup_every: CatchUpEvery; catchup_from: Num; tz_offset: Num | null; created_at: Num; updated_at: Num; revoked_at: Num | null }
 interface CatchUpRow { tx_hash: string; address: string; period_to: Num; luna: string; created_at: Num }
-interface AppRow { id: string; name: string; key_hash: string; payout_addresses: string; created_at: Num }
+interface AppRow { id: string; name: string; key_hash: string; payout_addresses: string; created_at: Num; pending: boolean | null; url: string | null; contact: string | null }
 interface SplitRow { app_id: string; payout_id: string; code: string; address: string; wallet_luna: string; grow_luna: string; reason: SaveSplitRow["reason"]; save_percent: Num; created_at: Num }
 interface ReceiptRow { tx_hash: string; code: string; address: string; app_id: string; kind: "wallet" | "grow"; source: SaveReceipt["source"]; luna: string; payout_id: string; block_number: Num; created_at: Num }
 
@@ -235,7 +257,10 @@ const code = (r: CodeRow): SaveCodeRow => ({
   createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
   revokedAt: r.revoked_at === null ? null : Number(r.revoked_at),
 });
-const app = (r: AppRow): SaveApp => ({ id: r.id, name: r.name, keyHash: r.key_hash, payoutAddresses: r.payout_addresses.split(",").filter(Boolean), createdAt: Number(r.created_at) });
+const app = (r: AppRow): SaveApp => ({
+  id: r.id, name: r.name, keyHash: r.key_hash, payoutAddresses: r.payout_addresses.split(",").filter(Boolean), createdAt: Number(r.created_at),
+  pending: r.pending === true, url: r.url ?? null, contact: r.contact ?? null,
+});
 const receipt = (r: ReceiptRow): SaveReceipt => ({
   txHash: r.tx_hash, code: r.code, address: r.address, appId: r.app_id, kind: r.kind, source: r.source ?? "payout", luna: r.luna, payoutId: r.payout_id,
   blockNumber: Number(r.block_number), createdAt: Number(r.created_at),
@@ -298,8 +323,8 @@ export class PgSaveStore implements SaveStore {
     );
   }
   async addApp(a: SaveApp) {
-    await this.pool.query(`INSERT INTO save_apps (id, name, key_hash, payout_addresses, created_at) VALUES ($1,$2,$3,$4,$5)`, [
-      a.id, a.name, a.keyHash, a.payoutAddresses.join(","), a.createdAt,
+    await this.pool.query(`INSERT INTO save_apps (id, name, key_hash, payout_addresses, created_at, pending, url, contact) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [
+      a.id, a.name, a.keyHash, a.payoutAddresses.join(","), a.createdAt, a.pending === true, a.url ?? null, a.contact ?? null,
     ]);
   }
   async appByKeyHash(keyHash: string) {
@@ -309,6 +334,14 @@ export class PgSaveStore implements SaveStore {
   async listApps() {
     const r = await this.pool.query<AppRow>(`SELECT * FROM save_apps ORDER BY created_at`);
     return r.rows.map(app);
+  }
+  async approveApp(id: string) {
+    const r = await this.pool.query(`UPDATE save_apps SET pending = false WHERE id = $1`, [id]);
+    return (r.rowCount ?? 0) > 0;
+  }
+  async removeApp(id: string) {
+    const r = await this.pool.query(`DELETE FROM save_apps WHERE id = $1`, [id]);
+    return (r.rowCount ?? 0) > 0;
   }
   async addReceipt(x: SaveReceipt) {
     await this.pool.query(

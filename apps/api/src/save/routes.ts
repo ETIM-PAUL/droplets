@@ -56,6 +56,8 @@ interface Helpers {
   classifier?: SavingsClassifier;
   /** The chat's shared daily budget for model calls. */
   allowModel?: () => boolean;
+  /** Tells the team: here, that an app signed up and waits for review. */
+  alert?: (text: string) => Promise<void>;
 }
 
 const QUESTION_KINDS: SaveQuestion[] = ["balance", "period", "release", "why-wallet", "code", "share", "apps", "rewards", "other"];
@@ -105,6 +107,8 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
   const askLimit = rateLimiter(30, 60_000, now);
   /** Reads that skip the cache re-read whole histories from the node, so fewer of them. */
   const freshLimit = rateLimiter(30, 60_000, now);
+  /** App sign-ups, per client: a few an hour. */
+  const signupLimit = rateLimiter(3, 3_600_000, now);
   const stakers = cache<StakerState | null>(60_000, now);
   const validators = cache<{ jailedFrom: number | null } | null>(10 * 60_000, now);
   const validatorList = cache<{ address: string; stakeLuna: string; numStakers: number }[]>(10 * 60_000, now);
@@ -139,6 +143,18 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
   }
 
   /**
+   * The app calling, or the response to send it instead. An app waiting for review can't look anyone up yet:
+   * otherwise anyone could sign up and try save codes until one gave away an address.
+   */
+  async function payerFrom(authorization: string | undefined): Promise<SaveApp | Response> {
+    const payer = await appFrom(authorization);
+    if (!payer) return bad("Missing or unknown app key.", 401);
+    if (payer.pending) return bad("This app is waiting for review. Its key starts working once it's approved.", 403);
+    if (!appLimit(payer.id)) return bad("Too many requests. Slow down.", 429);
+    return payer;
+  }
+
+  /**
    * The rule behind an address, only if its owner allowed this app to recognise them. Someone without a rule
    * and someone who didn't allow the app look the same, so an app can't find out who saves with Droplets.
    */
@@ -148,7 +164,7 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
   }
 
   /** Apps people can allow, by name. Names that can't be written in a signed rule are left out. */
-  const namedApps = async () => (await s.store.listApps()).filter((a) => isAppName(a.name));
+  const namedApps = async () => (await s.store.listApps()).filter((a) => !a.pending && isAppName(a.name));
 
   // ---- For the user, from the Mini App.
 
@@ -401,10 +417,47 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
     }
   });
 
-  /** The apps that save with Droplets, for the user to pick which may recognise their address. Names only. */
+  /** The approved apps that save with Droplets: for people to pick which may recognise their address, and for the landing page. */
   app.get("/v1/save/apps", async (c) => {
     if (!readLimit(ip(c))) return bad("Too many requests. Wait a minute.", 429);
-    return c.json({ apps: (await namedApps()).map((a) => ({ id: a.id, name: a.name })) });
+    return c.json({ apps: (await namedApps()).map((a) => ({ id: a.id, name: a.name, url: a.url ?? null })) });
+  });
+
+  /**
+   * An app signs itself up from the landing page. It gets its key at once, shown only this time, but the key works
+   * only after the team approves the app; until then the app isn't listed and people can't pick it.
+   */
+  app.post("/v1/save/apps/register", async (c) => {
+    if (!readLimit(ip(c))) return bad("Too many requests. Wait a minute.", 429);
+    const body = (await c.req.json().catch(() => null)) as { name?: unknown; url?: unknown; contact?: unknown; payoutAddresses?: unknown } | null;
+    const name = typeof body?.name === "string" ? body.name.trim() : "";
+    if (!isAppName(name)) return bad("Give the app a name of up to 40 letters, digits, spaces or . ' & ! + -, with no commas.");
+    const rawUrl = typeof body?.url === "string" ? body.url.trim() : "";
+    let url: string | null = null;
+    if (rawUrl) {
+      const u = URL.canParse(rawUrl) ? new URL(rawUrl) : null;
+      if (!u || u.protocol !== "https:" || rawUrl.length > 200) return bad("The link must be an https:// address of up to 200 characters.");
+      url = u.href;
+    }
+    const contact = typeof body?.contact === "string" ? body.contact.trim() : "";
+    if (contact.length < 3 || contact.length > 120 || /[\u0000-\u001f\u007f]/.test(contact)) {
+      return bad("Say how to reach you: an email address or Telegram handle, up to 120 characters.");
+    }
+    const raw = Array.isArray(body?.payoutAddresses) ? body.payoutAddresses : [];
+    const parsed = raw.map((a) => parseNimiqAddress(typeof a === "string" ? a : ""));
+    if (parsed.length === 0 || parsed.length > 5 || parsed.some((a) => !a.ok)) return bad("List 1 to 5 Nimiq addresses your app pays from.");
+    const payoutAddresses = [...new Set(parsed.map((a) => (a.ok ? a.value : "")))];
+    const apps = await s.store.listApps();
+    if (apps.some((a) => a.name.toLowerCase() === name.toLowerCase())) return bad(`There's already an app called ${name}.`);
+    if (apps.filter((a) => a.pending).length >= 100) return bad("Sign-ups are paused while we review the apps already waiting. Try again tomorrow.", 503);
+    // Only sign-ups that go through count, so fixing a typo in the form never locks anyone out.
+    if (!signupLimit(ip(c))) return bad("Too many sign-ups from here. Try again in an hour.", 429);
+    const apiKey = `rk_save_${randomBytes(32).toString("hex")}`;
+    const id = randomUUID();
+    await s.store.addApp({ id, name, keyHash: sha256Hex(apiKey), payoutAddresses, createdAt: now(), pending: true, url, contact });
+    log("save app signed up", { id, name });
+    void h.alert?.(`NEW APP waiting for review: ${JSON.stringify(name)}, ${url ? JSON.stringify(url) : "no link"}, contact ${JSON.stringify(contact)}. Approve with POST /v1/admin/save/apps/${id}/approve`)?.catch(() => undefined);
+    return c.json({ id, name, apiKey, status: "pending" });
   });
 
   /** Validators for opening Grow: our recommended ones first, then the rest of the active set by stake. */
@@ -433,9 +486,8 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
    * whose owner allowed this app. Any other address gets "pay it all to the wallet", saver or not.
    */
   app.get("/v1/save/split", async (c) => {
-    const payer = await appFrom(c.req.header("authorization"));
-    if (!payer) return bad("Missing or unknown app key.", 401);
-    if (!appLimit(payer.id)) return bad("Too many lookups. Slow down.", 429);
+    const payer = await payerFrom(c.req.header("authorization"));
+    if (payer instanceof Response) return payer;
     const [rawCode, rawAddress] = [c.req.query("code"), c.req.query("address")];
     if ((rawCode === undefined) === (rawAddress === undefined)) return bad("Send either a save code or an address.");
     const raw = c.req.query("luna") ?? "";
@@ -484,9 +536,8 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
    * puts it into the payer's stake once the payment arrives. Without a rule that allows this app, nothing goes on top.
    */
   app.get("/v1/save/spend", async (c) => {
-    const payer = await appFrom(c.req.header("authorization"));
-    if (!payer) return bad("Missing or unknown app key.", 401);
-    if (!appLimit(payer.id)) return bad("Too many lookups. Slow down.", 429);
+    const payer = await payerFrom(c.req.header("authorization"));
+    if (payer instanceof Response) return payer;
     const addr = parseNimiqAddress(c.req.query("address") ?? "");
     if (!addr.ok) return bad(addr.error.message);
     const raw = c.req.query("luna") ?? "";
@@ -509,9 +560,8 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
 
   /** An app reports what it sent. Each transaction is checked on-chain before it shows in the user's history. */
   app.post("/v1/save/receipts", async (c) => {
-    const payer = await appFrom(c.req.header("authorization"));
-    if (!payer) return bad("Missing or unknown app key.", 401);
-    if (!appLimit(payer.id)) return bad("Too many requests. Slow down.", 429);
+    const payer = await payerFrom(c.req.header("authorization"));
+    if (payer instanceof Response) return payer;
     const body = (await c.req.json().catch(() => null)) as { code?: unknown; address?: unknown; source?: unknown; payoutId?: unknown; walletTx?: unknown; growTx?: unknown } | null;
     if ((typeof body?.code === "string") === (typeof body?.address === "string")) return bad("Send either a save code or an address.");
     const source = body?.source === undefined || body.source === "payout" ? "payout" : body.source === "spend" ? "spend" : null;
@@ -587,5 +637,21 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
   app.get("/v1/admin/save/apps", async (c) => {
     if (!h.admin(c.req.header("authorization"))) return bad("Not found.", 404);
     return c.json({ apps: (await s.store.listApps()).map(({ keyHash: _k, ...a }) => a) });
+  });
+
+  /** Approve an app that signed up: its key starts working, and people can pick it. */
+  app.post("/v1/admin/save/apps/:id/approve", async (c) => {
+    if (!h.admin(c.req.header("authorization"))) return bad("Not found.", 404);
+    if (!(await s.store.approveApp(c.req.param("id")))) return bad("No app with that id.", 404);
+    log("save app approved", { id: c.req.param("id") });
+    return c.json({ approved: true });
+  });
+
+  /** Remove an app, approved or not: its key stops working and it leaves the list. */
+  app.delete("/v1/admin/save/apps/:id", async (c) => {
+    if (!h.admin(c.req.header("authorization"))) return bad("Not found.", 404);
+    if (!(await s.store.removeApp(c.req.param("id")))) return bad("No app with that id.", 404);
+    log("save app removed", { id: c.req.param("id") });
+    return c.json({ removed: true });
   });
 }

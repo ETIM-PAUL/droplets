@@ -520,7 +520,7 @@ export function createApp(d: AppDeps) {
     return c.json({ feedback: await d.ops.listFeedback(now() - 30 * 86_400_000) });
   });
 
-  if (d.save) mountSaveRoutes(app, d.save, { bad, clientKey, admin, now, log, phraser: d.agent?.savingsPhraser, classifier: d.agent?.savingsClassifier, allowModel });
+  if (d.save) mountSaveRoutes(app, d.save, { bad, clientKey, admin, now, log, phraser: d.agent?.savingsPhraser, classifier: d.agent?.savingsClassifier, allowModel, alert: d.alert });
   else app.all("/v1/save/*", () => bad("Savings is switched off on this server.", 503));
   if (d.prize) mountPrizeRoutes(app, d.prize, { bad, clientKey, admin, now, log });
   else app.all("/v1/prize/*", () => bad("The weekly draw is switched off on this server.", 503));

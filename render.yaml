@@ -21,10 +21,11 @@ services:
       # own table migrations at startup. Render's free tier allows one database per account, so it isn't used here.
       - key: DATABASE_URL
         sync: false
-      # Bearer token for /v1/admin/: registering apps that save with Droplets, and paying draw prizes.
+      # Bearer token for /v1/admin/: approving apps that sign up to save with Droplets, and paying draw prizes.
+      # Render generates it: copy it from the service's Environment page.
       - key: ADMIN_TOKEN
         generateValue: true
-      # Optional: a Slack or Discord webhook for feedback and each week's draw result. Leave empty to skip.
+      # Optional: a Slack or Discord webhook for feedback, new app sign-ups and each week's draw result. Leave empty to skip.
       - key: ALERT_WEBHOOK_URL
         sync: false
       # Optional: Ask Droplets uses a model only to read other languages and reword answers. Leave empty for rules only.

@@ -55,6 +55,12 @@ The rule also carries a share to save when paying, from 0 to 100% (the screen of
 
 Errand still never sends money: the paying app collects the saved part with the purchase and passes it on, the same trust the user already gives that app for the purchase. Payments made outside apps that save with Errand, such as Nimiq Pay's own transfers, can't save on top: no app or Errand can move the user's NIM after it's sent.
 
+### The catch-up (added 9 November 2026)
+
+For spending outside those apps, the user picks a catch-up in their signed rule: daily, weekly, every two weeks or monthly, in the phone's time zone (weeks start on Monday; two-week periods on Mondays an even number of weeks after 5 January 2026). When a period ends, Errand works out the share of what they spent since the last catch-up (at most 62 days back, never before saving when paying was turned on), less what apps already saved when they paid them, and shows it with a Save button: one add-stake the user approves in Nimiq Pay. It counts as settled once the user's own add-stakes since the period ended reach the amount, so adding to Grow by hand counts too.
+
+Reading spending needs the user's whole set of accounts. Checked on mainnet (two test phones from another entry): Nimiq Pay moves incoming NIM from the wallet address into a co-signed HTLC; to top up or replace it, the HTLC hands the rest back to the wallet, which funds a new one; payments and staking transactions are sent from the HTLC; Lightning payments start as a new HTLC that a swap provider takes. So spending is everything leaving the wallet or any HTLC it (or its HTLCs) funded, except moves between them and staking. The same reading fixed two earlier gaps: Grow's history missed staking sent from the HTLC, and so did the weekly draw's check for withdrawals.
+
 ## Grow: staked NIM
 
 Grow works the same as in the save-codes plan:

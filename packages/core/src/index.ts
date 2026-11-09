@@ -21,3 +21,5 @@ export * from "./nimiq-address";
 export * from "./save";
 export * from "./nimiq-rpc";
 export * from "./prize";
+export * from "./own-history";
+export * from "./catch-up";

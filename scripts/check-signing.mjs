@@ -28,7 +28,7 @@ const PROVIDER_KEY_FILES = new Set(["packages/adapters/src/changelly/api.ts", "a
 // 2. Only these files may create a wallet executor or saver (besides the wallet packages that define them).
 const EXECUTOR_FILES = new Map([
   // Errand Save: each savings action is a tap handler that opens Nimiq Pay's own dialog.
-  ["apps/miniapp/src/save/SaveHome.tsx", ["saveRule", "openGrow", "addToGrow", "startWithdrawal", "finishWithdrawal", "revokeCode"]],
+  ["apps/miniapp/src/save/SaveHome.tsx", ["saveRule", "openGrow", "addToGrow", "startWithdrawal", "finishWithdrawal", "revokeCode", "saveCatchUp"]],
   // The weekly draw: joining and leaving are messages the person signs.
   ["apps/miniapp/src/save/Draw.tsx", ["joinDraw", "leaveDraw"]],
 ]);

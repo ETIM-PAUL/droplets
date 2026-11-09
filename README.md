@@ -8,7 +8,7 @@ Built for the Save track of Nimiq's Mini App competition (Cycle 3). MIT licensed
 
 **Save codes and Grow.** You choose how much of each payment to save, say 30%, and sign that choice once in Nimiq Pay. Errand gives you a save code such as `SAVE-7KQ2XMP`. Games, bounties and shops that pay you NIM can pay your code instead of your address: 30% goes into Grow and the rest to your wallet. Apps you allow in Errand don't need the code: they recognise the address they already pay.
 
-**Spend and save.** You can also save when you pay. Set a share such as 5%, and apps you allow add it on top when you buy something, then put it into Grow. Pay one 100 NIM, and you pay 105 NIM: 5 NIM of it is saved.
+**Spend and save.** You can also save when you pay. Set a share such as 5%, and apps you allow add it on top when you buy something, then put it into Grow. Pay one 100 NIM, and you pay 105 NIM: 5 NIM of it is saved. For payments anywhere else, the **catch-up** adds up your share daily, weekly, every two weeks or monthly, as you choose, and asks you to save it with one approval. Nothing can take it from your wallet automatically: Nimiq Pay asks you to approve every payment.
 
 Grow is NIM staked from your own account with a validator you pick. It earns staking rewards, and only you can move it.
 
@@ -51,6 +51,8 @@ sequenceDiagram
 - **Grow comes first.** Errand only gives out a code once Grow is open with at least 100 NIM, Nimiq's staking minimum.
 - **Apps you allow don't need the code.** Most Mini Apps get your address from Nimiq Pay and never ask for one. So your rule also names the apps that may recognise your address: when one of them pays you, it asks Errand how to split, the same as for a code. Any other app gets "pay it all to the wallet", the same answer as for someone who doesn't use Errand, so apps can't find out who saves.
 - **Spend and save.** When you pay an app you allow, it asks Errand what to charge: the price, plus your share on top. Once you've paid, it puts that share into your Grow. If Grow can't take it by then, the app sends it back to your wallet.
+- **The catch-up** covers everything else you pay (`GET /v1/save/catchup`). Nimiq Pay keeps your spendable NIM in an HTLC funded from your wallet and replaced about weekly, and pays from it, so Errand reads the wallet and every HTLC it funded (`ownHistory` in `packages/core`). Spending is whatever leaves those accounts, except moves between them and staking. Your share of it, less what apps already saved when you paid them, is offered once the day, week, two weeks or month ends. It counts as saved once your own add-stakes since then reach that amount.
+- **Staking from Nimiq Pay comes from the HTLC too,** so Grow's history in Activity, and the weekly draw's check for withdrawals, read all your accounts, not just your address.
 - **Your rule is a signed message.** Signing costs nothing. Errand checks that the signature belongs to your address.
 - **Apps pay you directly.** On Nimiq's proof of stake, anyone can add to an existing stake without the owner's signature, so an app can pay into your Grow itself. Errand's API only tells the app how to split each payment, then records what it sent once it has checked it on-chain.
 - **A payout never fails because of savings.** If Grow can't take the share, the whole payment goes to your wallet. That happens when Grow is closed, its validator is gone, or it would stay under 100 NIM.

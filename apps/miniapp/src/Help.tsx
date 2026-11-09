@@ -23,6 +23,10 @@ export function Help() {
           <p>Choose a share, like 5%, and apps you picked add it on top when you buy something, then put it into Grow. You see the full amount before you approve it in Nimiq Pay. Only those apps can do this; paying anyone else stays as it is.</p>
         </div>
         <div className="help-row">
+          <strong>The catch-up</strong>
+          <p>For everything else you pay, Errand adds up your share each day, week, two weeks or month, as you choose, and shows it on Savings with a Save button. Nothing can take it from your wallet by itself: you approve it in Nimiq Pay. If you add at least that much to Grow yourself, it counts too.</p>
+        </div>
+        <div className="help-row">
           <strong>Taking money out</strong>
           <p>Withdrawing from Grow takes 12 to 24 hours, because Nimiq releases staked NIM at the end of an epoch. Then you finish it in Savings, with two approvals in Nimiq Pay.</p>
         </div>

@@ -37,6 +37,10 @@ export interface NimiqTransaction {
   confirmations: number;
   /** Block time, ms since 1970. */
   timestamp: number;
+  /** The recipient's account type: 0 basic, 1 vesting, 2 HTLC, 3 staking. Absent when unknown. */
+  toType?: number;
+  /** 1 when this transaction creates the recipient contract, such as a new HTLC; 2 for a staking signal. */
+  flags?: number;
 }
 
 /** A block's place, fingerprint and time. */
@@ -50,13 +54,14 @@ export interface NimiqBlock {
 interface RawStaker { balance: number; inactiveBalance: number; inactiveFrom: number | null; retiredBalance: number; delegation: string }
 interface RawValidator { address: string; balance: number; numStakers: number; jailedFrom: number | null; retired: boolean }
 interface RawBlock { number: number; hash: string; timestamp: number }
-interface RawTx { hash: string; blockNumber: number; from: string; to: string; value: number; recipientData: string | null; senderData: string | null; executionResult: boolean; confirmations: number; timestamp: number }
+interface RawTx { hash: string; blockNumber: number; from: string; to: string; toType?: number; flags?: number; value: number; recipientData: string | null; senderData: string | null; executionResult: boolean; confirmations: number; timestamp: number }
 
 const toBig = (n: number | string) => BigInt(n);
 const toBlock = (b: RawBlock): NimiqBlock => ({ number: b.number, hash: b.hash, timestamp: b.timestamp });
 const toTx = (t: RawTx): NimiqTransaction => ({
   hash: t.hash, blockNumber: t.blockNumber, from: t.from, to: t.to, value: toBig(t.value), recipientData: t.recipientData ?? "",
   senderData: t.senderData ?? "", executionResult: t.executionResult, confirmations: t.confirmations, timestamp: t.timestamp ?? 0,
+  ...(t.toType === undefined ? {} : { toType: t.toType }), ...(t.flags === undefined ? {} : { flags: t.flags }),
 });
 
 /** The few calls Errand Save needs from a Nimiq PoS node. Read-only, plus sending transactions that are already signed. */

@@ -1,23 +1,33 @@
 import { createHash, createPublicKey, randomBytes, randomUUID, verify } from "node:crypto";
 import type { Env as HonoEnv, Hono } from "hono";
 import {
+  CATCH_UP_MAX_DAYS,
+  catchUpOwed,
+  catchUpWindow,
   formatSaveCode,
   growEvents,
+  HTLC_LIFETIME_DAYS,
   isAppName,
+  isOwn,
   MIN_STAKE_LUNA,
   newSaveCode,
+  nextCatchUpPeriodStart,
   nimiqAddressBytes,
   nimiqAddressFromPublicKey,
   nimiqMessageHash,
+  ownAddresses,
+  ownHistory,
   parseNimiqAddress,
   parseSaveCode,
   parseSaveMessage,
   releaseBlock,
   spendSave,
+  spentBetween,
   splitPayout,
   STAKING_CONTRACT,
   type GrowState,
   type NimiqRpc,
+  type OwnHistory,
   type StakerState,
 } from "@railkit/core";
 import { answerSavingsQuestion, looksEnglish, parseSave, phraseSavingsAnswer, type SavePeriod, type SaveQuestion, type SavingsClassifier, type SavingsFacts, type SavingsPhraser } from "@railkit/agent";
@@ -93,9 +103,12 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
   const readLimit = rateLimiter(120, 60_000, now);
   const appLimit = rateLimiter(600, 60_000, now);
   const askLimit = rateLimiter(30, 60_000, now);
+  /** Reads that skip the cache re-read whole histories from the node, so fewer of them. */
+  const freshLimit = rateLimiter(30, 60_000, now);
   const stakers = cache<StakerState | null>(60_000, now);
   const validators = cache<{ jailedFrom: number | null } | null>(10 * 60_000, now);
   const validatorList = cache<{ address: string; stakeLuna: string; numStakers: number }[]>(10 * 60_000, now);
+  const histories = cache<OwnHistory>(60_000, now);
 
   const ip = (c: { req: { header(n: string): string | undefined } }) => h.clientKey((n) => c.req.header(n));
 
@@ -109,6 +122,15 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
     if (!v) return { grow: { open: false, reason: "validator-gone" }, jailedFrom: null };
     return { grow: { open: true, staker }, jailedFrom: v.jailedFrom };
   }
+
+  /**
+   * The user's own accounts and their transactions: the wallet, and the HTLCs Nimiq Pay keeps their balance in, which
+   * is where their payments and staking come from. Far enough back for the longest catch-up.
+   */
+  const historyOf = (address: string, fresh = false) => {
+    const read = () => ownHistory(address, (a, max) => s.chain.transactionsByAddress(a, max), { since: now() - (CATCH_UP_MAX_DAYS + HTLC_LIFETIME_DAYS) * 86_400_000 });
+    return fresh ? read() : histories(address, read);
+  };
 
   async function appFrom(authorization: string | undefined): Promise<SaveApp | undefined> {
     const key = authorization?.replace(/^Bearer /i, "").trim();
@@ -133,8 +155,11 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
   /** Set or revoke the rule. The body is the message the user signed in Nimiq Pay, with the key and signature. */
   app.post("/v1/save/rule", async (c) => {
     if (!ruleLimit(ip(c))) return bad("Too many tries in a short time. Wait a minute.", 429);
-    const body = (await c.req.json().catch(() => null)) as { message?: unknown; publicKey?: unknown; signature?: unknown } | null;
+    const body = (await c.req.json().catch(() => null)) as { message?: unknown; publicKey?: unknown; signature?: unknown; tzOffsetMinutes?: unknown } | null;
     const message = typeof body?.message === "string" ? body.message : "";
+    // Not signed: it only decides when the user's day, week or month starts.
+    const tz = body?.tzOffsetMinutes;
+    const tzOffsetMinutes = typeof tz === "number" && Number.isInteger(tz) && Math.abs(tz) <= 14 * 60 ? tz : null;
     const publicKey = typeof body?.publicKey === "string" ? body.publicKey.toLowerCase() : "";
     const signature = typeof body?.signature === "string" ? body.signature.toLowerCase() : "";
     const m = parseSaveMessage(message);
@@ -165,8 +190,15 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
       if (unknown) return bad(`Errand doesn't know an app called ${unknown}. Reload and try again.`);
       appIds = m.value.apps.map((n) => byName.get(n.toLowerCase())!);
     }
-    const rule = { savePercent: m.value.savePercent!, spendPercent: m.value.spendPercent ?? existing?.spendPercent ?? 0, appIds };
-    const reply = (code: string) => c.json({ code: formatSaveCode(code), address, savePercent: rule.savePercent, spendPercent: rule.spendPercent, appIds });
+    const spendPercent = m.value.spendPercent ?? existing?.spendPercent ?? 0;
+    // A catch-up only covers spending under the share it asks for: turning it on or changing it starts afresh.
+    const changed = spendPercent !== (existing?.spendPercent ?? 0);
+    const rule = {
+      savePercent: m.value.savePercent!, spendPercent, appIds, catchUpEvery: m.value.catchUp ?? existing?.catchUpEvery ?? "weekly",
+      catchUpFrom: changed ? now() : existing?.catchUpFrom || existing?.updatedAt || now(),
+      tzOffsetMinutes: tzOffsetMinutes ?? existing?.tzOffsetMinutes ?? null,
+    };
+    const reply = (code: string) => c.json({ code: formatSaveCode(code), address, savePercent: rule.savePercent, spendPercent: rule.spendPercent, appIds, catchUp: rule.catchUpEvery });
     if (existing) {
       await s.store.updateRule(existing.code, rule, now());
       log("save rule changed", { code: existing.code, savePercent: rule.savePercent, spendPercent: rule.spendPercent, apps: appIds.length });
@@ -225,6 +257,7 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
         code: x.code ? formatSaveCode(x.code.code) : null,
         savePercent: x.code?.savePercent ?? null,
         spendPercent: x.code?.spendPercent ?? null,
+        catchUp: x.code?.catchUpEvery ?? null,
         apps: (x.code?.appIds ?? []).map((id) => ({ id, name: x.appName(id) })),
         blockNumber: x.blockNumber,
         grow: x.staker && { ...lunaJson(x.staker), releaseBlock: x.release, validatorJailed: x.jailedFrom !== null },
@@ -250,7 +283,7 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
       s.store.receiptsForAddress(addr.value, 100),
       s.store.splitsForAddress(addr.value, 100),
       s.store.listApps(),
-      s.chain.transactionsByAddress(addr.value, 100).catch((e) => (log("save activity chain read failed", { error: String(e) }), null)),
+      historyOf(addr.value).catch((e) => (log("save activity chain read failed", { error: String(e) }), null)),
     ]);
     const names = new Map(apps.map((a) => [a.id, a.name]));
     const payments = new Map<string, { payoutId: string; app: string; source: "payout" | "spend"; walletLuna: bigint; growLuna: bigint; at: number; reason: string | null }>();
@@ -269,7 +302,7 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
     }
     return c.json({
       payments: [...payments.values()].sort((a, b) => b.at - a.at).map((p) => ({ ...p, walletLuna: p.walletLuna.toString(), growLuna: p.growLuna.toString() })),
-      grow: txs && growEvents(addr.value, txs).map((e) => ({ ...e, luna: e.luna.toString() })),
+      grow: txs && growEvents(addr.value, txs.txs, [addr.value, ...txs.htlcs]).map((e) => ({ ...e, luna: e.luna.toString() })),
     });
   });
 
@@ -316,6 +349,54 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
       return c.json({ answer: out.text, question: kind, source: out.source });
     } catch (e) {
       log("save ask failed", { error: String(e) });
+      return bad("Couldn't reach the Nimiq network. Try again in a minute.", 502);
+    }
+  });
+
+  /**
+   * The catch-up: the user's share of what they spent since the last one, outside apps that already saved when they
+   * paid, ready to save in one approval. It counts as settled once the user's own add-stakes since the end of the
+   * period reach what's owed, whether from this card or from adding to Grow themselves.
+   */
+  app.get("/v1/save/catchup", async (c) => {
+    if (!readLimit(ip(c))) return bad("Too many requests. Wait a minute.", 429);
+    const addr = parseNimiqAddress(c.req.query("address") ?? "");
+    if (!addr.ok) return bad(addr.error.message);
+    const row = await s.store.activeCodeByAddress(addr.value);
+    if (!row || row.spendPercent === 0) return c.json({ status: "off", every: row?.catchUpEvery ?? null, spendPercent: row?.spendPercent ?? 0 });
+    // The time zone saved with the rule, so boundaries don't move when the phone's does; the phone's until then.
+    const tz = Number(c.req.query("tzOffsetMinutes") ?? "0");
+    const offset = row.tzOffsetMinutes ?? (Number.isInteger(tz) && Math.abs(tz) <= 14 * 60 ? tz : 0);
+    try {
+      const last = await s.store.lastCatchUp(addr.value);
+      const w = catchUpWindow(now(), row.catchUpEvery, offset, Math.max(row.catchUpFrom || row.updatedAt, last?.periodTo ?? 0));
+      const base = { every: row.catchUpEvery, spendPercent: row.spendPercent, from: w.from, to: w.to, next: w.next };
+      if (w.to <= w.from) return c.json({ status: "waiting", ...base });
+      const fresh = c.req.query("fresh") === "1" && freshLimit(ip(c));
+      const [h, receipts, { grow }] = await Promise.all([historyOf(addr.value, fresh), s.store.receiptsForAddress(addr.value, 500), growState(addr.value, fresh)]);
+      const spent = spentBetween(h, w.from, w.to);
+      // What apps already saved when the user paid them, in the same time: that spending has had its share.
+      const saved = receipts.filter((r) => r.source === "spend" && r.kind === "grow" && r.createdAt >= w.from && r.createdAt < w.to).reduce((a, r) => a + BigInt(r.luna), 0n);
+      const owed = catchUpOwed(spent, row.spendPercent, saved);
+      // Paid by the user's own add-stakes since the first period in the window ended, whenever Errand sees them, and
+      // never ones that settled an earlier catch-up.
+      const own = ownAddresses(h);
+      const stakeHex = `06${hex(nimiqAddressBytes(addr.value))}`;
+      const since = Math.max(nextCatchUpPeriodStart(w.from, row.catchUpEvery, offset), last?.createdAt ?? 0);
+      const added = h.txs.filter(
+        (t) => t.executionResult && t.timestamp >= since && t.hash !== last?.txHash && isOwn(own, t.from) && t.to === STAKING_CONTRACT && t.recipientData.toLowerCase().startsWith(stakeHex),
+      );
+      const paid = added.reduce((a, t) => a + t.value, 0n);
+      const left = owed > paid ? owed - paid : 0n;
+      const amounts = { spent: spent.toString(), alreadySaved: saved.toString(), paid: paid.toString(), owed: left.toString(), complete: h.coversFrom <= w.from, growOpen: grow.open };
+      if (owed > 0n && left === 0n) {
+        await s.store.addCatchUp({ address: addr.value, periodTo: w.to, txHash: added[0]!.hash, luna: owed.toString(), createdAt: now() });
+        log("save catch-up settled", { every: row.catchUpEvery });
+        return c.json({ status: "done", ...base, ...amounts });
+      }
+      return c.json({ status: left > 0n ? "due" : "nothing", ...base, ...amounts });
+    } catch (e) {
+      log("save catch-up failed", { error: String(e) });
       return bad("Couldn't reach the Nimiq network. Try again in a minute.", 502);
     }
   });
@@ -471,7 +552,9 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
         const ok = kind === "wallet" ? tx.to === row.address : tx.to === STAKING_CONTRACT && tx.recipientData.startsWith(`06${stakerHex}`);
         if (!ok) return bad(kind === "wallet" ? "walletTx didn't pay this saver's address." : "growTx isn't an add-stake into this saver's Grow savings.");
         await s.store.addReceipt({
-          txHash: tx.hash, code: row.code, address: row.address, appId: payer.id, kind, source, luna: tx.value.toString(), payoutId, blockNumber: tx.blockNumber, createdAt: now(),
+          txHash: tx.hash, code: row.code, address: row.address, appId: payer.id, kind, source, luna: tx.value.toString(), payoutId, blockNumber: tx.blockNumber,
+          // When it happened on-chain, so it's counted in the period the payment was made.
+          createdAt: tx.timestamp || now(),
         });
         out[t.k] = "recorded";
       }

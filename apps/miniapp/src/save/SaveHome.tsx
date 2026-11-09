@@ -1,9 +1,9 @@
 import { init } from "@nimiq/mini-app-sdk";
 import type { SaveIntent } from "@railkit/agent";
-import type { SaveApp, SaveMe, SaveValidator } from "@railkit/client";
-import { checkWithdrawal, formatSaveMessage, lunaToNimString, MIN_STAKE_LUNA, nimStringToLuna, parseNimiqAddress, WalletError, type StakerState } from "@railkit/core";
+import type { SaveApp, SaveCatchUp, SaveMe, SaveValidator } from "@railkit/client";
+import { CATCH_UP_EVERY, checkWithdrawal, formatSaveMessage, lunaToNimString, MIN_STAKE_LUNA, nimStringToLuna, parseNimiqAddress, WalletError, type CatchUpEvery, type StakerState } from "@railkit/core";
 import { createNimiqSaver } from "@railkit/wallet-nimiq";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { formatMoney } from "../format";
 import { api, hostNetwork } from "../api";
 import { AppBar, Icon, QrCode } from "../ui";
@@ -13,6 +13,11 @@ type Mode = "home" | "rule" | "open" | "add" | "withdraw";
 const PRESETS = [10, 30, 50, 100];
 /** Shares saved on top when paying an app: small, since they're added to the price. */
 const SPEND_PRESETS = [0, 5, 10, 20];
+const CATCH_UP_LABEL: Record<CatchUpEvery, string> = { daily: "Daily", weekly: "Weekly", biweekly: "Every 2 weeks", monthly: "Monthly" };
+const CATCH_UP_PERIOD: Record<CatchUpEvery, string> = { daily: "day", weekly: "week", biweekly: "two weeks", monthly: "month" };
+/** The phone's time zone, so a week or a month starts when it does for the user. */
+const tzOffset = () => -new Date().getTimezoneOffset();
+const dayName = (ms: number) => new Date(ms).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
 /** Payments in shown on Savings; Activity has the rest. */
 const PAID_IN_SHOWN = 4;
 const nim = (luna: string | bigint) => formatMoney(lunaToNimString(BigInt(luna)), "NIM");
@@ -70,6 +75,12 @@ export function SaveHome({ address, start, onStarted, ask, draw, onSeeAll }: Pro
   /** Names of the apps allowed to recognise the user's address, as they'll appear in the signed rule. */
   const [chosen, setChosen] = useState<string[]>([]);
   const [apps, setApps] = useState<SaveApp[] | null>(null);
+  const [catchUpEvery, setCatchUpEvery] = useState<CatchUpEvery>("weekly");
+  const [catchUp, setCatchUp] = useState<SaveCatchUp | null>(null);
+  /** Catch-up answers are numbered so a slower, older one can't overwrite a newer one. */
+  const catchUpSeq = useRef(0);
+  /** A catch-up just paid for, until the chain shows it: no second Save button meanwhile. */
+  const [paidFor, setPaidFor] = useState<{ to: number; luna: bigint; at: number } | null>(null);
   const [amount, setAmount] = useState("");
   const [validators, setValidators] = useState<SaveValidator[] | null>(null);
   const [validator, setValidator] = useState<string | null>(null);
@@ -85,7 +96,13 @@ export function SaveHome({ address, start, onStarted, ask, draw, onSeeAll }: Pro
       setLoadError(null);
       if (m.savePercent !== null) setPercent(m.savePercent);
       if (m.spendPercent !== null) setSpendPercent(m.spendPercent);
+      if (m.catchUp !== null) setCatchUpEvery(m.catchUp);
       setChosen(m.apps.map((a) => a.name));
+      // The catch-up is extra: if it can't load, the rest of Savings still works.
+      const seq = ++catchUpSeq.current;
+      const show = (c: SaveCatchUp | null) => void (seq === catchUpSeq.current && setCatchUp(c));
+      if (m.spendPercent) void api.saveCatchUp(self.value, tzOffset(), fresh).then(show, () => show(null));
+      else show(null);
       return m;
     } catch (e) {
       setLoadError(errorText(e));
@@ -179,6 +196,7 @@ export function SaveHome({ address, start, onStarted, ask, draw, onSeeAll }: Pro
     if (m === "rule" && me) {
       setPercent(me.savePercent ?? 30);
       setSpendPercent(me.spendPercent ?? 0);
+      setCatchUpEvery(me.catchUp ?? "weekly");
       setChosen(me.apps.map((a) => a.name));
     }
     setMode(m);
@@ -187,7 +205,7 @@ export function SaveHome({ address, start, onStarted, ask, draw, onSeeAll }: Pro
   // ---- Tap handlers. Each opens Nimiq Pay's own dialog; the signing guard checks they stay that way.
 
   /** Signs all three rules in one message: the share of payouts, the share on top when paying, and the apps allowed. */
-  async function saveRule(rules: { savePercent: number; spendPercent: number; apps: string[] }) {
+  async function saveRule(rules: { savePercent: number; spendPercent: number; apps: string[]; catchUp: CatchUpEvery }) {
     if (!self?.ok) return;
     setBusy(true);
     setError(null);
@@ -195,7 +213,7 @@ export function SaveHome({ address, start, onStarted, ask, draw, onSeeAll }: Pro
       const message = formatSaveMessage({ action: "set", address: self.value, ...rules, time: new Date().toISOString(), nonce: newNonce() });
       const saver = createNimiqSaver(await init({ timeout: 5_000 }));
       const signed = await saver.signRule(message);
-      await api.saveRule({ message, ...signed });
+      await api.saveRule({ message, ...signed, tzOffsetMinutes: tzOffset() });
       await load(true);
       setMode("home");
       setInfo(`Saved. Apps pay ${rules.savePercent}% of what they send you into Grow${rules.spendPercent ? `, and ${rules.spendPercent}% more goes in when you pay one` : ""}.`);
@@ -294,6 +312,38 @@ export function SaveHome({ address, start, onStarted, ask, draw, onSeeAll }: Pro
     }
   }
 
+  /** Saves the catch-up: the user's share of what they spent, into Grow, with one approval in Nimiq Pay. */
+  async function saveCatchUp() {
+    if (!self?.ok || catchUp?.status !== "due") return;
+    const owed = BigInt(catchUp.owed);
+    setBusy(true);
+    setError(null);
+    try {
+      const saver = createNimiqSaver(await init({ timeout: 5_000 }));
+      await saver.addToGrow(owed);
+      setPaidFor({ to: catchUp.to, luna: owed, at: Date.now() });
+      setInfo(`Saving ${nim(owed)} into Grow.`);
+      // The chain shows it within seconds; check a few times until the catch-up counts it.
+      for (let i = 0; i < 10; i++) {
+        await sleep(3_000);
+        const seq = ++catchUpSeq.current;
+        const c = await api.saveCatchUp(self.value, tzOffset(), true).catch(() => null);
+        if (seq !== catchUpSeq.current || !c) continue;
+        setCatchUp(c);
+        if (c.status !== "due" || BigInt(c.owed) < owed) {
+          setPaidFor(null);
+          if (c.status === "done") setInfo(`Caught up: ${nim(owed)} saved. The next catch-up is on ${dayName(c.next)}.`);
+          break;
+        }
+      }
+      await load(true);
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function revokeCode() {
     if (!self?.ok) return;
     setBusy(true);
@@ -371,6 +421,17 @@ export function SaveHome({ address, start, onStarted, ask, draw, onSeeAll }: Pro
               : `Pay an app 100 NIM and you pay ${100 + spendPercent} NIM: ${spendPercent} NIM of it goes into Grow. Only in apps you allow below.`}
           </p>
         </div>
+        {spendPercent > 0 && (
+          <div className="field">
+            <span className="field-label">Catch up on everything else</span>
+            <div className="presets" role="group" aria-label="How often to catch up">
+              {CATCH_UP_EVERY.map((e) => (
+                <button key={e} type="button" className="preset preset-word" aria-pressed={catchUpEvery === e} onClick={() => setCatchUpEvery(e)}>{CATCH_UP_LABEL[e]}</button>
+              ))}
+            </div>
+            <p className="hint">For payments anywhere else, Errand adds up your {spendPercent}% each {CATCH_UP_PERIOD[catchUpEvery]} and asks you to save it. Nothing moves until you approve it in Nimiq Pay.</p>
+          </div>
+        )}
         <div className="field">
           <span className="field-label">Apps that know it's you</span>
           {apps === null ? <p className="hint">Loading apps…</p> : apps.length === 0 ? <p className="hint">No apps save with Errand yet. Give apps your code meanwhile.</p> : (
@@ -387,7 +448,7 @@ export function SaveHome({ address, start, onStarted, ask, draw, onSeeAll }: Pro
         </div>
         {messages}
         <div className="bottom">
-          <button type="button" className="primary" disabled={busy || wrongNetwork || apps === null} onClick={() => void saveRule({ savePercent: percent, spendPercent, apps: allowed })}>
+          <button type="button" className="primary" disabled={busy || wrongNetwork || apps === null} onClick={() => void saveRule({ savePercent: percent, spendPercent, apps: allowed, catchUp: catchUpEvery })}>
             {busy ? "Opening Nimiq Pay…" : "Save my rules"}
           </button>
           <p className="note">Nimiq Pay asks you to sign, so only you can change your rules. It costs nothing.</p>
@@ -478,7 +539,7 @@ export function SaveHome({ address, start, onStarted, ask, draw, onSeeAll }: Pro
             <p className="note">Step 2 of 2. Grow is open with {nim(BigInt(g.active) + BigInt(g.inactive))}.</p>
             {picker}
             {messages}
-            <button type="button" className="primary" disabled={busy || wrongNetwork} onClick={() => void saveRule({ savePercent: percent, spendPercent: 0, apps: [] })}>{busy ? "Opening Nimiq Pay…" : "Get my save code"}</button>
+            <button type="button" className="primary" disabled={busy || wrongNetwork} onClick={() => void saveRule({ savePercent: percent, spendPercent: 0, apps: [], catchUp: "weekly" })}>{busy ? "Opening Nimiq Pay…" : "Get my save code"}</button>
             <p className="note">Nimiq Pay asks you to sign your choice. Signing costs nothing.</p>
           </>
         ) : (
@@ -514,6 +575,25 @@ export function SaveHome({ address, start, onStarted, ask, draw, onSeeAll }: Pro
 
       {messages}
 
+      {catchUp?.status === "due" && (
+        <section className="card catchup-card" aria-label="Catch-up">
+          <strong>Catch-up: save {nim(catchUp.owed)}</strong>
+          <p className="hint">
+            From {dayName(catchUp.from)} to {dayName(catchUp.to - 1)} you spent {nim(catchUp.spent)}. Your {catchUp.spendPercent}% catch-up is {nim(BigInt(catchUp.owed) + BigInt(catchUp.paid))}
+            {BigInt(catchUp.alreadySaved) > 0n ? `, after the ${nim(catchUp.alreadySaved)} apps already saved when you paid them.` : "."}
+            {BigInt(catchUp.paid) > 0n ? ` You've added ${nim(catchUp.paid)} to Grow since, so ${nim(catchUp.owed)} is left.` : ""}
+          </p>
+          {!catchUp.complete && <p className="note">Some older payments couldn't be read, so this may be a little low.</p>}
+          {paidFor && paidFor.to === catchUp.to && BigInt(catchUp.owed) >= paidFor.luna && Date.now() - paidFor.at < 10 * 60_000 ? (
+            <p className="note" role="status">Your {nim(paidFor.luna)} is on its way. It can take a minute to show here.</p>
+          ) : catchUp.growOpen ? (
+            <button type="button" className="primary" disabled={busy || wrongNetwork} onClick={() => void saveCatchUp()}>{busy ? "Opening Nimiq Pay…" : `Save ${nim(catchUp.owed)}`}</button>
+          ) : (
+            <p className="note">Open Grow again to save it: it needs at least 100 NIM.</p>
+          )}
+        </section>
+      )}
+
       <section className="card code-card" aria-label="Your save code">
         <span className="hint">Your save code</span>
         <p className="save-code">{me.code}</p>
@@ -542,6 +622,18 @@ export function SaveHome({ address, start, onStarted, ask, draw, onSeeAll }: Pro
           <dd>{me.spendPercent ? `${me.spendPercent}% more into Grow` : "Nothing extra"}</dd>
           <dt>Apps that know it's you</dt>
           <dd>{me.apps.length ? me.apps.map((a) => a.name).join(", ") : "None yet"}</dd>
+          {me.spendPercent ? (
+            <>
+              <dt>Catch-up</dt>
+              <dd>{CATCH_UP_LABEL[me.catchUp ?? "weekly"]}</dd>
+              {catchUp && catchUp.status !== "off" && catchUp.status !== "due" && (
+                <>
+                  <dt>Next catch-up</dt>
+                  <dd>{dayName(catchUp.next)}</dd>
+                </>
+              )}
+            </>
+          ) : null}
         </dl>
         <button type="button" className="secondary" onClick={() => go("rule")}>Change rules</button>
       </section>

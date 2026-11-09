@@ -132,6 +132,21 @@ describe("this week, for one person", () => {
     expect(me.rules).toMatchObject({ minLuna: NIM(1_000).toString(), daysNeeded: 5, prizeLuna: NIM(1_000).toString(), maxTickets: 4, prizeAddress: PRIZE_WALLET });
   });
 
+  it("sees a withdrawal that Nimiq Pay sent from the user's HTLC rather than their address", async () => {
+    const { app, store, stakes, history, setTime } = setup();
+    const ada = account();
+    const htlc = "NQ89 4VDF DQ8Q JEGL KX8U A1HC DE6K A78Y CJR5";
+    await store.join({ address: ada.address, device: PHONE, joinedAt: at(0, 1), checkedAt: null });
+    await store.addCheck({ address: ada.address, at: at(0, 1), activeLuna: NIM(2_000).toString() });
+    // Nimiq Pay keeps her balance in an HTLC her wallet funded, and stakes from there.
+    history.set(ada.address, [{ ...stakingTx(ada.address, "", at(0, 0) - 86_400_000, NIM(3_000)), to: htlc, toType: 2, flags: 1 }]);
+    history.set(htlc, [setActive(htlc, NIM(500), at(1, 12)), stakingTx(htlc, `06${hexOf(ada.address)}`, at(1, 18), NIM(1_500))]);
+    stakes.set(ada.address, NIM(2_000));
+    setTime(at(3, 10));
+    const me = await json(await app.request(`/v1/prize/me?address=${encodeURIComponent(ada.address)}`));
+    expect(me.week.days.map((d: { status: string }) => d.status)).toEqual(["kept", "missed", "kept", "today", "ahead", "ahead", "ahead"]);
+  });
+
   it("says so when the person hasn't joined", async () => {
     const { app } = setup();
     const me = await json(await app.request(`/v1/prize/me?address=${encodeURIComponent(account().address)}`));

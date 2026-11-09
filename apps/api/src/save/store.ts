@@ -1,3 +1,4 @@
+import type { CatchUpEvery } from "@railkit/core";
 import type { Pool } from "pg";
 
 /** A user's save code and rule. One active code per address; revoked codes stay for the record. */
@@ -10,6 +11,12 @@ export interface SaveCodeRow {
   spendPercent: number;
   /** Apps the user allowed to recognise their address, by id. Others need the code. */
   appIds: string[];
+  /** How often Errand offers to save the share of spending elsewhere. */
+  catchUpEvery: CatchUpEvery;
+  /** When saving when paying was turned on or last changed: catch-ups never reach back before this. 0 if never recorded. */
+  catchUpFrom: number;
+  /** The phone's time zone when the rule was last saved, in minutes east of UTC: catch-up periods follow it. */
+  tzOffsetMinutes: number | null;
   createdAt: number;
   updatedAt: number;
   revokedAt: number | null;
@@ -40,6 +47,16 @@ export interface SaveReceipt {
   createdAt: number;
 }
 
+/** A catch-up the user saved: the spending before `periodTo` is settled, the next one starts there. */
+export interface SaveCatchUp {
+  address: string;
+  periodTo: number;
+  /** The user's own add-stake that settled it. */
+  txHash: string;
+  luna: string;
+  createdAt: number;
+}
+
 /** How one payout was split, recorded when the paying app says which payout it is. It answers "why did that go to my wallet?". */
 export interface SaveSplitRow {
   appId: string;
@@ -58,7 +75,7 @@ export interface SaveStore {
   activeCode(code: string): Promise<SaveCodeRow | undefined>;
   /** False when the code is already taken (a collision; pick another). */
   insertCode(row: SaveCodeRow): Promise<boolean>;
-  updateRule(code: string, rule: Pick<SaveCodeRow, "savePercent" | "spendPercent" | "appIds">, at: number): Promise<void>;
+  updateRule(code: string, rule: Pick<SaveCodeRow, "savePercent" | "spendPercent" | "appIds" | "catchUpEvery" | "catchUpFrom" | "tzOffsetMinutes">, at: number): Promise<void>;
   revoke(code: string, at: number): Promise<void>;
   /** True the first time a nonce is seen, false after; old nonces are forgotten after a day. */
   useNonce(nonce: string, at: number): Promise<boolean>;
@@ -71,6 +88,10 @@ export interface SaveStore {
   /** Keeps the first split for each app and payout: a retried payout looks its split up again. */
   addSplit(r: SaveSplitRow): Promise<void>;
   splitsForAddress(address: string, limit: number): Promise<SaveSplitRow[]>;
+  /** The latest catch-up the user settled, if any. */
+  lastCatchUp(address: string): Promise<SaveCatchUp | undefined>;
+  /** Ignores a transaction it already has. */
+  addCatchUp(c: SaveCatchUp): Promise<void>;
 }
 
 const NONCE_TTL_MS = 86_400_000;
@@ -81,6 +102,7 @@ export class MemorySaveStore implements SaveStore {
   private apps = new Map<string, SaveApp>();
   private receipts = new Map<string, SaveReceipt>();
   private splits = new Map<string, SaveSplitRow>();
+  private catchUps = new Map<string, SaveCatchUp>();
 
   async activeCodeByAddress(address: string) {
     return [...this.codes.values()].find((c) => c.address === address && c.revokedAt === null);
@@ -94,7 +116,7 @@ export class MemorySaveStore implements SaveStore {
     this.codes.set(row.code, { ...row, appIds: [...row.appIds] });
     return true;
   }
-  async updateRule(code: string, rule: Pick<SaveCodeRow, "savePercent" | "spendPercent" | "appIds">, at: number) {
+  async updateRule(code: string, rule: Pick<SaveCodeRow, "savePercent" | "spendPercent" | "appIds" | "catchUpEvery" | "catchUpFrom" | "tzOffsetMinutes">, at: number) {
     const c = this.codes.get(code);
     if (c) this.codes.set(code, { ...c, ...rule, appIds: [...rule.appIds], updatedAt: at });
   }
@@ -129,6 +151,12 @@ export class MemorySaveStore implements SaveStore {
   }
   async splitsForAddress(address: string, limit: number) {
     return [...this.splits.values()].filter((r) => r.address === address).sort((a, b) => b.createdAt - a.createdAt).slice(0, limit);
+  }
+  async lastCatchUp(address: string) {
+    return [...this.catchUps.values()].filter((c) => c.address === address).sort((a, b) => b.periodTo - a.periodTo)[0];
+  }
+  async addCatchUp(c: SaveCatchUp) {
+    if (!this.catchUps.has(c.txHash)) this.catchUps.set(c.txHash, { ...c });
   }
 }
 
@@ -180,17 +208,31 @@ CREATE TABLE IF NOT EXISTS save_splits (
 CREATE INDEX IF NOT EXISTS save_splits_address ON save_splits (address, created_at);
 ALTER TABLE save_codes ADD COLUMN IF NOT EXISTS spend_percent INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE save_codes ADD COLUMN IF NOT EXISTS app_ids TEXT NOT NULL DEFAULT '';
-ALTER TABLE save_receipts ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'payout';`;
+ALTER TABLE save_receipts ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'payout';
+ALTER TABLE save_codes ADD COLUMN IF NOT EXISTS catchup_every TEXT NOT NULL DEFAULT 'weekly';
+ALTER TABLE save_codes ADD COLUMN IF NOT EXISTS catchup_from BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE save_codes ADD COLUMN IF NOT EXISTS tz_offset INTEGER;
+CREATE TABLE IF NOT EXISTS save_catchups (
+  tx_hash TEXT PRIMARY KEY,
+  address TEXT NOT NULL,
+  period_to BIGINT NOT NULL,
+  luna TEXT NOT NULL,
+  created_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS save_catchups_address ON save_catchups (address, period_to);`;
 
 type Num = string | number;
-interface CodeRow { code: string; address: string; save_percent: Num; spend_percent: Num; app_ids: string; created_at: Num; updated_at: Num; revoked_at: Num | null }
+interface CodeRow { code: string; address: string; save_percent: Num; spend_percent: Num; app_ids: string; catchup_every: CatchUpEvery; catchup_from: Num; tz_offset: Num | null; created_at: Num; updated_at: Num; revoked_at: Num | null }
+interface CatchUpRow { tx_hash: string; address: string; period_to: Num; luna: string; created_at: Num }
 interface AppRow { id: string; name: string; key_hash: string; payout_addresses: string; created_at: Num }
 interface SplitRow { app_id: string; payout_id: string; code: string; address: string; wallet_luna: string; grow_luna: string; reason: SaveSplitRow["reason"]; save_percent: Num; created_at: Num }
 interface ReceiptRow { tx_hash: string; code: string; address: string; app_id: string; kind: "wallet" | "grow"; source: SaveReceipt["source"]; luna: string; payout_id: string; block_number: Num; created_at: Num }
 
 const code = (r: CodeRow): SaveCodeRow => ({
   code: r.code, address: r.address, savePercent: Number(r.save_percent), spendPercent: Number(r.spend_percent ?? 0),
-  appIds: (r.app_ids ?? "").split(",").filter(Boolean), createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
+  appIds: (r.app_ids ?? "").split(",").filter(Boolean), catchUpEvery: r.catchup_every ?? "weekly", catchUpFrom: Number(r.catchup_from ?? 0),
+  tzOffsetMinutes: r.tz_offset === null || r.tz_offset === undefined ? null : Number(r.tz_offset),
+  createdAt: Number(r.created_at), updatedAt: Number(r.updated_at),
   revokedAt: r.revoked_at === null ? null : Number(r.revoked_at),
 });
 const app = (r: AppRow): SaveApp => ({ id: r.id, name: r.name, keyHash: r.key_hash, payoutAddresses: r.payout_addresses.split(",").filter(Boolean), createdAt: Number(r.created_at) });
@@ -233,15 +275,17 @@ export class PgSaveStore implements SaveStore {
   }
   async insertCode(row: SaveCodeRow) {
     return this.insertOnce(
-      `INSERT INTO save_codes (code, address, save_percent, spend_percent, app_ids, created_at, updated_at, revoked_at)
-       SELECT $1::text, $2::text, $3::integer, $4::integer, $5::text, $6::bigint, $7::bigint, NULL WHERE NOT EXISTS (SELECT 1 FROM save_codes WHERE code = $1) RETURNING code`,
-      [row.code, row.address, row.savePercent, row.spendPercent, row.appIds.join(","), row.createdAt, row.updatedAt],
+      `INSERT INTO save_codes (code, address, save_percent, spend_percent, app_ids, catchup_every, catchup_from, tz_offset, created_at, updated_at, revoked_at)
+       SELECT $1::text, $2::text, $3::integer, $4::integer, $5::text, $6::text, $7::bigint, $8::integer, $9::bigint, $10::bigint, NULL
+       WHERE NOT EXISTS (SELECT 1 FROM save_codes WHERE code = $1) RETURNING code`,
+      [row.code, row.address, row.savePercent, row.spendPercent, row.appIds.join(","), row.catchUpEvery, row.catchUpFrom, row.tzOffsetMinutes, row.createdAt, row.updatedAt],
     );
   }
-  async updateRule(c: string, rule: Pick<SaveCodeRow, "savePercent" | "spendPercent" | "appIds">, at: number) {
-    await this.pool.query(`UPDATE save_codes SET save_percent = $2, spend_percent = $3, app_ids = $4, updated_at = $5 WHERE code = $1`, [
-      c, rule.savePercent, rule.spendPercent, rule.appIds.join(","), at,
-    ]);
+  async updateRule(c: string, rule: Pick<SaveCodeRow, "savePercent" | "spendPercent" | "appIds" | "catchUpEvery" | "catchUpFrom" | "tzOffsetMinutes">, at: number) {
+    await this.pool.query(
+      `UPDATE save_codes SET save_percent = $2, spend_percent = $3, app_ids = $4, catchup_every = $5, catchup_from = $6, tz_offset = $7, updated_at = $8 WHERE code = $1`,
+      [c, rule.savePercent, rule.spendPercent, rule.appIds.join(","), rule.catchUpEvery, rule.catchUpFrom, rule.tzOffsetMinutes, at],
+    );
   }
   async revoke(c: string, at: number) {
     await this.pool.query(`UPDATE save_codes SET revoked_at = $2, updated_at = $2 WHERE code = $1 AND revoked_at IS NULL`, [c, at]);
@@ -288,5 +332,16 @@ export class PgSaveStore implements SaveStore {
   async splitsForAddress(address: string, limit: number) {
     const r = await this.pool.query<SplitRow>(`SELECT * FROM save_splits WHERE address = $1 ORDER BY created_at DESC LIMIT $2`, [address, limit]);
     return r.rows.map(split);
+  }
+  async lastCatchUp(address: string) {
+    const r = await this.pool.query<CatchUpRow>(`SELECT * FROM save_catchups WHERE address = $1 ORDER BY period_to DESC LIMIT 1`, [address]);
+    const x = r.rows[0];
+    return x ? { address: x.address, periodTo: Number(x.period_to), txHash: x.tx_hash, luna: x.luna, createdAt: Number(x.created_at) } : undefined;
+  }
+  async addCatchUp(c: SaveCatchUp) {
+    await this.pool.query(
+      `INSERT INTO save_catchups (tx_hash, address, period_to, luna, created_at) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (tx_hash) DO NOTHING`,
+      [c.txHash, c.address, c.periodTo, c.luna, c.createdAt],
+    );
   }
 }

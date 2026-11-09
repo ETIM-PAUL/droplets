@@ -89,19 +89,22 @@ describe("signed rules", () => {
   });
 
   it("carries the share saved when paying and the apps allowed to recognise the address", () => {
-    const full = { ...set, spendPercent: 5, apps: ["NIMblers", "Quiz Night"] };
+    const full = { ...set, spendPercent: 5, apps: ["NIMblers", "Quiz Night"], catchUp: "weekly" as const };
     const text = formatSaveMessage(full);
-    expect(text).toBe(`Errand save code\nAction: set\nAddress: ${FIXTURE.address}\nSave: 30%\nSpend: 5%\nApps: NIMblers, Quiz Night\nTime: 2026-11-04T15:20:00.000Z\nNonce: 9f2c4d1e8a7b6c5d`);
+    expect(text).toBe(`Errand save code\nAction: set\nAddress: ${FIXTURE.address}\nSave: 30%\nSpend: 5%\nApps: NIMblers, Quiz Night\nCatch-up: weekly\nTime: 2026-11-04T15:20:00.000Z\nNonce: 9f2c4d1e8a7b6c5d`);
     expect(parseSaveMessage(text)).toEqual({ ok: true, value: full });
-    const none = { ...set, spendPercent: 0, apps: [] };
+    const none = { ...set, spendPercent: 0, apps: [], catchUp: "monthly" as const };
     expect(formatSaveMessage(none)).toContain("\nApps: none\n");
     expect(parseSaveMessage(formatSaveMessage(none))).toEqual({ ok: true, value: none });
     // A rule signed before these lines existed still reads, without them.
     expect(parseSaveMessage(formatSaveMessage(set))).toEqual({ ok: true, value: set });
+    // The Mini App build in commit 1bcbe42 signed Spend and Apps without a catch-up: still accepted.
+    const noCatchUp = { ...set, spendPercent: 5, apps: ["NIMblers"] };
+    expect(parseSaveMessage(formatSaveMessage(noCatchUp))).toEqual({ ok: true, value: noCatchUp });
   });
 
-  it("refuses a bad share when paying, a bad app list, or one line without the other", () => {
-    const text = formatSaveMessage({ ...set, spendPercent: 5, apps: ["NIMblers"] });
+  it("refuses a bad share when paying, a bad app list or catch-up, or some of those lines without the others", () => {
+    const text = formatSaveMessage({ ...set, spendPercent: 5, apps: ["NIMblers"], catchUp: "daily" });
     for (const bad of [
       text.replace("Spend: 5%", "Spend: 101%"),
       text.replace("Spend: 5%", "Spend: five"),
@@ -112,6 +115,8 @@ describe("signed rules", () => {
       text.replace("Apps: NIMblers", "Apps: "),
       text.replace("\nApps: NIMblers", ""),
       text.replace("Spend: 5%\n", ""),
+      text.replace("Catch-up: daily", "Catch-up: hourly"),
+      text.replace("Catch-up: daily", "Catch-up: daily\nCatch-up: daily"),
       text.replace("Apps: NIMblers", `Apps: ${Array.from({ length: 21 }, (_, i) => `App ${i}`).join(", ")}`),
     ]) {
       expect(parseSaveMessage(bad).ok, bad).toBe(false);

@@ -1,4 +1,4 @@
-import { UserFacingError, type AirtimeOperator, type Corridor, type CountryCode } from "@railkit/core";
+import { UserFacingError, type AirtimeOperator, type CatchUpEvery, type Corridor, type CountryCode } from "@railkit/core";
 import type { Draft, Missing, QrUnderstood, SavePeriod, SaveQuestion, Understood } from "@railkit/agent";
 import type { RampOffer, RampOfferError, RampState } from "@railkit/adapters/server";
 import type { AirtimeGateway, AirtimeQuote, AirtimeState, PayoutGateway, PayoutOrderStatus, PayoutQuote } from "@railkit/adapters";
@@ -19,6 +19,8 @@ export interface SaveMe {
   savePercent: number | null;
   /** Share added on top and saved when the user pays an app; null before the user sets a rule. */
   spendPercent: number | null;
+  /** How often Errand offers to save that share of spending elsewhere; null before the user sets a rule. */
+  catchUp: CatchUpEvery | null;
   /** Apps the user allowed to recognise their address, so they save without the code. */
   apps: { id: string; name: string }[];
   blockNumber: number;
@@ -50,6 +52,20 @@ export interface SaveActivity {
   /** The person's own Grow transactions; null when the chain couldn't be read just now. */
   grow: { txHash: string; kind: "opened" | "added" | "withdrawal-started" | "withdrawn"; luna: string; at: number; ok: boolean }[] | null;
 }
+
+/**
+ * The catch-up: the user's share of what they spent outside apps that save with Errand, ready to save in one approval.
+ * "waiting": the first period hasn't ended. "due": `owed` is still to save. "nothing": nothing to save this time.
+ * "done": settled just now. "off": no share to save when paying. `paid` is what the user's own add-stakes have put
+ * towards it so far. Luna amounts are decimal strings; times ms since 1970.
+ */
+export type SaveCatchUp =
+  | { status: "off"; every: CatchUpEvery | null; spendPercent: number }
+  | { status: "waiting"; every: CatchUpEvery; spendPercent: number; from: number; to: number; next: number }
+  | {
+      status: "due" | "nothing" | "done"; every: CatchUpEvery; spendPercent: number; from: number; to: number; next: number;
+      spent: string; alreadySaved: string; paid: string; owed: string; complete: boolean; growOpen: boolean;
+    };
 
 /** An app that saves with Errand, which the user can allow to recognise their address. */
 export interface SaveApp {
@@ -176,8 +192,12 @@ export function createRailkitClient(o: RailkitClientOptions) {
     saveMe: (address: string, fresh = false) => call<SaveMe>(`/v1/save/me?address=${encodeURIComponent(address)}${fresh ? "&fresh=1" : ""}`),
     saveActivity: (address: string) => call<SaveActivity>(`/v1/save/activity?address=${encodeURIComponent(address)}`),
     /** Sets or revokes the rule: the message the user signed in Nimiq Pay, with the key and signature it returned. */
-    saveRule: (signed: { message: string; publicKey: string; signature: string }) =>
+    /** `tzOffsetMinutes` (the phone's time zone) decides when the user's catch-up days, weeks and months start. */
+    saveRule: (signed: { message: string; publicKey: string; signature: string; tzOffsetMinutes?: number }) =>
       call<{ code: string; address: string; savePercent: number; spendPercent: number; appIds: string[] } | { revoked: true }>("/v1/save/rule", json(signed)),
+    /** The catch-up for the user's spending outside apps that save with Errand, in their own time zone. */
+    saveCatchUp: (address: string, tzOffsetMinutes: number, fresh = false) =>
+      call<SaveCatchUp>(`/v1/save/catchup?address=${encodeURIComponent(address)}&tzOffsetMinutes=${tzOffsetMinutes}${fresh ? "&fresh=1" : ""}`),
     /** The apps that save with Errand, by name. */
     saveApps: async () => (await call<{ apps: SaveApp[] }>("/v1/save/apps")).apps,
     saveValidators: async () => (await call<{ validators: SaveValidator[] }>("/v1/save/validators")).validators,

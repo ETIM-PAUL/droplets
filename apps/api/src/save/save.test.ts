@@ -98,7 +98,7 @@ describe("setting the rule", () => {
     expect(first).toMatchObject({ address: amaka.address, savePercent: 30 });
     expect(first.code).toMatch(/^SAVE-[0-9A-HJKMNP-TV-Z]{7}$/);
     const again = await json(await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address, { savePercent: 50 })))));
-    expect(again).toEqual({ code: first.code, address: amaka.address, savePercent: 50, spendPercent: 0, appIds: [] });
+    expect(again).toEqual({ code: first.code, address: amaka.address, savePercent: 50, spendPercent: 0, appIds: [], catchUp: "weekly" });
   });
 
   it("won't give out a code before Grow is open, but an existing code keeps working if Grow closes later", async () => {
@@ -113,7 +113,7 @@ describe("setting the rule", () => {
     stake(amaka.address);
     const { code } = await json(await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address)))));
     stakers.delete(amaka.address);
-    expect(await json(await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address, { savePercent: 10 })))))).toEqual({ code, address: amaka.address, savePercent: 10, spendPercent: 0, appIds: [] });
+    expect(await json(await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address, { savePercent: 10 })))))).toEqual({ code, address: amaka.address, savePercent: 10, spendPercent: 0, appIds: [], catchUp: "weekly" });
   });
 
   it("refuses a forged, foreign, stale, replayed or malformed request", async () => {
@@ -368,7 +368,7 @@ describe("apps that recognise your address (for apps)", () => {
     const quiz = { Authorization: `Bearer ${(await json(await f.app.request("/v1/admin/save/apps", post({ name: "Quiz Night", payoutAddresses: [APP_PAYOUT] }, { Authorization: "Bearer admin-secret" })))).apiKey as string}` };
     const amaka = account();
     f.stake(amaka.address);
-    const r = await json(await f.app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address, { spendPercent: 5, apps: ["Arcade"] })))));
+    const r = await json(await f.app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address, { spendPercent: 5, apps: ["Arcade"], catchUp: "weekly" })))));
     const at = (who: Record<string, string>, path: string) => f.app.request(path, { headers: who });
     return { ...f, arcade, quiz, amaka, code: r.code as string, at, a: encodeURIComponent(amaka.address) };
   }
@@ -437,14 +437,108 @@ describe("apps that recognise your address (for apps)", () => {
 
   it("changes which apps are allowed with a new signed rule, refuses unknown names, and keeps them for an older rule", async () => {
     const { app, at, arcade, quiz, amaka, a } = await ready();
-    const unknown = await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address, { spendPercent: 5, apps: ["Arcade", "Nobody"] }))));
+    const unknown = await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address, { spendPercent: 5, apps: ["Arcade", "Nobody"], catchUp: "weekly" }))));
     expect(await errorOf(unknown)).toMatch(/doesn't know an app called Nobody/);
-    expect(await json(await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address, { spendPercent: 10, apps: ["quiz night"] })))))).toMatchObject({ spendPercent: 10 });
+    expect(await json(await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address, { spendPercent: 10, apps: ["quiz night"], catchUp: "daily" })))))).toMatchObject({ spendPercent: 10 });
     expect((await json(await at(quiz, `/v1/save/split?address=${a}&luna=${NIM(10)}`))).grow).not.toBeNull();
     expect((await json(await at(arcade, `/v1/save/split?address=${a}&luna=${NIM(10)}`))).grow).toBeNull();
     // A rule in the older format, without Spend and Apps, changes only the share of payouts.
     await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address, { savePercent: 50 }))));
-    expect(await json(await at({}, `/v1/save/me?address=${a}`))).toMatchObject({ savePercent: 50, spendPercent: 10, apps: [{ name: "Quiz Night" }] });
+    expect(await json(await at({}, `/v1/save/me?address=${a}`))).toMatchObject({ savePercent: 50, spendPercent: 10, catchUp: "daily", apps: [{ name: "Quiz Night" }] });
+  });
+});
+
+describe("the catch-up", () => {
+  const HTLC = "NQ89 4VDF DQ8Q JEGL KX8U A1HC DE6K A78Y CJR5";
+  const SHOP = "NQ09 XHGH TP20 4444 4444 4444 4444 4444 4444";
+  const DAY = 86_400_000;
+  /** Amaka saves 5% when she pays, weekly. She turned it on at T, Wednesday 4 November, so her first week ends on Monday 9 November (Lagos). */
+  async function ready() {
+    const f = setup();
+    const amaka = account();
+    f.stake(amaka.address);
+    await f.app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address, { spendPercent: 5, apps: [], catchUp: "weekly" }))));
+    const tx = (hash: string, from: string, to: string, nim: number, at: number, over: Partial<NimiqTransaction> = {}) =>
+      f.txs.set(hash.repeat(64), { hash: hash.repeat(64), blockNumber: 1, from, to, value: NIM(nim), recipientData: "", senderData: "", executionResult: true, confirmations: 1, timestamp: at, ...over });
+    const catchUp = async () => json(await f.app.request(`/v1/save/catchup?address=${encodeURIComponent(amaka.address)}&tzOffsetMinutes=60`));
+    return { ...f, amaka, tx, catchUp, stakeHex: `06${Buffer.from(nimiqAddressBytes(amaka.address)).toString("hex")}` };
+  }
+
+  it("waits for the first week to end, then asks for 5% of what was spent, less what apps already saved", async () => {
+    const { catchUp, clock, tx, amaka, store } = await ready();
+    expect(await catchUp()).toMatchObject({ status: "waiting", every: "weekly", spendPercent: 5, next: Date.UTC(2026, 10, 8, 23) });
+    // Nimiq Pay moves her NIM into an HTLC and pays the shop from it; an app saved 10 NIM when she paid it.
+    // So 5% of the 990 spent on things is 49.5 NIM, less the 10 already saved: 39.5 NIM.
+    tx("1", amaka.address, HTLC, 1_500, T + 3_600_000, { toType: 2, flags: 1 });
+    tx("2", HTLC, SHOP, 1_000, T + 7_200_000);
+    tx("3", HTLC, amaka.address, 500, T + 2 * DAY); // the rest handed back: not spending
+    await store.addReceipt({ txHash: "4".repeat(64), code: "X", address: amaka.address, appId: "arcade", kind: "grow", source: "spend", luna: NIM(10).toString(), payoutId: "s1", blockNumber: 1, createdAt: T + DAY });
+    clock.t = T + 7 * DAY;
+    expect(await catchUp()).toMatchObject({ status: "due", from: T, to: Date.UTC(2026, 10, 8, 23), spent: NIM(1000).toString(), alreadySaved: NIM(10).toString(), owed: "3950000", complete: true, growOpen: true });
+  });
+
+  it("is settled once she adds at least what's owed to her stake, from the card or herself, and starts again from there", async () => {
+    const { catchUp, clock, tx, amaka, stakeHex } = await ready();
+    tx("1", amaka.address, HTLC, 1_500, T + 3_600_000, { toType: 2, flags: 1 });
+    tx("2", HTLC, SHOP, 1_000, T + 7_200_000);
+    clock.t = T + 7 * DAY;
+    expect((await catchUp()).owed).toBe(NIM(50).toString());
+    // Too little doesn't settle it, and the card asks only for the rest. Nimiq Pay sends her add-stake from the HTLC.
+    tx("5", HTLC, STAKING_CONTRACT, 20, clock.t, { recipientData: stakeHex });
+    clock.t += 2 * 60_000;
+    expect(await catchUp()).toMatchObject({ status: "due", paid: NIM(20).toString(), owed: NIM(30).toString() });
+    tx("6", HTLC, STAKING_CONTRACT, 30, clock.t, { recipientData: stakeHex });
+    clock.t += 2 * 60_000;
+    expect((await catchUp()).status).toBe("done");
+    expect(await catchUp()).toMatchObject({ status: "waiting", from: Date.UTC(2026, 10, 8, 23), to: Date.UTC(2026, 10, 8, 23) });
+  });
+
+  it("counts a payment Errand only sees after the next period has started", async () => {
+    const f = setup();
+    const amaka = account();
+    f.stake(amaka.address);
+    await f.app.request("/v1/save/rule", post({ ...signed(amaka, rule(amaka.address, { spendPercent: 5, apps: [], catchUp: "daily" })), tzOffsetMinutes: 60 }));
+    const set = (hash: string, from: string, to: string, nim: number, at: number, over: Partial<NimiqTransaction> = {}) =>
+      f.txs.set(hash.repeat(64), { hash: hash.repeat(64), blockNumber: 1, from, to, value: NIM(nim), recipientData: "", senderData: "", executionResult: true, confirmations: 1, timestamp: at, ...over });
+    set("1", amaka.address, HTLC, 1_500, T + 3_600_000, { toType: 2, flags: 1 });
+    set("2", HTLC, SHOP, 1_000, T + 7_200_000);
+    // She pays Wednesday's 50 NIM on Thursday, but Errand doesn't look again until Friday.
+    const thursday = Date.UTC(2026, 10, 5, 11);
+    set("3", HTLC, STAKING_CONTRACT, 50, thursday, { recipientData: `06${Buffer.from(nimiqAddressBytes(amaka.address)).toString("hex")}` });
+    f.clock.t = Date.UTC(2026, 10, 6, 11);
+    const r = await json(await f.app.request(`/v1/save/catchup?address=${encodeURIComponent(amaka.address)}`));
+    expect(r).toMatchObject({ status: "done", paid: NIM(50).toString(), owed: "0" });
+  });
+
+  it("starts afresh when the share changes, and keeps the time zone the rule was saved in", async () => {
+    const { app, tx, amaka, clock, catchUp } = await ready();
+    tx("1", amaka.address, HTLC, 1_500, T + 3_600_000, { toType: 2, flags: 1 });
+    tx("2", HTLC, SHOP, 1_000, T + 7_200_000);
+    clock.t = T + DAY;
+    // Raised to 20% a day later, saved from a phone in Lagos: the earlier spending isn't charged at the new rate.
+    const changed = await app.request("/v1/save/rule", post({ ...signed(amaka, rule(amaka.address, { spendPercent: 20, apps: [], catchUp: "weekly", time: new Date(clock.t).toISOString() })), tzOffsetMinutes: 60 }));
+    expect(changed.status).toBe(200);
+    clock.t = T + 7 * DAY;
+    expect(await catchUp()).toMatchObject({ status: "nothing", from: T + DAY, spent: "0", owed: "0" });
+    // The phone now says UTC, but weeks still start at midnight in Lagos.
+    expect((await json(await app.request(`/v1/save/catchup?address=${encodeURIComponent(amaka.address)}&tzOffsetMinutes=0`))).next).toBe(Date.UTC(2026, 10, 15, 23));
+  });
+
+  it("is off without a share to save when paying", async () => {
+    const f = setup();
+    const amaka = account();
+    f.stake(amaka.address);
+    await f.app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address))));
+    expect(await json(await f.app.request(`/v1/save/catchup?address=${encodeURIComponent(amaka.address)}`))).toEqual({ status: "off", every: "weekly", spendPercent: 0 });
+    expect(await json(await f.app.request(`/v1/save/catchup?address=${encodeURIComponent(account().address)}`))).toEqual({ status: "off", every: null, spendPercent: 0 });
+  });
+
+  it("shows Grow transactions Nimiq Pay sent from the user's HTLC in Activity", async () => {
+    const { app, tx, amaka, stakeHex } = await ready();
+    tx("1", amaka.address, HTLC, 1_500, T + 3_600_000, { toType: 2, flags: 1 });
+    tx("7", HTLC, STAKING_CONTRACT, 100, T + 7_200_000, { recipientData: stakeHex });
+    const r = await json(await app.request(`/v1/save/activity?address=${encodeURIComponent(amaka.address)}`));
+    expect(r.grow).toEqual([expect.objectContaining({ kind: "added", luna: NIM(100).toString() })]);
   });
 });
 
@@ -458,11 +552,14 @@ async function stores(): Promise<[string, SaveStore][]> {
 describe("save stores", async () => {
   for (const [name, store] of await stores()) {
     it(`${name}: codes, nonces, apps and receipts`, async () => {
-      expect(await store.insertCode({ code: "AAAAAAA", address: "NQ1", savePercent: 30, spendPercent: 0, appIds: [], createdAt: T, updatedAt: T, revokedAt: null })).toBe(true);
-      expect(await store.insertCode({ code: "AAAAAAA", address: "NQ2", savePercent: 10, spendPercent: 0, appIds: [], createdAt: T, updatedAt: T, revokedAt: null })).toBe(false);
-      expect(await store.activeCodeByAddress("NQ1")).toMatchObject({ savePercent: 30, spendPercent: 0, appIds: [] });
-      await store.updateRule("AAAAAAA", { savePercent: 40, spendPercent: 5, appIds: ["app1", "app2"] }, T + 1);
-      expect(await store.activeCodeByAddress("NQ1")).toMatchObject({ code: "AAAAAAA", savePercent: 40, spendPercent: 5, appIds: ["app1", "app2"], updatedAt: T + 1 });
+      const fresh = { savePercent: 30, spendPercent: 0, appIds: [], catchUpEvery: "weekly" as const, catchUpFrom: 0, tzOffsetMinutes: null, createdAt: T, updatedAt: T, revokedAt: null };
+      expect(await store.insertCode({ code: "AAAAAAA", address: "NQ1", ...fresh })).toBe(true);
+      expect(await store.insertCode({ code: "AAAAAAA", address: "NQ2", ...fresh, savePercent: 10 })).toBe(false);
+      expect(await store.activeCodeByAddress("NQ1")).toMatchObject({ savePercent: 30, spendPercent: 0, appIds: [], catchUpEvery: "weekly", catchUpFrom: 0 });
+      await store.updateRule("AAAAAAA", { savePercent: 40, spendPercent: 5, appIds: ["app1", "app2"], catchUpEvery: "monthly", catchUpFrom: T, tzOffsetMinutes: -300 }, T + 1);
+      expect(await store.activeCodeByAddress("NQ1")).toMatchObject({
+        code: "AAAAAAA", savePercent: 40, spendPercent: 5, appIds: ["app1", "app2"], catchUpEvery: "monthly", catchUpFrom: T, tzOffsetMinutes: -300, updatedAt: T + 1,
+      });
       await store.revoke("AAAAAAA", T + 2);
       expect(await store.activeCode("AAAAAAA")).toBeUndefined();
       expect(await store.activeCodeByAddress("NQ1")).toBeUndefined();
@@ -487,6 +584,13 @@ describe("save stores", async () => {
       await store.addSplit({ ...sp, growLuna: "600", reason: null }); // a retried payout keeps the first split
       await store.addSplit({ ...sp, appId: "app2", reason: null, createdAt: T + 1 });
       expect(await store.splitsForAddress("NQ1", 10)).toEqual([{ ...sp, appId: "app2", reason: null, createdAt: T + 1 }, sp]);
+
+      expect(await store.lastCatchUp("NQ1")).toBeUndefined();
+      const cu = { address: "NQ1", periodTo: T, txHash: "c1", luna: "4000000", createdAt: T + 5 };
+      await store.addCatchUp(cu);
+      await store.addCatchUp({ ...cu, periodTo: T + 99 }); // the same transaction can't settle twice
+      await store.addCatchUp({ ...cu, txHash: "c2", periodTo: T + 7 });
+      expect(await store.lastCatchUp("NQ1")).toEqual({ ...cu, txHash: "c2", periodTo: T + 7 });
     });
   }
 });

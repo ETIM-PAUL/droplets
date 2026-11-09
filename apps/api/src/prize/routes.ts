@@ -4,7 +4,9 @@ import {
   MAX_TICKETS,
   nimiqAddressBytes,
   nimiqAddressFromPublicKey,
+  HTLC_LIFETIME_DAYS,
   nimiqMessageHash,
+  ownHistory,
   parseDrawMessage,
   parseNimiqAddress,
   pickWinner,
@@ -53,12 +55,21 @@ const DEVICE = /^[0-9a-f]{64}$/;
 const hex = (b: Uint8Array) => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
 export const maskAddress = (a: string) => `${a.slice(0, 4)} … ${a.slice(-4)}`;
 
-/** Everything known about one person's active stake during a week: our readings and their own staking transactions. */
+/**
+ * Everything known about one person's active stake during a week: our readings and their own staking transactions.
+ * Nimiq Pay sends those from the HTLC that holds the user's balance, not from their address, so read all their accounts.
+ */
 async function stakePoints(p: PrizeDeps, address: string, week: PrizeWeek): Promise<StakePoint[] | "incomplete"> {
-  const [checks, txs] = await Promise.all([p.store.checks(address, week.days[0]!.start), p.chain.transactionsByAddress(address, HISTORY_MAX)]);
-  // A full page that doesn't reach back to the week's start may be missing a withdrawal.
-  if (txs.length >= HISTORY_MAX && Math.min(...txs.map((t) => t.timestamp)) > week.days[0]!.start) return "incomplete";
-  return [...checks.map((c) => ({ at: c.at, kind: "seen" as const, active: BigInt(c.activeLuna) })), ...stakeChanges(address, txs)];
+  const start = week.days[0]!.start;
+  const [checks, h] = await Promise.all([
+    p.store.checks(address, start),
+    // HTLCs time out within 14 days, so looking from 15 days before the week finds any she staked from during it. Only
+    // the week itself needs reading in full.
+    ownHistory(address, (a, max) => p.chain.transactionsByAddress(a, max), { since: start - HTLC_LIFETIME_DAYS * 86_400_000, need: start, max: HISTORY_MAX }),
+  ]);
+  // A history cut short may be missing a withdrawal.
+  if (!h.complete) return "incomplete";
+  return [...checks.map((c) => ({ at: c.at, kind: "seen" as const, active: BigInt(c.activeLuna) })), ...stakeChanges(address, h.txs, [address, ...h.htlcs])];
 }
 
 /** Reads due entries' stakes from the chain. A read that fails is skipped, never recorded as 0. */

@@ -1,7 +1,7 @@
 // Errand Save's weekly draw. Keep at least the minimum in Grow on enough days of the week and you're in the
 // Sunday draw; keep more and you hold more tickets, up to MAX_TICKETS. Pure functions, shared by the API (which
 // reads stakes and runs the draw) and the Mini App (which shows the week).
-import { nimiqAddressBytes, parseNimiqAddress } from "./nimiq-address";
+import { nimiqAddressBytes, parseNimiqAddress, addressKey, sameAddress } from "./nimiq-address";
 import type { NimiqTransaction } from "./nimiq-rpc";
 import { fail, ok, type Result } from "./result";
 import { STAKING_CONTRACT } from "./save";
@@ -85,18 +85,19 @@ export type StakePoint =
   /** Their own add-stake: this much more. */
   | { at: number; kind: "added"; luna: bigint };
 
-const sameAddress = (a: string, b: string) => a.replace(/\s+/g, "").toUpperCase() === b.replace(/\s+/g, "").toUpperCase();
 
 /**
  * Staking changes in a person's own transactions. Only the owner can lower their active stake, and only with a
  * set-active-stake (08, then the new active balance as 8 bytes big-endian), so no drop is ever missed. Add-stakes
  * that others pay in aren't in the person's history; they only ever raise the stake, so leaving them out errs low.
  */
-export function stakeChanges(address: string, txs: NimiqTransaction[]): StakePoint[] {
+export function stakeChanges(address: string, txs: NimiqTransaction[], accounts: Iterable<string> = [address]): StakePoint[] {
   const own = Array.from(nimiqAddressBytes(address), (b) => b.toString(16).padStart(2, "0")).join("");
+  // Nimiq Pay sends the user's staking transactions from their HTLC, not their wallet address: count all their accounts.
+  const mine = new Set([...accounts].map(addressKey));
   const out: StakePoint[] = [];
   for (const t of txs) {
-    if (!t.executionResult || !sameAddress(t.from, address) || !sameAddress(t.to, STAKING_CONTRACT)) continue;
+    if (!t.executionResult || !mine.has(addressKey(t.from)) || !sameAddress(t.to, STAKING_CONTRACT)) continue;
     const data = t.recipientData.toLowerCase();
     if (data.startsWith("05")) out.push({ at: t.timestamp, kind: "set", active: t.value });
     else if (data.startsWith("06") && data.slice(2, 42) === own) out.push({ at: t.timestamp, kind: "added", luna: t.value });

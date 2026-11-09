@@ -63,3 +63,7 @@ export function nimiqAddressBytes(address: string): Uint8Array {
   }
   return out;
 }
+
+/** An address with spaces removed and in capitals, for comparing addresses however they were written. */
+export const addressKey = (address: string): string => address.replace(/\s+/g, "").toUpperCase();
+export const sameAddress = (a: string, b: string): boolean => addressKey(a) === addressKey(b);

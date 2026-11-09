@@ -195,7 +195,7 @@ This repository is RailKit, a pnpm workspace. Droplets is built on these parts:
 
 Names in the code that users don't see:
 - the user's savings are called Grow (`grow`, `growLuna`, `GrowState`);
-- the app was called Errand while it was being built. Signed messages still begin with `Errand save code` and `Errand weekly draw`, because the API checks that text exactly, and the Render services keep their `errand-` names.
+- the app was called Errand while it was being built. Signed messages still begin with `Errand save code` and `Errand weekly draw`, because the API checks that text exactly, and some internal settings keep the old name, such as `ERRAND_API_URL` for the testnet tools.
 
 The repository started as a toolkit for on- and off-ramps. These parts are left from that work and aren't used by Droplets:
 - the ramp routes in the API, which stay off without provider keys, and their adapters in `packages/adapters`;
@@ -235,13 +235,19 @@ pnpm run ci   # type checks, tests, build, licence check, signing guard
 
 ## Deployment
 
-[render.yaml](render.yaml) is a Render Blueprint for the API (`errand-api`), the Mini App as a static site (`errand-miniapp`) and Postgres (`errand-db`).
+[render.yaml](render.yaml) is a Render Blueprint for the API (`droplets-api`), the Mini App as a static site (`droplets-app`) and Postgres (`droplets-db`). It's set up for testnet, open to everyone, with the API and the Mini App already pointing at each other's `onrender.com` addresses.
 
-1. Push the repo to GitHub, then in Render choose **New > Blueprint** and pick it. Render asks once for each secret.
-2. After the first deploy, set `ALLOWED_ORIGINS` on the API to the Mini App's address, and `VITE_RAILKIT_API_URL` on the Mini App to the API's address.
-3. For a closed beta, set `BETA_REQUIRED=true` and a long random `SESSION_SECRET`, and create invite codes with `node scripts/new-invites.mjs "Name"`.
+1. Push the repo to GitHub, then in Render choose **New > Blueprint** and pick it.
+2. Render asks for two optional secrets, `OPENAI_API_KEY` and `ALERT_WEBHOOK_URL`. Leave them empty if you don't use them.
+3. Once both services are live, open `https://droplets-app.onrender.com` in Nimiq Pay.
 
-Free Render services sleep after about 15 minutes idle. The weekly draw doesn't mind, because the block picks the winner, not the time the job runs. Move to paid plans before a public launch.
+If Render gives either service a different address, update `ALLOWED_ORIGINS` on the API and `VITE_RAILKIT_API_URL` on the Mini App to match.
+
+**Going to mainnet:** set `SAVE_NETWORK=mainnet`, and set `PRIZE_ADDRESS` to a mainnet prize wallet you fund, or switch the draw off with `PRIZE_ENABLED=false`.
+
+**For an invite-only beta:** set `BETA_REQUIRED=true` and a long random `SESSION_SECRET`, and create invite codes with `node scripts/new-invites.mjs "Name"` for `BETA_INVITES`.
+
+Free Render services sleep after about 15 minutes idle, so the first request then takes about a minute, and free Postgres is time-limited. The weekly draw doesn't mind sleeping, because a block picks the winner, not the time the job runs. Move the API and the database to paid plans for a public launch.
 
 ## Status and roadmap
 

@@ -1,9 +1,11 @@
-# Render Blueprint: the RailKit API and the Droplets Mini App, from this repo.
+# Render Blueprint for Droplets: the API, the Mini App as a static site, and Postgres.
 # In Render: New > Blueprint > pick this repo. Secrets (sync: false) are asked for once and never stored here.
 services:
   - type: web
-    name: errand-api
+    name: droplets-api
     runtime: node
+    # The free plan sleeps after about 15 minutes idle, so the first request then takes about a minute.
+    # Choose a paid plan here to keep it awake.
     plan: free
     buildCommand: corepack enable && pnpm install --frozen-lockfile
     startCommand: pnpm --filter @railkit/api start
@@ -12,80 +14,38 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "22"
-      # Providers (secrets: paste the same values as your local .env)
-      - key: MAVAPAY_API_KEY
-        sync: false
-      - key: MAVAPAY_BASE_URL
-        value: https://staging.api.mavapay.co/api/v1
-      - key: MAVAPAY_WEBHOOK_SECRET
-        sync: false
-      - key: BITREFILL_API_KEY
-        sync: false
-      - key: BITREFILL_BASE_URL
-        value: https://api.bitrefill.com/v2
-      - key: BITREFILL_WEBHOOK_TOKEN
+      # Who may call the API: the Mini App's address. Change it if Render gives the app a different one.
+      - key: ALLOWED_ORIGINS
+        value: https://droplets-app.onrender.com
+      - key: DATABASE_URL
+        fromDatabase:
+          name: droplets-db
+          property: connectionString
+      # Bearer token for /v1/admin/: registering apps that save with Droplets, and paying draw prizes.
+      - key: ADMIN_TOKEN
         generateValue: true
+      # Optional: a Slack or Discord webhook for feedback and each week's draw result. Leave empty to skip.
+      - key: ALERT_WEBHOOK_URL
+        sync: false
+      # Optional: Ask Droplets uses a model only to read other languages and reword answers. Leave empty for rules only.
       - key: OPENAI_API_KEY
         sync: false
       - key: OPENAI_MODEL
         value: gpt-4.1-mini
       - key: AGENT_MODEL_CALLS_PER_DAY
         value: "300"
-      - key: CHANGELLY_FIAT_PUBLIC_KEY
-        sync: false
-      - key: CHANGELLY_FIAT_PRIVATE_KEY
-        sync: false
-      - key: CHANGELLY_CALLBACK_PUBLIC_KEY
-        sync: false
-      - key: CHANGELLY_FIAT_BASE_URL
-        sync: false
-      - key: CHANGELLY_NIM_TICKER
-        value: NIM
-      # Kill switches
-      - key: CORRIDORS
-        value: ke-mpesa,ng-bank
-      - key: AIRTIME_COUNTRIES
-        value: KE,NG
-      - key: TOPUP_COUNTRIES
-        value: NG
-      # Who may call the API: the Mini App's address (set after the first deploy)
-      - key: ALLOWED_ORIGINS
-        sync: false
-      - key: PUBLIC_API_URL
-        sync: false
-      # Closed beta for friends: invite codes, signed sessions, spending caps
+      # Open to everyone. For an invite-only beta, set "true" and add BETA_INVITES and SESSION_SECRET.
       - key: BETA_REQUIRED
-        value: "true"
-      - key: BETA_INVITES
-        sync: false
-      - key: SESSION_SECRET
-        generateValue: true
-      - key: BETA_MAX_SATS_PER_ORDER
-        value: "150000"
-      - key: BETA_MAX_SATS_PER_DAY
-        value: "300000"
-      - key: ADMIN_TOKEN
-        generateValue: true
-      - key: ALERT_WEBHOOK_URL
-        sync: false
-      # Practice mode: true only while MAVAPAY_BASE_URL is staging
-      - key: PRACTICE_MODE
-        value: "true"
-      - key: DATABASE_URL
-        fromDatabase:
-          name: errand-db
-          property: connectionString
-      # Droplets: save codes and Grow. The Mini App is savings only, so this stays on.
-      # Keep SAVE_NETWORK on testnet until the testnet checks in the plan pass.
+        value: "false"
+      # Savings. SAVE_NETWORK must match the network Nimiq Pay runs on: testnet or mainnet.
+      # The Nimiq node defaults to rpc.nimiqwatch.com (or its testnet twin); set NIMIQ_RPC_URL to use another.
       - key: SAVE_ENABLED
         value: "true"
       - key: SAVE_NETWORK
         value: testnet
-      - key: NIMIQ_RPC_URL
-        sync: false
-      - key: SAVE_VALIDATORS
-        sync: false
-      # The weekly draw. PRIZE_ADDRESS is the prize wallet: its key stays with `pnpm pay-prizes`, never here.
+      # The weekly draw. PRIZE_ADDRESS is the prize wallet; its key stays with `pnpm pay-prizes`, never here.
+      # This is the testnet prize wallet: on mainnet, use a mainnet wallet you fund. Prize draws are regulated
+      # in many countries, so check before paying real prizes; PRIZE_ENABLED "false" switches the draw off.
       # Sleeping on the free plan is fine: each draw is decided by a block, and kept days are read from the chain.
       - key: PRIZE_ENABLED
         value: "true"
@@ -98,10 +58,10 @@ services:
       - key: PRIZE_UTC_OFFSET_MINUTES
         value: "60"
       - key: PRIZE_ADDRESS
-        sync: false
+        value: NQ04 GGUB XURM CSEP VJV5 Q59V MJ6Y MV5N HJF5
 
   - type: web
-    name: errand-miniapp
+    name: droplets-app
     runtime: static
     buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @railkit/miniapp build
     staticPublishPath: apps/miniapp/dist
@@ -109,14 +69,14 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "22"
-      # The API's public address (set after the first deploy), e.g. https://errand-api.onrender.com
+      # The API's address. Change it if Render gives the API a different one.
       - key: VITE_RAILKIT_API_URL
-        sync: false
+        value: https://droplets-api.onrender.com
     headers:
       - path: /*
         name: X-Content-Type-Options
         value: nosniff
 
 databases:
-  - name: errand-db
+  - name: droplets-db
     plan: free

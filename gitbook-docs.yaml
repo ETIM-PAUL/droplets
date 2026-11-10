@@ -1,0 +1,7 @@
+# Same as .gitbook.yaml, for GitBook sync screens that ask for gitbook-docs.yaml. Keep the two in step.
+# Connects this repo to GitBook: the docs are the `guide` folder, laid out by guide/SUMMARY.md.
+root: ./guide/
+
+structure:
+  readme: README.md
+  summary: SUMMARY.md

@@ -146,6 +146,21 @@ describe("setting the rule", () => {
   });
 });
 
+describe("the share to save", () => {
+  it("takes any whole percent from 10 to 100, and refuses less", async () => {
+    const { app, stake } = setup();
+    const amaka = account();
+    stake(amaka.address);
+    const set = (savePercent: number) => app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address, { savePercent }))));
+    expect(await errorOf(await set(9))).toMatch(/from 10 to 100/);
+    expect(await errorOf(await set(0))).toMatch(/from 10 to 100/);
+    expect((await set(10)).status).toBe(200);
+    expect(await json(await set(37))).toMatchObject({ savePercent: 37 });
+    expect(await json(await set(100))).toMatchObject({ savePercent: 100 });
+    expect((await set(101)).status).toBe(400);
+  });
+});
+
 describe("splitting a payout (for apps)", () => {
   it("needs a known app key", async () => {
     const { app } = setup();

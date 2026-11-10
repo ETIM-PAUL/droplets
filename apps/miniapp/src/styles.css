@@ -221,6 +221,12 @@ button:disabled { cursor: default; }
 .amount-field .amount-input { flex: 1; min-width: 0; padding: 0; border: 0; background: none; outline: none; font-size: 34px; font-weight: 800; letter-spacing: -0.02em; }
 .amount-unit { font-size: 18px; font-weight: 800; color: var(--ink-soft); }
 
+.share-custom { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 4px; font-size: 14px; font-weight: 700; color: var(--ink-soft); }
+.share-box { display: inline-flex; align-items: center; gap: 6px; padding: 0 14px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); font-size: 16px; font-weight: 800; }
+.share-box:focus-within { border-color: var(--teal); }
+.share-box input { width: 4.5ch; padding: 10px 0; border: 0; background: none; outline: none; font-size: 16px; font-weight: 800; text-align: right; font-variant-numeric: tabular-nums; -moz-appearance: textfield; }
+.share-box input::-webkit-outer-spin-button, .share-box input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.share-bad { color: var(--red); font-weight: 700; }
 .presets { display: grid; grid-template-columns: repeat(auto-fit, minmax(60px, 1fr)); gap: 8px; }
 .preset { padding: 12px 0; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); font-size: 16px; font-weight: 800; }
 .preset[aria-pressed="true"] { background: var(--teal); border-color: var(--teal); color: var(--teal-ink); }
@@ -519,3 +525,4 @@ button:disabled { cursor: default; }
 .adm-confirm p, .adm-key p { margin: 0; font-size: 14.5px; }
 .adm-key .secondary { width: auto; align-self: flex-start; padding: 8px 14px; }
 .adm-edit { display: flex; flex-direction: column; gap: 14px; max-width: 560px; }
+.adm-fb-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }

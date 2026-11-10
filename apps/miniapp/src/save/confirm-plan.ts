@@ -23,7 +23,7 @@ export function plan(s: SaveIntent, me: SaveMe): Plan {
   switch (s.action) {
     case "rule": {
       const p = s.savePercent!;
-      if (!Number.isInteger(p) || p < 0 || p > 100) return { kind: "form", why: "The share to save has to be a whole percent from 0 to 100." };
+      if (!Number.isInteger(p) || p < 10 || p > 100) return { kind: "form", why: "The share to save has to be a whole percent from 10 to 100." };
       if (!me.code && !g) return { kind: "form", why: "Your savings aren't open yet. Open them first, then choose your share." };
       return {
         kind: "rule", savePercent: p, title: `Save ${p}% of what apps pay you`,

@@ -18,6 +18,8 @@ const store = {
   clear: () => { try { sessionStorage.removeItem(TOKEN_KEY); } catch { /* nothing stored */ } },
 };
 
+interface Feedback { id: string; invite: string | null; orderId: string | null; message: string; createdAt: number }
+
 class Unauthorized extends Error {}
 
 async function call<T>(token: string, method: string, path: string, body?: unknown): Promise<T> {
@@ -93,6 +95,7 @@ function Admin() {
             {live.length === 0 ? <p className="hint">No approved apps yet.</p> : live.map((a) => <AppCard key={a.id} app={a} token={token} onChanged={load} />)}
           </section>
           <AddApp token={token} onChanged={load} />
+          <FeedbackList token={token} />
         </>
       )}
     </div>
@@ -209,6 +212,29 @@ function EditForm({ app, busy, onSave, onCancel }: { app: AdminApp; busy: boolea
         <button type="button" className="secondary" disabled={busy} onClick={onCancel}>Cancel</button>
       </div>
     </form>
+  );
+}
+
+/** What people sent with "Report a problem" in the last 30 days, newest first. */
+function FeedbackList({ token }: { token: string }) {
+  const [items, setItems] = useState<Feedback[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    call<{ feedback: Feedback[] }>(token, "GET", "/v1/admin/feedback").then((r) => setItems(r.feedback), (e) => setError(e instanceof Error ? e.message : "Couldn't load reports."));
+  }, [token]);
+  return (
+    <section aria-labelledby="adm-fb">
+      <h2 id="adm-fb">Reports from people {items && items.length > 0 && <span className="adm-count">{items.length}</span>}</h2>
+      {error && <p className="alert" role="alert">{error}</p>}
+      {items === null && !error && <p className="hint">Loading…</p>}
+      {items?.length === 0 && <p className="hint">No reports in the last 30 days.</p>}
+      {items?.map((f) => (
+        <article key={f.id} className="adm-card">
+          <p className="adm-fb-text">{f.message}</p>
+          <p className="hint">{new Date(f.createdAt).toLocaleString()}{f.orderId ? ` · order ${f.orderId}` : ""}</p>
+        </article>
+      ))}
+    </section>
   );
 }
 

@@ -198,6 +198,7 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
       log("save code revoked", { code: existing?.code ?? null });
       return c.json({ revoked: true });
     }
+    if (m.value.savePercent! < 10) return bad("The share to save has to be a whole percent from 10 to 100. To stop saving, turn your save code off.");
     // The apps the user named, as ids. A rule signed before apps and spending existed keeps what was there.
     let appIds = existing?.appIds ?? [];
     if (m.value.apps) {

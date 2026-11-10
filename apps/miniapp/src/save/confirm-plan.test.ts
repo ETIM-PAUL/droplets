@@ -30,6 +30,8 @@ describe("what Confirm will do", () => {
     expect(plan({ action: "rule", savePercent: 20 }, saver({ code: null, savePercent: null }))).toMatchObject({ kind: "rule", detail: expect.stringMatching(/save code/) });
     expect(plan({ action: "rule", savePercent: 20 }, saver({ code: null, savePercent: null, ...notOpen })).kind).toBe("form");
     expect(plan({ action: "rule", savePercent: 101 }, saver()).kind).toBe("form");
+    expect(plan({ action: "rule", savePercent: 9 }, saver()).kind).toBe("form");
+    expect(plan({ action: "rule", savePercent: 10 }, saver()).kind).toBe("rule");
   });
 
   it("adds to open savings, and sends anything else to the form", () => {

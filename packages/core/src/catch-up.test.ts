@@ -59,6 +59,29 @@ describe("a Nimiq Pay user's own accounts", () => {
     expect(spentBetween(h, T + 7 * 24 * H, T + 14 * 24 * H)).toBe(NIM(5));
   });
 
+  it("follows a new HTLC the old one funded directly, but not a swap, and finds staking sent from it", async () => {
+    // As seen on mainnet: creation data is sender, co-signer, then the rest. Nimiq Pay's HTLCs share both; a swap's has another recipient.
+    const data = (recipient: string, tail: string) => `${own}${recipient}01${"00".repeat(32)}01${tail}`;
+    const COSIGNER = "3c".repeat(20);
+    const PROVIDER_HEX = "eb".repeat(20);
+    const NEW = "NQ12 5555 5555 5555 5555 5555 5555 5555 5555";
+    const chain: NimiqTransaction[] = [
+      tx(WALLET, HTLC1, 300, T, { ...creates, recipientData: data(COSIGNER, "00000000000000a2ab") }),
+      tx(HTLC1, SWAP, 6, T + H, { ...creates, recipientData: data(PROVIDER_HEX, "00000000000000003b") }), // a Lightning swap
+      tx(SWAP, PROVIDER, 6, T + H + 6_000),
+      tx(HTLC1, NEW, 290, T + 9 * 24 * H, { ...creates, recipientData: data(COSIGNER, "00000000000000" + "12b2") }), // the weekly replacement, not via the wallet
+      tx(NEW, STAKING_CONTRACT, 100, T + 9 * 24 * H + H, { recipientData: `05${own}` }),
+      tx(NEW, SHOP, 10, T + 10 * 24 * H),
+    ];
+    const read = (a: string) => Promise.resolve(chain.filter((t) => t.from === a || t.to === a).sort((x, y) => y.timestamp - x.timestamp));
+    const h = await ownHistory(WALLET, read, { since: T - 15 * 24 * H });
+    expect(h.htlcs).toEqual([HTLC1, NEW]);
+    expect(growEvents(WALLET, h.txs, [WALLET, ...h.htlcs]).map((e) => [e.kind, e.luna])).toEqual([["opened", NIM(100)]]);
+    // The swap leaves (6), the replacement and staking don't count, the shop does.
+    expect(spentBetween(h, T, T + 8 * 24 * H)).toBe(NIM(6));
+    expect(spentBetween(h, T + 8 * 24 * H, T + 12 * 24 * H)).toBe(NIM(10));
+  });
+
   it("says when a history was cut short before the time it's needed from", async () => {
     const cut = async (a: string) => (await nimiqPayUser()(a)).slice(0, 2);
     expect((await ownHistory(WALLET, cut, { since: T - 15 * 24 * H, max: 2 })).complete).toBe(false);

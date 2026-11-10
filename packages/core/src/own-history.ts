@@ -1,8 +1,8 @@
 // A Nimiq Pay user's own accounts and what they did with them. Nimiq Pay keeps the spendable balance in an HTLC it
 // co-signs, funded from the user's wallet address and replaced about once a week, and it sends payments and staking
 // transactions from that HTLC. So the wallet address's own history misses most of what the user does: their own
-// accounts are the wallet plus every HTLC it funded.
-import { addressKey } from "./nimiq-address";
+// accounts are the wallet plus every HTLC it funded, and every Nimiq Pay HTLC those hand their balance to.
+import { addressKey, nimiqAddressBytes } from "./nimiq-address";
 import type { NimiqTransaction } from "./nimiq-rpc";
 import { STAKING_CONTRACT } from "./save";
 
@@ -10,6 +10,15 @@ import { STAKING_CONTRACT } from "./save";
 export const HTLC_LIFETIME_DAYS = 15;
 /** Recipient account type 2, and flag 1: the transaction creates the HTLC it pays into. */
 const createsHtlc = (t: NimiqTransaction) => t.toType === 2 && ((t.flags ?? 0) & 1) === 1;
+/**
+ * An HTLC's creation data starts with its sender (20 bytes) and recipient (20 bytes). Nimiq Pay's own HTLCs have the
+ * user's wallet as sender and Nimiq Pay's co-signer as recipient; a Lightning swap's has someone else as recipient.
+ */
+const htlcParties = (t: NimiqTransaction): { sender: string; recipient: string } | null => {
+  const d = t.recipientData.toLowerCase();
+  return /^[0-9a-f]{80,}$/.test(d) ? { sender: d.slice(0, 40), recipient: d.slice(40, 80) } : null;
+};
+const hexOf = (address: string) => Array.from(nimiqAddressBytes(address), (b) => b.toString(16).padStart(2, "0")).join("");
 /** HTLC histories read at the same time. */
 const PARALLEL = 6;
 
@@ -26,9 +35,11 @@ export interface OwnHistory {
 }
 
 /**
- * Reads the wallet's history, then each HTLC it funded since `since`. An HTLC that one of those creates in turn is
- * a swap, such as a Lightning payment, so it's money leaving, not another of the user's accounts. `read` returns an
- * address's latest `max` transactions. The history is complete if every account's reads reach back to `need`.
+ * Reads the wallet's history, then each HTLC it funded since `since`. Nimiq Pay replaces its HTLC about weekly, often
+ * by handing the balance straight from the old HTLC to a new one, so an HTLC one of those creates is followed too,
+ * when it has the same sender and co-signer. Any other HTLC they create is a swap, such as a Lightning payment: money
+ * leaving, not another of the user's accounts. `read` returns an address's latest `max` transactions. The history is
+ * complete if every account's reads reach back to `need`.
  */
 export async function ownHistory(
   wallet: string,
@@ -52,10 +63,28 @@ export async function ownHistory(
   }
 
   const byHash = new Map(walletTxs.map((t) => [t.hash, t]));
-  for (let i = 0; i < htlcs.length; i += PARALLEL) {
-    for (const txs of await Promise.all(htlcs.slice(i, i + PARALLEL).map((a) => read(a, max)))) {
+  // The co-signers on HTLCs the wallet funded itself: the ones an HTLC may hand its balance to.
+  const walletHex = hexOf(wallet);
+  const cosigners = new Set(funded.map((t) => htlcParties(t)).filter((p) => p?.sender === walletHex).map((p) => p!.recipient));
+  const limit = o.maxHtlcs ?? 200;
+  const known = new Set(htlcs.map(addressKey));
+  // The list grows as replacements are found, so it's read in batches from the first one not yet read.
+  for (let next = 0; next < htlcs.length; ) {
+    const batch = htlcs.slice(next, next + PARALLEL);
+    next += batch.length;
+    for (const txs of await Promise.all(batch.map((a) => read(a, max)))) {
       reached(txs);
-      for (const t of txs) byHash.set(t.hash, t);
+      for (const t of txs) {
+        byHash.set(t.hash, t);
+        // An own HTLC creating one with the same sender and co-signer is its replacement.
+        const parties = t.executionResult && t.timestamp >= o.since && known.has(addressKey(t.from)) && createsHtlc(t) ? htlcParties(t) : null;
+        if (!parties || parties.sender !== walletHex || !cosigners.has(parties.recipient) || known.has(addressKey(t.to))) continue;
+        if (htlcs.length >= limit) complete = false;
+        else {
+          known.add(addressKey(t.to));
+          htlcs.push(t.to);
+        }
+      }
     }
   }
   return { wallet, htlcs, txs: [...byHash.values()].sort((a, b) => b.timestamp - a.timestamp), complete: complete && coversFrom <= need, coversFrom };

@@ -12,6 +12,10 @@ import { AppBar, Droplet, Icon, PageHead, QrCode, SettingRow, type IconName, typ
 type Mode = "home" | "rule" | "open" | "add" | "withdraw";
 
 const PRESETS = [10, 30, 50, 100];
+/** The share of payouts that goes to savings: any whole percent from 10 to 100. */
+const MIN_SHARE = 10;
+const MAX_SHARE = 100;
+const shareOk = (n: number) => Number.isInteger(n) && n >= MIN_SHARE && n <= MAX_SHARE;
 /** Shares saved on top when paying an app: small, since they're added to the price. */
 const SPEND_PRESETS = [0, 5, 10, 20];
 const CATCH_UP_LABEL: Record<CatchUpEvery, string> = { daily: "Daily", weekly: "Weekly", biweekly: "Every 2 weeks", monthly: "Monthly" };
@@ -417,7 +421,7 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
   const example = (p: number) => `If an app pays you 1,000 NIM, ${(p * 10).toLocaleString()} NIM goes to savings and ${((100 - p) * 10).toLocaleString()} NIM to your wallet.`;
   const presets = (list: number[], value: number, set: (n: number) => void, label: string) => (
     <div className="presets" role="group" aria-label={label}>
-      {(list.includes(value) ? list : [...list, value].sort((a, b) => a - b)).map((p) => (
+      {(list.includes(value) || !Number.isFinite(value) ? list : [...list, value].sort((a, b) => a - b)).map((p) => (
         <button key={p} type="button" className="preset" aria-pressed={value === p} onClick={() => set(p)}>{p}%</button>
       ))}
     </div>
@@ -425,8 +429,25 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
   const picker = (
     <div className="field">
       <span className="field-label">Save from what apps pay you</span>
-      {presets(PRESETS, percent, setPercent, "Share to save")}
-      <p className="hint">{example(percent)}</p>
+      <div className="presets" role="group" aria-label="Share to save">
+        {PRESETS.map((p) => (
+          <button key={p} type="button" className="preset" aria-pressed={percent === p} onClick={() => setPercent(p)}>{p}%</button>
+        ))}
+      </div>
+      <label className="share-custom" htmlFor="share-custom">
+        <span>Or choose your own</span>
+        <span className="share-box">
+          <input
+            id="share-custom" type="number" inputMode="numeric" min={MIN_SHARE} max={MAX_SHARE} step={1}
+            value={Number.isNaN(percent) ? "" : percent} aria-invalid={!shareOk(percent)} aria-describedby="share-hint"
+            onChange={(e) => setPercent(e.target.value === "" ? Number.NaN : Number(e.target.value))}
+          />
+          <span aria-hidden="true">%</span>
+        </span>
+      </label>
+      <p id="share-hint" className={shareOk(percent) ? "hint" : "hint share-bad"} role={shareOk(percent) ? undefined : "alert"}>
+        {shareOk(percent) ? example(percent) : `Choose a whole number from ${MIN_SHARE} to ${MAX_SHARE}.`}
+      </p>
     </div>
   );
 
@@ -478,7 +499,7 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
         </section>
         {messages}
         <div className="bottom">
-          <button type="button" className="primary" disabled={busy || wrongNetwork || apps === null} onClick={() => void saveRule({ savePercent: percent, spendPercent, apps: allowed, catchUp: catchUpEvery })}>
+          <button type="button" className="primary" disabled={busy || wrongNetwork || apps === null || !shareOk(percent)} onClick={() => void saveRule({ savePercent: percent, spendPercent, apps: allowed, catchUp: catchUpEvery })}>
             {busy ? "Opening Nimiq Pay…" : "Save rules"}
           </button>
           <p className="note center">Nimiq Pay asks you to sign, so only you can change your rules. Signing is free.</p>
@@ -736,7 +757,7 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
                 {g && (
                   <>
                     {picker}
-                    <button type="button" className="primary" disabled={busy || wrongNetwork} onClick={() => void saveRule({ savePercent: percent, spendPercent: 0, apps: [], catchUp: "weekly" })}>
+                    <button type="button" className="primary" disabled={busy || wrongNetwork || !shareOk(percent)} onClick={() => void saveRule({ savePercent: percent, spendPercent: 0, apps: [], catchUp: "weekly" })}>
                       {busy ? "Opening Nimiq Pay…" : "Get my save code"}
                     </button>
                     <p className="note">Nimiq Pay asks you to sign your choice. Signing is free.</p>

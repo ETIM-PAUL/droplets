@@ -43,10 +43,11 @@ services:
       - key: SAVE_ENABLED
         value: "true"
       - key: SAVE_NETWORK
-        value: testnet
+        value: mainnet
       # The weekly draw. PRIZE_ADDRESS is the prize wallet; its key stays with `pnpm pay-prizes`, never here.
-      # This is the testnet prize wallet: on mainnet, use a mainnet wallet you fund. Prize draws are regulated
-      # in many countries, so check before paying real prizes; PRIZE_ENABLED "false" switches the draw off.
+      # PRIZE_ADDRESS is the mainnet prize wallet you fund: Render asks for it once. Until it's set the draw still runs,
+      # but the API can't check that a prize was paid. Prize draws are regulated in many countries, so check
+      # before paying real prizes; PRIZE_ENABLED "false" switches the draw off.
       # Sleeping on the free plan is fine: each draw is decided by a block, and kept days are read from the chain.
       - key: PRIZE_ENABLED
         value: "true"
@@ -59,7 +60,7 @@ services:
       - key: PRIZE_UTC_OFFSET_MINUTES
         value: "60"
       - key: PRIZE_ADDRESS
-        value: NQ04 GGUB XURM CSEP VJV5 Q59V MJ6Y MV5N HJF5
+        sync: false
 
   - type: web
     name: droplets-app

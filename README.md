@@ -121,6 +121,8 @@ Point a tunnel (ngrok, or a free Cloudflare quick tunnel) at port 5173 and open 
 
 ### Testnet tools
 
+These are for local development on testnet. The live app runs on mainnet.
+
 | Command | What it does |
 |---|---|
 | `pnpm pay-save-code SAVE-XXXXXXX 2000` | Plays an app ("Test Arcade") that pays 2,000 NIM to a save code. |
@@ -261,11 +263,11 @@ pnpm run ci   # type checks, tests, build, licence check, signing guard
 
 ## Deployment
 
-[render.yaml](render.yaml) is a Render Blueprint for the API (`droplets-api`) and the Mini App as a static site (`droplets-app`). It's set up for testnet, open to everyone, with the API and the Mini App already pointing at each other's `onrender.com` addresses. The database is any Postgres you give it: the free tier of [Neon](https://neon.tech) works well.
+[render.yaml](render.yaml) is a Render Blueprint for the API (`droplets-api`) and the Mini App as a static site (`droplets-app`). It's set up for mainnet, open to everyone, with the API and the Mini App already pointing at each other's `onrender.com` addresses. The database is any Postgres you give it: the free tier of [Neon](https://neon.tech) works well.
 
 1. Create a Postgres database and copy its **direct** connection string, not the pooled one, because the API runs its own table migrations at startup. With Neon that's the host without `-pooler`. If your Neon login came from Vercel, create it in Vercel under **Storage > Create Database > Neon**, then copy `DATABASE_URL_UNPOOLED`.
 2. Push the repo to GitHub, then in Render choose **New > Blueprint** and pick it.
-3. Render asks for `DATABASE_URL`: paste the connection string. It also asks for two optional secrets, `OPENAI_API_KEY` and `ALERT_WEBHOOK_URL`; leave them empty if you don't use them.
+3. Render asks for `DATABASE_URL`: paste the connection string. It asks for `PRIZE_ADDRESS`, the mainnet wallet the weekly prize is paid from (see below). It also asks for two optional secrets, `OPENAI_API_KEY` and `ALERT_WEBHOOK_URL`; leave them empty if you don't use them.
 4. Once both services are live, open `https://droplets-app.onrender.com` in Nimiq Pay.
 
 If Render gives either service a different address, update `ALLOWED_ORIGINS` on the API and `VITE_RAILKIT_API_URL` on the Mini App to match.
@@ -276,11 +278,25 @@ If Render gives either service a different address, update `ALLOWED_ORIGINS` on 
 
 Free Render services sleep after about 15 minutes idle, so the first request then takes about a minute. The weekly draw doesn't mind sleeping, because a block picks the winner, not the time the job runs. Move the API to a paid plan for a public launch.
 
+### Paying the weekly prize (mainnet)
+
+The API decides each Sunday's winner; the prize is paid by hand from your computer, so the wallet's key never goes near the server. Every Monday:
+
+1. Make sure the prize wallet (the address set as `PRIZE_ADDRESS` in Render) holds at least the prize, 1,000 NIM by default.
+2. Put its key in `.env.prize` as `PRIZE_KEY=<64 hex characters>`. The file is git-ignored.
+3. Run it against the live API. `ADMIN_TOKEN` is Render's value, from the droplets-api Environment page:
+
+```sh
+SAVE_NETWORK=mainnet ERRAND_API_URL=https://droplets-api.onrender.com ADMIN_TOKEN=... pnpm pay-prizes
+```
+
+It pays any unpaid prizes into the winner's savings and stops. Prizes that aren't paid wait, and the next run pays them. Prize draws are regulated in many countries, so check before paying real prizes.
+
 ## Status and roadmap
 
 | | |
 |---|---|
-| **Built** | Savings, save codes, apps you allow, saving when you pay, the catch-up, the weekly draw, Ask Droplets, and the SDK for apps. Running on testnet (`SAVE_NETWORK`). |
+| **Built** | Savings, save codes, apps you allow, saving when you pay, the catch-up, the weekly draw, Ask Droplets, and the SDK for apps. Deployed on mainnet (`SAVE_NETWORK`); local development defaults to testnet. |
 | **Next** | Mainnet, with the first partner apps, self-serve sign-up for apps, and the SDK on npm. |
 | **Planned** | Bitcoin Lightning in, NIM savings out, which depends on a swap partner. |
 

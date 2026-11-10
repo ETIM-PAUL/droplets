@@ -1,7 +1,14 @@
-# Same as .gitbook.yaml, for GitBook sync screens that ask for gitbook-docs.yaml. Keep the two in step.
-# Connects this repo to GitBook: the docs are the `guide` folder, laid out by guide/SUMMARY.md.
-root: ./guide/
-
-structure:
-  readme: README.md
-  summary: SUMMARY.md
+# GitBook site sync: one site, with one space whose pages are the `guide` folder (laid out by guide/SUMMARY.md).
+# GitBook matches spaces by `key`, so don't change it. To rename the space change `title`; to change its URL change `path`.
+$schema: https://api.gitbook.com/gitbook-docs.yaml
+site:
+  title: Droplets
+  structure:
+    - type: space
+      key: droplets-guide
+      title: Droplets
+      path: docs
+      default: true
+      content:
+        directory: ./guide
+        language: en

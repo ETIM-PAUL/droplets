@@ -74,6 +74,9 @@ services:
       # The API's address. Change it if Render gives the API a different one.
       - key: VITE_RAILKIT_API_URL
         value: https://droplets-api.onrender.com
+      # The docs site (GitBook), once it's published: the landing page then links to it. Leave empty until then.
+      - key: VITE_DOCS_URL
+        value: ""
     # /admin is its own page (admin.html), for the team: sign in with ADMIN_TOKEN.
     routes:
       - type: rewrite

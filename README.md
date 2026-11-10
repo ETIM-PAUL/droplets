@@ -152,7 +152,7 @@ Settings live in `.env` (gitignored). [.env.example](.env.example) lists them al
 
 ## For app developers
 
-Apps that pay people NIM, or take payments, can save for their users with the SDK in [packages/save](packages/save/README.md):
+Apps that pay people NIM, or take payments, can save for their users with the SDK, [`@droplets/save`](packages/save/README.md):
 
 ```ts
 // Pay the address you already pay: split by the user's rule if they allowed your app.
@@ -163,7 +163,31 @@ const quote = await api.spend(userAddress, 10_000_000n);
 await payer.saveFromSpend({ to: userAddress, luna: quote.saveLuna, payoutId: "order-7-save" });
 ```
 
-The SDK signs with your own payout key on your server, is safe to retry, and never waits on Droplets: if Droplets doesn't answer, it pays normally. The SDK isn't on npm yet.
+The SDK signs with your own payout key on your server, is safe to retry, and never waits on Droplets: if Droplets doesn't answer, it pays normally. Install it with `npm install @droplets/save`.
+
+### The docs site
+
+The guide for users and for app developers is in [guide/](guide/README.md), laid out for [GitBook](https://www.gitbook.com) by `guide/SUMMARY.md` and `.gitbook.yaml`. To publish it:
+
+1. In GitBook, create a space and choose **Configure > GitHub Sync** (connect the GitHub account that owns the repo).
+2. Pick this repository and the `main` branch. GitBook reads `.gitbook.yaml`, so it finds the `guide/` folder on its own.
+3. Choose which side wins on the first sync (the repo), then publish the space.
+4. Set `VITE_DOCS_URL` in Render (droplets-app > Environment) to the published address, so the home page links to it.
+
+After that, edit the files in `guide/` and push: GitBook updates itself. The code samples were checked against the built `@droplets/save` package, so rerun `npm pack` and a quick type check if you change the SDK.
+
+### Publishing the SDK
+
+`@droplets/save` is built with `tsup`, which bundles the repo's private `@railkit/core` code into it, so the package stands alone. To publish a release:
+
+```sh
+cd packages/save
+npm version patch            # or minor / major
+npm login                    # an account that owns the @droplets npm scope
+npm publish --access public  # builds first, then asks for your 2FA code
+```
+
+Check what will go in with `npm pack --dry-run`. `pnpm --filter @droplets/save build` builds into `dist/`, which isn't committed.
 
 ### Registering an app
 

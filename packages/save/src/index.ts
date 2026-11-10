@@ -1,7 +1,9 @@
-// @railkit/save: pay rewards into a user's savings, by save code or by the address you already pay, and save a
+// @droplets/save: pay rewards into a user's savings, by save code or by the address you already pay, and save a
 // share on top when users pay you. Server-side: the app key is a secret. Building and sending payments is in
-// "@railkit/save/payer"; this entry only talks to the Droplets API.
-export { formatSaveCode, parseSaveCode } from "@railkit/core";
+// "@droplets/save/payer"; this entry only talks to the Droplets API.
+// createNimiqRpc is the node client the payer needs, so apps needn't install anything else for it.
+export { createNimiqRpc, formatSaveCode, parseSaveCode } from "@railkit/core";
+export type { NimiqRpc } from "@railkit/core";
 
 export class SaveApiError extends Error {
   constructor(message: string, readonly status: number) {

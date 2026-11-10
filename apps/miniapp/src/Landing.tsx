@@ -3,6 +3,9 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "./api";
 import { Droplet, Icon, type IconName } from "./ui";
 
+/** The docs site (GitBook), once it exists: set VITE_DOCS_URL to its address and the page links to it. */
+const DOCS_URL = typeof import.meta.env.VITE_DOCS_URL === "string" && import.meta.env.VITE_DOCS_URL.startsWith("https://") ? import.meta.env.VITE_DOCS_URL : null;
+
 /** What a browser shows: Droplets only runs inside Nimiq Pay, so anyone else gets the page that explains it. */
 export function Landing() {
   return (
@@ -14,6 +17,7 @@ export function Landing() {
         </a>
         <nav className="lp-nav" aria-label="On this page">
           <a className="lp-nav-link" href="#for-apps">For apps</a>
+          {DOCS_URL && <a className="lp-nav-link" href={DOCS_URL} target="_blank" rel="noopener noreferrer">Docs</a>}
           <a className="lp-top-link" href="#start">Start saving</a>
         </nav>
       </header>
@@ -105,7 +109,7 @@ export function Landing() {
             then sends the saved part into the user's stake and the rest to their wallet. If Droplets doesn't answer within 3 seconds, it
             pays normally. Users who haven't picked your app get a plain payment, so no app can tell who uses Droplets.
           </p>
-          <p>Register your app to get its key. We review each new app, and the key starts working once yours is approved.</p>
+          <p>Register your app to get its key. We review each new app, and the key starts working once yours is approved.{DOCS_URL && <> The <a href={DOCS_URL} target="_blank" rel="noopener noreferrer">docs</a> walk through the integration.</>}</p>
           <RegisterApp />
         </section>
 

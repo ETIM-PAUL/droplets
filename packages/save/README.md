@@ -12,9 +12,17 @@ When you pay a saver, you send two transactions from your payout account:
 
 You pay the user directly. Droplets never holds the money; its API only tells you how to split each payment and records what you sent.
 
+## Install
+
+```sh
+npm install @droplets/save
+```
+
+It runs on your server, never in a Mini App's front end: it signs with your payout key. It needs Node 20 or later and `@nimiq/core` (you pass it in as `nimiq`).
+
 ## 1. Get an app key
 
-Ask the Droplets team to register your app with its name and the Nimiq addresses you pay from. You get an `rk_save_…` key once. Keep it on your server.
+Register your app on the Droplets landing page (**For apps > Register your app**) with its name and the Nimiq addresses you pay from. You get an `rk_save_…` key once, and it starts working when the Droplets team approves the app. Keep it on your server.
 
 Droplets only accepts receipts for transactions sent from the addresses you registered.
 
@@ -27,7 +35,7 @@ Droplets answers the same for "doesn't save with Droplets" as for "didn't allow 
 If you ask people to type or paste an address, also accept a save code there. `parseSaveCode` tells them apart and catches typos with the code's check character:
 
 ```ts
-import { parseSaveCode } from "@railkit/save";
+import { parseSaveCode } from "@droplets/save";
 
 const code = parseSaveCode(input); // { ok: true, value: "7KQ2XMP" } or { ok: false, error }
 ```
@@ -37,13 +45,12 @@ Codes ignore case, spaces and dashes, and read `O` as `0` and `I`/`L` as `1`.
 ## 3. Pay
 
 ```ts
-import { createNimiqRpc } from "@railkit/core";
-import { createSaveApi } from "@railkit/save";
-import { createSavePayer } from "@railkit/save/payer";
+import { createNimiqRpc, createSaveApi } from "@droplets/save";
+import { createSavePayer } from "@droplets/save/payer";
 import * as Nimiq from "@nimiq/core";
 
 const payer = createSavePayer({
-  api: createSaveApi({ apiUrl: "https://<errand api>", apiKey: process.env.ERRAND_SAVE_KEY! }),
+  api: createSaveApi({ apiUrl: "https://droplets-api.onrender.com", apiKey: process.env.DROPLETS_KEY! }),
   rpc: createNimiqRpc({ url: "https://rpc.nimiqwatch.com" }), // testnet: https://rpc.testnet.nimiqwatch.com
   nimiq: Nimiq,
   keyPair: yourPayoutKeyPair, // a @nimiq/core KeyPair for one of your registered payout addresses
@@ -79,7 +86,7 @@ Your payout never fails because of savings.
 When a user pays you, ask what to charge before you request the payment:
 
 ```ts
-const api = createSaveApi({ apiUrl: "https://<errand api>", apiKey: process.env.ERRAND_SAVE_KEY! });
+const api = createSaveApi({ apiUrl: "https://droplets-api.onrender.com", apiKey: process.env.DROPLETS_KEY! });
 const quote = await api.spend(userAddress, 10_000_000n).catch(() => null); // a 100 NIM price
 const charge = quote?.totalLuna ?? 10_000_000n; // 105 NIM for a user saving 5% when they pay; 100 NIM for everyone else
 ```
@@ -95,7 +102,7 @@ if (quote && quote.saveLuna > 0n) {
 - **The saved part is the user's money.** If their stake can't take it by the time you send it (it closed, or its validator left), `saveFromSpend()` sends it back to their wallet instead. Never keep it.
 - **One quote per purchase.** Keep the quote with the order, so a retry saves the same amount. `payoutId` makes `saveFromSpend()` retry-safe, like `pay()`.
 - **If the quote fails,** charge the price alone. A purchase never waits on Droplets.
-- `saveFromSpend()` reads the user's stake from your node, so pass an `rpc` from `createNimiqRpc`, which can.
+- `saveFromSpend()` reads the user's stake from your node, so pass an `rpc` from `createNimiqRpc` (exported by `@droplets/save`), which can.
 
 ## Retries
 
@@ -143,6 +150,6 @@ If you don't use TypeScript, call the API directly with `Authorization: Bearer r
 
 ## Notes
 
-- The SDK lives in the RailKit repo (`packages/save`) and isn't on npm yet.
+- The SDK is the npm package `@droplets/save`, for Node 20 or later, in both ESM and CommonJS. Its source is `packages/save` in the Droplets repo.
 - Users can change their rule, or stop allowing your app, at any time. Look the split up on every payment rather than caching it.
 - Never send your payout key anywhere. The SDK signs on your server and only sends Droplets the transaction hashes.

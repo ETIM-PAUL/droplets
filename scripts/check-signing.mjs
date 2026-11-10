@@ -44,7 +44,7 @@ const ALLOWED_PROVIDER_CALLS = new Set([
   "payLightningInvoice", "sendBasicTransaction", "isConsensusEstablished", "request",
   "sign", "sendNewStakerTransaction", "sendStakeTransaction", "sendSetActiveStakeTransaction", "sendRetireStakeTransaction", "sendRemoveStakeTransaction",
 ]);
-// 6. Server payouts (@railkit/save/payer) sign with the paying app's own key: only that file may hold a key pair,
+// 6. Server payouts (@droplets/save/payer) sign with the paying app's own key: only that file may hold a key pair,
 //    and neither the phone nor the RailKit API may import the payer.
 const KEYPAIR_FILES = new Set(["packages/save/src/payer.ts"]);
 const NO_PAYER = [/^apps\/miniapp\//, /^packages\/client\//, /^apps\/api\//];
@@ -70,7 +70,7 @@ for (const f of files) {
   if (!KEYPAIR_FILES.has(r)) src.split("\n").forEach((line, i) => {
     if (/\bkeyPair\b/.test(line) && !/^\s*(\/\/|\*)/.test(line)) problems.push(`${r}:${i + 1} holds a key pair; only ${[...KEYPAIR_FILES].join(", ")} (server payouts) may`);
   });
-  if (NO_PAYER.some((re) => re.test(r)) && /from\s+["']@railkit\/save\/payer["']/.test(src)) problems.push(`${r} imports @railkit/save/payer, which signs server payouts; the phone and the RailKit API must never reach it`);
+  if (NO_PAYER.some((re) => re.test(r)) && /from\s+["']@(?:droplets|railkit)\/save\/payer["']/.test(src)) problems.push(`${r} imports @droplets/save/payer, which signs server payouts; the phone and the RailKit API must never reach it`);
 
   for (const m of src.matchAll(/\bcreate(Nimiq|Evm)(Executor|Saver)\(/g)) {
     if (/^packages\/wallet-(nimiq|evm)\//.test(r)) continue;

@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "baseUrl": ".", "paths": { "@railkit/core": ["../core/src/index.ts"] } },
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts"]
+}

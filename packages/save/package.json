@@ -1,23 +1,69 @@
 {
-  "name": "@railkit/save",
-  "version": "0.0.0",
-  "private": true,
+  "name": "@droplets/save",
+  "version": "0.1.0",
+  "description": "Save with Droplets: for Nimiq apps that pay people or take payments. Splits each payout into a wallet payment and an add-stake into the user's savings.",
+  "keywords": [
+    "nimiq",
+    "nimiq-pay",
+    "mini-app",
+    "savings",
+    "staking",
+    "droplets"
+  ],
   "license": "MIT",
+  "homepage": "https://droplets-app.onrender.com",
   "type": "module",
-  "main": "src/index.ts",
+  "sideEffects": false,
+  "main": "./dist/index.cjs",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./payer": "./src/payer.ts"
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./payer": {
+      "import": {
+        "types": "./dist/payer.d.ts",
+        "default": "./dist/payer.js"
+      },
+      "require": {
+        "types": "./dist/payer.d.cts",
+        "default": "./dist/payer.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json --noEmit",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "build": "tsup",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepack": "tsup"
   },
   "dependencies": {
-    "@railkit/core": "workspace:*"
+    "@noble/hashes": "^2.4.0",
+    "@scure/base": "^2.4.0"
   },
   "devDependencies": {
     "@nimiq/core": "2.23.0",
-    "tsx": "4.23.15"
-  }
+    "tsup": "^8.5.1",
+    "tsx": "4.23.15",
+    "@railkit/core": "workspace:*"
+  },
+  "module": "./dist/index.js"
 }

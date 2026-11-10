@@ -19,3 +19,6 @@ coverage/
 # OS / editor
 .DS_Store
 .idea/
+
+# Docs build output
+/site/

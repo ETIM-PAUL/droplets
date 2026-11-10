@@ -1,0 +1,63 @@
+# The Droplets docs: Markdown in `guide/`, built with MkDocs Material.
+#   pip install -r docs-requirements.txt
+#   mkdocs serve        # preview at http://127.0.0.1:8000
+#   mkdocs build        # writes the site to ./site
+site_name: Droplets docs
+site_description: How to save with Droplets, and how apps can save for their users.
+site_url: https://droplets-docs.onrender.com/
+docs_dir: guide
+strict: true
+
+theme:
+  name: material
+  logo: assets/droplet.svg
+  favicon: assets/droplet.svg
+  font:
+    text: Mulish
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: teal
+      toggle: { icon: material/weather-night, name: Switch to dark mode }
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: teal
+      toggle: { icon: material/weather-sunny, name: Switch to light mode }
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - search.highlight
+    - content.code.copy
+    - content.tabs.link
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc: { permalink: true }
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.tabbed: { alternate_style: true }
+
+nav:
+  - Welcome: README.md
+  - Using Droplets:
+      - Get started: using-droplets/get-started.md
+      - Your savings: using-droplets/your-savings.md
+      - Saving rules: using-droplets/saving-rules.md
+      - The weekly draw: using-droplets/weekly-draw.md
+      - Ask Droplets: using-droplets/ask-droplets.md
+      - Is it safe?: using-droplets/safety.md
+      - Questions and fixes: using-droplets/faq.md
+  - For apps:
+      - How it works: for-apps/overview.md
+      - Quickstart: for-apps/quickstart.md
+      - Register your app: for-apps/register.md
+      - Paying users: for-apps/paying-users.md
+      - Spend and save: for-apps/spend-and-save.md
+      - Retries, receipts and going live: for-apps/going-live.md
+      - HTTP API reference: for-apps/api-reference.md

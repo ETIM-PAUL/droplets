@@ -1,6 +1,0 @@
-# Connects this repo to GitBook: the docs are the `guide` folder, laid out by guide/SUMMARY.md.
-root: ./guide/
-
-structure:
-  readme: README.md
-  summary: SUMMARY.md

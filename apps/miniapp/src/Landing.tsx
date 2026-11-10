@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "./api";
 import { Droplet, Icon, type IconName } from "./ui";
 
-/** The docs site (GitBook), once it exists: set VITE_DOCS_URL to its address and the page links to it. */
+/** The docs site: set VITE_DOCS_URL to its address and the page links to it. */
 const DOCS_URL = typeof import.meta.env.VITE_DOCS_URL === "string" && import.meta.env.VITE_DOCS_URL.startsWith("https://") ? import.meta.env.VITE_DOCS_URL : null;
 
 /** What a browser shows: Droplets only runs inside Nimiq Pay, so anyone else gets the page that explains it. */

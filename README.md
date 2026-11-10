@@ -167,14 +167,16 @@ The SDK signs with your own payout key on your server, is safe to retry, and nev
 
 ### The docs site
 
-The guide for users and for app developers is in [guide/](guide/README.md), laid out for [GitBook](https://www.gitbook.com) by `guide/SUMMARY.md` and `.gitbook.yaml`. To publish it:
+The guide for users and for app developers is in [guide/](guide/README.md), built with [MkDocs Material](https://squidfunk.github.io/mkdocs-material/) (`mkdocs.yml`). It's the third service in `render.yaml`, `droplets-docs`, at `https://droplets-docs.onrender.com`: free, and rebuilt on every push. The home page links to it through `VITE_DOCS_URL`.
 
-1. In GitBook, create a space and choose **Configure > GitHub Sync** (connect the GitHub account that owns the repo).
-2. Pick this repository and the `main` branch. GitBook reads `.gitbook.yaml`, so it finds the `guide/` folder on its own.
-3. Choose which side wins on the first sync (the repo), then publish the space.
-4. Set `VITE_DOCS_URL` in Render (droplets-app > Environment) to the published address, so the home page links to it.
+To preview it while you write:
 
-After that, edit the files in `guide/` and push: GitBook updates itself. The code samples were checked against the built `@droplets/save` package, so rerun `npm pack` and a quick type check if you change the SDK.
+```sh
+pip install -r docs-requirements.txt
+mkdocs serve        # http://127.0.0.1:8000
+```
+
+The build is strict, so a broken link fails it. Add a page by creating the file in `guide/` and listing it under `nav` in `mkdocs.yml`. The code samples were checked against the built `@droplets/save` package, so recheck them if you change the SDK.
 
 ### Publishing the SDK
 

@@ -74,14 +74,31 @@ services:
       # The API's address. Change it if Render gives the API a different one.
       - key: VITE_RAILKIT_API_URL
         value: https://droplets-api.onrender.com
-      # The docs site (GitBook), once it's published: the landing page then links to it. Leave empty until then.
+      # The docs site below: the landing page links to it.
       - key: VITE_DOCS_URL
-        value: ""
+        value: https://droplets-docs.onrender.com
     # /admin is its own page (admin.html), for the team: sign in with ADMIN_TOKEN.
     routes:
       - type: rewrite
         source: /admin
         destination: /admin.html
+    headers:
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+
+  # The docs (MkDocs Material, from the Markdown in guide/). Free, and rebuilt on every push.
+  - type: web
+    name: droplets-docs
+    runtime: static
+    buildCommand: pip install -r docs-requirements.txt && mkdocs build -d site
+    staticPublishPath: site
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.3
+      - key: NO_MKDOCS_2_WARNING
+        value: "true"
     headers:
       - path: /*
         name: X-Content-Type-Options

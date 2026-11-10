@@ -6,19 +6,17 @@ Droplets is a savings Mini App for [Nimiq Pay](https://nimiq.com). A small share
 
 ## Where to start
 
-{% tabs %}
-{% tab title="I want to save" %}
-Start with [Get started](using-droplets/get-started.md). It takes a few minutes: open your savings with at least 100 NIM, choose your share, and get your save code.
-{% endtab %}
+=== "I want to save"
 
-{% tab title="I build an app" %}
-Your app pays people NIM, or takes payments in NIM. Read [How it works](for-apps/overview.md), then follow the [Quickstart](for-apps/quickstart.md). You change a few lines of server code, and users of your app start saving.
-{% endtab %}
-{% endtabs %}
+    Start with [Get started](using-droplets/get-started.md). It takes a few minutes: open your savings with at least 100 NIM, choose your share, and get your save code.
+
+=== "I build an app"
+
+    Your app pays people NIM, or takes payments in NIM. Read [How it works](for-apps/overview.md), then follow the [Quickstart](for-apps/quickstart.md). You change a few lines of server code, and users of your app start saving.
 
 ## The pieces
 
-| | |
+| Part | What it is |
 |---|---|
 | **Savings** | NIM staked from your own account. Open them once, add more any time. [More](using-droplets/your-savings.md) |
 | **Saving rules** | How much of what apps pay you, and what you pay, goes to savings, and which apps may do it. [More](using-droplets/saving-rules.md) |

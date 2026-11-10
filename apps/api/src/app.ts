@@ -97,7 +97,7 @@ export function createApp(d: AppDeps) {
   const sessionLimit = rateLimiter(10, 60_000, d.now);
 
   const app = new Hono<Env>();
-  app.use("/v1/*", cors({ origin: d.allowedOrigins, allowMethods: ["GET", "POST"], allowHeaders: ["Content-Type", "Authorization"] }));
+  app.use("/v1/*", cors({ origin: d.allowedOrigins, allowMethods: ["GET", "POST", "PATCH", "DELETE"], allowHeaders: ["Content-Type", "Authorization"] }));
 
   // Paid features need a beta session when the beta is on. The invite rides along for limits and metrics.
   const session = async (c: { req: { header(n: string): string | undefined }; set(k: "invite", v: string | null): void }, next: () => Promise<void>) => {

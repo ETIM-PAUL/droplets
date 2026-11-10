@@ -167,12 +167,23 @@ The SDK signs with your own payout key on your server, is safe to retry, and nev
 
 Apps sign up on the landing page, the page Droplets shows in an ordinary browser, under **For apps > Register your app**. They give a name, an optional https link, a way to reach them, and up to 5 addresses they pay from. They get their key at once, shown only that time. The key works only after the team approves the app; until then the app isn't in the public list and users can't pick it. That way, signing up can't be used to try save codes and find out who uses Droplets. Only completed sign-ups count toward the limit of 3 an hour from one place.
 
-When an app signs up, the API posts to `ALERT_WEBHOOK_URL` if you set it. Review and approve with the admin token:
+When an app signs up, the API posts to `ALERT_WEBHOOK_URL` if you set it. Then open the admin page at `/admin` on the Mini App's address (`https://droplets-app.onrender.com/admin`) and sign in with `ADMIN_TOKEN`. The page isn't linked from anywhere and tells search engines to skip it, and the token is kept only until the tab closes. It lets you:
+
+- **Review sign-ups** and approve them.
+- **See each approved app's usage:** payments, people, NIM saved (and how much of it on top of purchases), NIM paid to wallets, how many people picked it, and its last payment.
+- **Edit** an app's name, link, contact or payout addresses.
+- **Replace its key** if one leaks: the old key stops working at once and the new one is shown once.
+- **Remove** an app: its key stops working and it leaves the list. People's savings aren't touched.
+- **Add an app yourself,** approved straight away.
+
+The same things are available over the API with the admin token:
 
 ```bash
-curl -H "Authorization: Bearer $ADMIN_TOKEN" https://droplets-api.onrender.com/v1/admin/save/apps                    # every app, with pending, url and contact
-curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" https://droplets-api.onrender.com/v1/admin/save/apps/APP_ID/approve
-curl -X DELETE -H "Authorization: Bearer $ADMIN_TOKEN" https://droplets-api.onrender.com/v1/admin/save/apps/APP_ID     # remove it; its key stops working
+curl -H "Authorization: Bearer $ADMIN_TOKEN" https://droplets-api.onrender.com/v1/admin/save/apps                    # every app, with usage
+curl -X POST   -H "Authorization: Bearer $ADMIN_TOKEN" https://droplets-api.onrender.com/v1/admin/save/apps/APP_ID/approve
+curl -X PATCH  -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" -d '{"url":"https://example.com"}' https://droplets-api.onrender.com/v1/admin/save/apps/APP_ID
+curl -X POST   -H "Authorization: Bearer $ADMIN_TOKEN" https://droplets-api.onrender.com/v1/admin/save/apps/APP_ID/key
+curl -X DELETE -H "Authorization: Bearer $ADMIN_TOKEN" https://droplets-api.onrender.com/v1/admin/save/apps/APP_ID
 ```
 
 Apps the team adds itself with `POST /v1/admin/save/apps` are approved straight away.
@@ -192,7 +203,7 @@ The API ([apps/api](apps/api)) is Hono on Node. It holds no wallet keys.
 | `POST /v1/save/ask` | The Mini App | Ask Droplets' answers about the user's own savings. |
 | `GET /v1/save/split`, `GET /v1/save/spend`, `POST /v1/save/receipts` | Paying apps (app key) | How to split a payment, what to charge, and what was sent. |
 | `POST /v1/prize/join`, `GET /v1/prize/me`, `GET /v1/prize/draws` | The Mini App | The weekly draw. |
-| `/v1/admin/save/apps`, `/v1/admin/prize/*` | Admin token | Adding, approving and removing apps, and the prize payout tool. |
+| `/v1/admin/save/apps`, `/v1/admin/prize/*` | Admin token | Adding, approving, editing, re-keying and removing apps (the `/admin` page), and the prize payout tool. |
 
 ## Project structure
 

@@ -487,3 +487,35 @@ button:disabled { cursor: default; }
   .drip-saved, .drip-water { transition: none; }
   .drip-fall { animation: none; display: none; }
 }
+
+/* ---- Admin page (/admin): plain and roomy, for the team */
+.adm { width: min(100% - 32px, 820px); margin: 0 auto; padding: 16px 0 64px; display: flex; flex-direction: column; gap: 28px; }
+.adm h1 { margin: 0; font-size: 26px; font-weight: 850; letter-spacing: -0.02em; }
+.adm h2 { margin: 0 0 12px; font-size: 19px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+.adm-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.adm-top-actions { display: flex; gap: 8px; }
+.adm-top-actions .secondary { width: auto; padding: 10px 14px; }
+.adm-signin { max-width: 420px; padding-top: 12vh; }
+.adm-count { padding: 1px 9px; border-radius: 999px; background: var(--teal-wash); color: var(--teal); font-size: 13px; font-weight: 800; }
+.adm-card { display: flex; flex-direction: column; gap: 14px; margin-bottom: 14px; padding: 18px; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface); }
+.adm-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.adm-card-head h3 { margin: 0; font-size: 18px; font-weight: 800; overflow-wrap: anywhere; }
+.adm-badge { flex: none; padding: 2px 10px; border-radius: 999px; background: var(--green-wash); color: var(--green); font-size: 12px; font-weight: 800; }
+.adm-badge.pending { background: var(--amber-wash); color: var(--gold-text); }
+.adm-details { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0; font-size: 14px; }
+.adm-details dt { color: var(--ink-soft); }
+.adm-details dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.adm-details a { color: var(--teal); }
+.adm-addrs { display: flex; flex-direction: column; gap: 2px; }
+.adm code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; overflow-wrap: anywhere; }
+.adm-usage { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin: 0; padding: 12px 0 0; border-top: 1px solid var(--line); list-style: none; }
+.adm-usage li { display: flex; flex-direction: column; min-width: 0; }
+.adm-usage strong { font-size: 17px; font-variant-numeric: tabular-nums; }
+.adm-usage span { font-size: 12.5px; color: var(--ink-soft); }
+.adm-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.adm-actions .primary, .adm-actions .secondary { width: auto; padding: 10px 16px; font-size: 15px; }
+.adm-danger { color: var(--red); }
+.adm-confirm, .adm-key { display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: var(--r-md); background: var(--canvas); }
+.adm-confirm p, .adm-key p { margin: 0; font-size: 14.5px; }
+.adm-key .secondary { width: auto; align-self: flex-start; padding: 8px 14px; }
+.adm-edit { display: flex; flex-direction: column; gap: 14px; max-width: 560px; }

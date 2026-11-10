@@ -38,6 +38,9 @@ export interface SaveApp {
   contact?: string | null;
 }
 
+/** What the admin page can change about an app. */
+export type AppEdit = Partial<Pick<SaveApp, "name" | "url" | "contact" | "payoutAddresses">>;
+
 /** One verified payment an app made to a saver, as shown in the user's history. */
 export interface SaveReceipt {
   txHash: string;
@@ -51,6 +54,60 @@ export interface SaveReceipt {
   payoutId: string;
   blockNumber: number;
   createdAt: number;
+}
+
+/** What an app has done through Droplets, for the admin page. Amounts are luna, as decimal strings. */
+export interface AppUsage {
+  /** Payments it reported that checked out on-chain; each payout, or saving on top of a purchase, counts once. */
+  payments: number;
+  /** Different people it paid or saved for. */
+  people: number;
+  /** Put into people's savings, and how much of that was saved on top of their purchases. */
+  savedLuna: string;
+  fromSpendLuna: string;
+  /** Paid to people's wallets. */
+  walletLuna: string;
+  /** People whose current rule picks the app. */
+  pickedBy: number;
+  lastPaymentAt: number | null;
+}
+
+export const NO_USAGE: AppUsage = { payments: 0, people: 0, savedLuna: "0", fromSpendLuna: "0", walletLuna: "0", pickedBy: 0, lastPaymentAt: null };
+
+/** Adds up each app's usage from its receipts and the apps picked in current rules. Both stores use it. */
+export function usageFrom(
+  receipts: Pick<SaveReceipt, "appId" | "kind" | "source" | "luna" | "payoutId" | "address" | "createdAt">[],
+  pickedAppIds: string[][],
+): Map<string, AppUsage> {
+  const acc = new Map<string, { payouts: Set<string>; people: Set<string>; saved: bigint; fromSpend: bigint; wallet: bigint; last: number | null; pickedBy: number }>();
+  const of = (id: string) => {
+    let a = acc.get(id);
+    if (!a) {
+      a = { payouts: new Set(), people: new Set(), saved: 0n, fromSpend: 0n, wallet: 0n, last: null, pickedBy: 0 };
+      acc.set(id, a);
+    }
+    return a;
+  };
+  for (const r of receipts) {
+    const a = of(r.appId);
+    a.payouts.add(r.payoutId);
+    a.people.add(r.address);
+    if (r.kind === "grow") {
+      a.saved += BigInt(r.luna);
+      if (r.source === "spend") a.fromSpend += BigInt(r.luna);
+    } else a.wallet += BigInt(r.luna);
+    a.last = Math.max(a.last ?? 0, r.createdAt);
+  }
+  for (const ids of pickedAppIds) for (const id of new Set(ids)) of(id).pickedBy++;
+  return new Map(
+    [...acc].map(([id, a]) => [
+      id,
+      {
+        payments: a.payouts.size, people: a.people.size, savedLuna: a.saved.toString(), fromSpendLuna: a.fromSpend.toString(),
+        walletLuna: a.wallet.toString(), pickedBy: a.pickedBy, lastPaymentAt: a.last,
+      },
+    ]),
+  );
 }
 
 /** A catch-up the user saved: the spending before `periodTo` is settled, the next one starts there. */
@@ -92,6 +149,12 @@ export interface SaveStore {
   approveApp(id: string): Promise<boolean>;
   /** False when there's no such app. Its key stops working. */
   removeApp(id: string): Promise<boolean>;
+  /** Changes only the fields given. False when there's no such app. */
+  updateApp(id: string, fields: AppEdit): Promise<boolean>;
+  /** Gives the app a new key; the old one stops working at once. False when there's no such app. */
+  setAppKey(id: string, keyHash: string): Promise<boolean>;
+  /** Each app's payments, savings and the people who picked it, by app id. Apps with none are left out. */
+  appUsage(): Promise<Map<string, AppUsage>>;
   /** Ignores a receipt it already has. */
   addReceipt(r: SaveReceipt): Promise<void>;
   receiptsForAddress(address: string, limit: number): Promise<SaveReceipt[]>;
@@ -157,6 +220,20 @@ export class MemorySaveStore implements SaveStore {
   }
   async removeApp(id: string) {
     return this.apps.delete(id);
+  }
+  async updateApp(id: string, fields: AppEdit) {
+    const a = this.apps.get(id);
+    if (a) this.apps.set(id, { ...a, ...fields });
+    return a !== undefined;
+  }
+  async setAppKey(id: string, keyHash: string) {
+    const a = this.apps.get(id);
+    if (a) this.apps.set(id, { ...a, keyHash });
+    return a !== undefined;
+  }
+  async appUsage() {
+    const picked = [...this.codes.values()].filter((c) => c.revokedAt === null && c.appIds.length > 0).map((c) => c.appIds);
+    return usageFrom([...this.receipts.values()], picked);
   }
   async addReceipt(r: SaveReceipt) {
     if (!this.receipts.has(r.txHash)) this.receipts.set(r.txHash, { ...r });
@@ -342,6 +419,37 @@ export class PgSaveStore implements SaveStore {
   async removeApp(id: string) {
     const r = await this.pool.query(`DELETE FROM save_apps WHERE id = $1`, [id]);
     return (r.rowCount ?? 0) > 0;
+  }
+  async updateApp(id: string, fields: AppEdit) {
+    const cols: [string, unknown][] = [];
+    if (fields.name !== undefined) cols.push(["name", fields.name]);
+    if (fields.url !== undefined) cols.push(["url", fields.url]);
+    if (fields.contact !== undefined) cols.push(["contact", fields.contact]);
+    if (fields.payoutAddresses !== undefined) cols.push(["payout_addresses", fields.payoutAddresses.join(",")]);
+    if (cols.length === 0) return (await this.pool.query(`SELECT 1 FROM save_apps WHERE id = $1`, [id])).rows.length > 0;
+    // Column names come from the fixed list above, never from input.
+    const set = cols.map(([c], i) => `${c} = $${i + 2}`).join(", ");
+    const r = await this.pool.query(`UPDATE save_apps SET ${set} WHERE id = $1`, [id, ...cols.map(([, v]) => v)]);
+    return (r.rowCount ?? 0) > 0;
+  }
+  async setAppKey(id: string, keyHash: string) {
+    const r = await this.pool.query(`UPDATE save_apps SET key_hash = $2 WHERE id = $1`, [id, keyHash]);
+    return (r.rowCount ?? 0) > 0;
+  }
+  async appUsage() {
+    // Added up here rather than in SQL, so amounts stay exact: luna is text, and sums can pass 2^53.
+    const [receipts, codes] = await Promise.all([
+      this.pool.query<Pick<ReceiptRow, "app_id" | "kind" | "source" | "luna" | "payout_id" | "address" | "created_at">>(
+        `SELECT app_id, kind, source, luna, payout_id, address, created_at FROM save_receipts`,
+      ),
+      this.pool.query<{ app_ids: string }>(`SELECT app_ids FROM save_codes WHERE revoked_at IS NULL AND app_ids <> ''`),
+    ]);
+    return usageFrom(
+      receipts.rows.map((r) => ({
+        appId: r.app_id, kind: r.kind, source: r.source ?? "payout", luna: r.luna, payoutId: r.payout_id, address: r.address, createdAt: Number(r.created_at),
+      })),
+      codes.rows.map((c) => c.app_ids.split(",").filter(Boolean)),
+    );
   }
   async addReceipt(x: SaveReceipt) {
     await this.pool.query(

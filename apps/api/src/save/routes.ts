@@ -32,7 +32,7 @@ import {
 } from "@railkit/core";
 import { answerSavingsQuestion, looksEnglish, parseSave, phraseSavingsAnswer, type SavePeriod, type SaveQuestion, type SavingsClassifier, type SavingsFacts, type SavingsPhraser } from "@railkit/agent";
 import { rateLimiter } from "../rate-limit";
-import type { SaveApp, SaveCodeRow, SaveStore } from "./store";
+import { NO_USAGE, type AppEdit, type SaveApp, type SaveCodeRow, type SaveStore } from "./store";
 
 export interface SaveDeps {
   store: SaveStore;
@@ -423,36 +423,68 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
     return c.json({ apps: (await namedApps()).map((a) => ({ id: a.id, name: a.name, url: a.url ?? null })) });
   });
 
+  /** The request body when it's a JSON object; null for anything else. */
+  const jsonObject = async (c: { req: { json(): Promise<unknown> } }): Promise<Record<string, unknown> | null> => {
+    const b = await c.req.json().catch(() => null);
+    return b !== null && typeof b === "object" && !Array.isArray(b) ? (b as Record<string, unknown>) : null;
+  };
+
+  /**
+   * An app's details from the sign-up form or the admin page, checked. Without `partial` every field is read (a missing
+   * link or contact becomes null); with it, only the fields sent, so the admin page can change one thing at a time.
+   */
+  function readAppForm(body: Record<string, unknown> | null, o: { partial: boolean; contactRequired: boolean }): AppEdit | Response {
+    const out: AppEdit = {};
+    const has = (k: string) => !o.partial || (body !== null && k in body);
+    if (has("name")) {
+      const name = typeof body?.name === "string" ? body.name.trim() : "";
+      if (!isAppName(name)) return bad("Give the app a name of up to 40 letters, digits, spaces or . ' & ! + -, with no commas.");
+      out.name = name;
+    }
+    if (has("url")) {
+      const raw = typeof body?.url === "string" ? body.url.trim() : "";
+      if (!raw) out.url = null;
+      else {
+        const u = URL.canParse(raw) ? new URL(raw) : null;
+        if (!u || u.protocol !== "https:" || raw.length > 200) return bad("The link must be an https:// address of up to 200 characters.");
+        out.url = u.href;
+      }
+    }
+    if (has("contact")) {
+      const contact = typeof body?.contact === "string" ? body.contact.trim() : "";
+      if (!contact && !o.contactRequired) out.contact = null;
+      else if (contact.length < 3 || contact.length > 120 || /[\u0000-\u001f\u007f]/.test(contact)) {
+        return bad("Say how to reach you: an email address or Telegram handle, up to 120 characters.");
+      } else out.contact = contact;
+    }
+    if (has("payoutAddresses")) {
+      const raw = Array.isArray(body?.payoutAddresses) ? body.payoutAddresses : [];
+      const parsed = raw.map((a) => parseNimiqAddress(typeof a === "string" ? a : ""));
+      if (parsed.length === 0 || parsed.length > 5 || parsed.some((a) => !a.ok)) return bad("List 1 to 5 Nimiq addresses the app pays from.");
+      out.payoutAddresses = [...new Set(parsed.map((a) => (a.ok ? a.value : "")))];
+    }
+    return out;
+  }
+
+  /** Names are unique whatever their case, waiting apps included. */
+  const nameTaken = (apps: SaveApp[], name: string, except?: string) => apps.some((a) => a.id !== except && a.name.toLowerCase() === name.toLowerCase());
+  const newAppKey = () => `rk_save_${randomBytes(32).toString("hex")}`;
+
   /**
    * An app signs itself up from the landing page. It gets its key at once, shown only this time, but the key works
    * only after the team approves the app; until then the app isn't listed and people can't pick it.
    */
   app.post("/v1/save/apps/register", async (c) => {
     if (!readLimit(ip(c))) return bad("Too many requests. Wait a minute.", 429);
-    const body = (await c.req.json().catch(() => null)) as { name?: unknown; url?: unknown; contact?: unknown; payoutAddresses?: unknown } | null;
-    const name = typeof body?.name === "string" ? body.name.trim() : "";
-    if (!isAppName(name)) return bad("Give the app a name of up to 40 letters, digits, spaces or . ' & ! + -, with no commas.");
-    const rawUrl = typeof body?.url === "string" ? body.url.trim() : "";
-    let url: string | null = null;
-    if (rawUrl) {
-      const u = URL.canParse(rawUrl) ? new URL(rawUrl) : null;
-      if (!u || u.protocol !== "https:" || rawUrl.length > 200) return bad("The link must be an https:// address of up to 200 characters.");
-      url = u.href;
-    }
-    const contact = typeof body?.contact === "string" ? body.contact.trim() : "";
-    if (contact.length < 3 || contact.length > 120 || /[\u0000-\u001f\u007f]/.test(contact)) {
-      return bad("Say how to reach you: an email address or Telegram handle, up to 120 characters.");
-    }
-    const raw = Array.isArray(body?.payoutAddresses) ? body.payoutAddresses : [];
-    const parsed = raw.map((a) => parseNimiqAddress(typeof a === "string" ? a : ""));
-    if (parsed.length === 0 || parsed.length > 5 || parsed.some((a) => !a.ok)) return bad("List 1 to 5 Nimiq addresses your app pays from.");
-    const payoutAddresses = [...new Set(parsed.map((a) => (a.ok ? a.value : "")))];
+    const form = readAppForm(await jsonObject(c), { partial: false, contactRequired: true });
+    if (form instanceof Response) return form;
+    const { name = "", url = null, contact = null, payoutAddresses = [] } = form;
     const apps = await s.store.listApps();
-    if (apps.some((a) => a.name.toLowerCase() === name.toLowerCase())) return bad(`There's already an app called ${name}.`);
+    if (nameTaken(apps, name)) return bad(`There's already an app called ${name}.`);
     if (apps.filter((a) => a.pending).length >= 100) return bad("Sign-ups are paused while we review the apps already waiting. Try again tomorrow.", 503);
     // Only sign-ups that go through count, so fixing a typo in the form never locks anyone out.
     if (!signupLimit(ip(c))) return bad("Too many sign-ups from here. Try again in an hour.", 429);
-    const apiKey = `rk_save_${randomBytes(32).toString("hex")}`;
+    const apiKey = newAppKey();
     const id = randomUUID();
     await s.store.addApp({ id, name, keyHash: sha256Hex(apiKey), payoutAddresses, createdAt: now(), pending: true, url, contact });
     log("save app signed up", { id, name });
@@ -616,27 +648,54 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
     return c.json(out);
   });
 
-  // ---- Admin: which apps may look codes up. The key is shown once.
+  // ---- Admin: the apps that save with Droplets, from the admin page or curl. Keys are shown once, and never listed.
 
+  /** Add an app the team set up itself. It's approved straight away. */
   app.post("/v1/admin/save/apps", async (c) => {
     if (!h.admin(c.req.header("authorization"))) return bad("Not found.", 404);
-    const body = (await c.req.json().catch(() => null)) as { name?: unknown; payoutAddresses?: unknown } | null;
-    const name = typeof body?.name === "string" ? body.name.trim() : "";
-    if (!isAppName(name)) return bad("Give the app a name of up to 40 letters, digits, spaces or . ' & ! + -, with no commas.");
-    if ((await s.store.listApps()).some((a) => a.name.toLowerCase() === name.toLowerCase())) return bad(`There's already an app called ${name}.`);
-    const raw = Array.isArray(body?.payoutAddresses) ? body.payoutAddresses : [];
-    const addresses = raw.map((a) => parseNimiqAddress(typeof a === "string" ? a : ""));
-    if (addresses.length === 0 || addresses.some((a) => !a.ok)) return bad("List the app's payout addresses as valid Nimiq addresses.");
-    const apiKey = `rk_save_${randomBytes(32).toString("hex")}`;
+    const form = readAppForm(await jsonObject(c), { partial: false, contactRequired: false });
+    if (form instanceof Response) return form;
+    const { name = "", url = null, contact = null, payoutAddresses = [] } = form;
+    if (nameTaken(await s.store.listApps(), name)) return bad(`There's already an app called ${name}.`);
+    const apiKey = newAppKey();
     const id = randomUUID();
-    await s.store.addApp({ id, name, keyHash: sha256Hex(apiKey), payoutAddresses: addresses.map((a) => (a.ok ? a.value : "")), createdAt: now() });
+    await s.store.addApp({ id, name, keyHash: sha256Hex(apiKey), payoutAddresses, createdAt: now(), url, contact });
     log("save app added", { id, name });
     return c.json({ id, name, apiKey });
   });
 
+  /** Every app, waiting or approved, with its details and what it has done through Droplets. */
   app.get("/v1/admin/save/apps", async (c) => {
     if (!h.admin(c.req.header("authorization"))) return bad("Not found.", 404);
-    return c.json({ apps: (await s.store.listApps()).map(({ keyHash: _k, ...a }) => a) });
+    const [apps, usage] = await Promise.all([s.store.listApps(), s.store.appUsage()]);
+    return c.json({ apps: apps.map(({ keyHash: _k, ...a }) => ({ ...a, usage: usage.get(a.id) ?? NO_USAGE })) });
+  });
+
+  /** Change an app's name, link, contact or payout addresses. Only the fields sent change. */
+  app.patch("/v1/admin/save/apps/:id", async (c) => {
+    if (!h.admin(c.req.header("authorization"))) return bad("Not found.", 404);
+    const id = c.req.param("id");
+    const form = readAppForm(await jsonObject(c), { partial: true, contactRequired: false });
+    if (form instanceof Response) return form;
+    if (Object.keys(form).length === 0) return bad("Send at least one of name, url, contact or payoutAddresses.");
+    const apps = await s.store.listApps();
+    if (!apps.some((a) => a.id === id)) return bad("No app with that id.", 404);
+    if (form.name !== undefined && nameTaken(apps, form.name, id)) return bad(`There's already an app called ${form.name}.`);
+    await s.store.updateApp(id, form);
+    log("save app changed", { id, fields: Object.keys(form) });
+    const changed = (await s.store.listApps()).find((a) => a.id === id);
+    if (!changed) return bad("No app with that id.", 404);
+    const { keyHash: _k, ...shown } = changed;
+    return c.json({ app: shown });
+  });
+
+  /** A new key for an app, shown once. The old key stops working at once. */
+  app.post("/v1/admin/save/apps/:id/key", async (c) => {
+    if (!h.admin(c.req.header("authorization"))) return bad("Not found.", 404);
+    const apiKey = newAppKey();
+    if (!(await s.store.setAppKey(c.req.param("id"), sha256Hex(apiKey)))) return bad("No app with that id.", 404);
+    log("save app key replaced", { id: c.req.param("id") });
+    return c.json({ apiKey });
   });
 
   /** Approve an app that signed up: its key starts working, and people can pick it. */

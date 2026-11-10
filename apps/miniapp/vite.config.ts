@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
@@ -8,6 +9,8 @@ const proxy = { "/api": { target: "http://localhost:8787", rewrite: (p: string) 
 
 export default defineConfig({
   plugins: [react()],
+  // Two pages: the app (and the landing page it shows in a browser), and /admin, which no one else downloads.
+  build: { rollupOptions: { input: { main: fileURLToPath(new URL("index.html", import.meta.url)), admin: fileURLToPath(new URL("admin.html", import.meta.url)) } } },
   // Read VITE_* settings from the repo-root .env. Vite only exposes VITE_-prefixed values to the browser.
   envDir: "../..",
   server: { allowedHosts, proxy },

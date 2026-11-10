@@ -515,6 +515,64 @@ describe("apps signing up (from the landing page)", () => {
   });
 });
 
+describe("managing apps (admin)", () => {
+  const ADMIN = { Authorization: "Bearer admin-secret" };
+  const send = (app: ReturnType<typeof setup>["app"], method: string, path: string, body?: unknown, headers: Record<string, string> = ADMIN) =>
+    app.request(path, { method, headers: { "Content-Type": "application/json", ...headers }, body: body === undefined ? undefined : JSON.stringify(body) });
+
+  it("changes only the fields sent, keeps names unique, and needs the admin token", async () => {
+    const { app } = setup();
+    const { id } = await json(await send(app, "POST", "/v1/admin/save/apps", { name: "Arcade", payoutAddresses: [APP_PAYOUT] }));
+    await send(app, "POST", "/v1/admin/save/apps", { name: "Quiz", payoutAddresses: [APP_PAYOUT] });
+    expect((await send(app, "PATCH", `/v1/admin/save/apps/${id}`, { url: "https://arcade.example" }, {})).status).toBe(404);
+    const r = await json(await send(app, "PATCH", `/v1/admin/save/apps/${id}`, { url: "https://arcade.example", contact: "@arcade" }));
+    expect(r.app).toMatchObject({ name: "Arcade", url: "https://arcade.example/", contact: "@arcade", payoutAddresses: [APP_PAYOUT] });
+    expect(JSON.stringify(r)).not.toContain("keyHash");
+    expect(await errorOf(await send(app, "PATCH", `/v1/admin/save/apps/${id}`, { name: "quiz" }))).toMatch(/already an app called quiz/);
+    expect((await send(app, "PATCH", `/v1/admin/save/apps/${id}`, { name: "ARCADE" })).status).toBe(200); // its own name, other case
+    expect((await send(app, "PATCH", `/v1/admin/save/apps/${id}`, { url: "" })).status).toBe(200);
+    expect((await json(await send(app, "GET", "/v1/admin/save/apps"))).apps[0].url).toBeNull();
+    expect((await send(app, "PATCH", `/v1/admin/save/apps/${id}`, { url: "http://x.example" })).status).toBe(400);
+    expect((await send(app, "PATCH", `/v1/admin/save/apps/${id}`, { payoutAddresses: [] })).status).toBe(400);
+    expect((await send(app, "PATCH", `/v1/admin/save/apps/${id}`, {})).status).toBe(400);
+    expect((await send(app, "PATCH", "/v1/admin/save/apps/nope", { name: "Zed" })).status).toBe(404);
+  });
+
+  it("replaces a key: the old one stops, the new one works", async () => {
+    const { app } = setup();
+    const { id, apiKey } = await json(await send(app, "POST", "/v1/admin/save/apps", { name: "Arcade", payoutAddresses: [APP_PAYOUT] }));
+    const a = account();
+    const probe = (key: string) => app.request(`/v1/save/split?address=${a.address}&luna=${NIM(1)}`, { headers: { Authorization: `Bearer ${key}` } });
+    expect((await probe(apiKey)).status).toBe(200);
+    expect((await send(app, "POST", `/v1/admin/save/apps/${id}/key`, undefined, {})).status).toBe(404);
+    const fresh = (await json(await send(app, "POST", `/v1/admin/save/apps/${id}/key`))).apiKey as string;
+    expect(fresh).toMatch(/^rk_save_[0-9a-f]{64}$/);
+    expect((await probe(apiKey)).status).toBe(401);
+    expect((await probe(fresh)).status).toBe(200);
+    expect((await send(app, "POST", "/v1/admin/save/apps/nope/key")).status).toBe(404);
+  });
+
+  it("shows what each app has done: payments, people, savings, and who picked it", async () => {
+    const f = setup();
+    const { app, store } = f;
+    const { id } = await json(await send(app, "POST", "/v1/admin/save/apps", { name: "Arcade", payoutAddresses: [APP_PAYOUT] }));
+    const r = { txHash: "t1", code: "C", address: "NQ1", appId: id as string, kind: "grow" as const, source: "payout" as const, luna: NIM(60).toString(), payoutId: "p1", blockNumber: 1, createdAt: T };
+    await store.addReceipt(r);
+    await store.addReceipt({ ...r, txHash: "t2", kind: "wallet", luna: NIM(140).toString() }); // the same payout's wallet part
+    await store.addReceipt({ ...r, txHash: "t3", address: "NQ2", source: "spend", luna: NIM(5).toString(), payoutId: "s1", createdAt: T + 5 });
+    const amaka = account();
+    f.stake(amaka.address);
+    await app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address, { spendPercent: 5, apps: ["Arcade"], catchUp: "weekly" }))));
+    const listed = (await json(await send(app, "GET", "/v1/admin/save/apps"))).apps[0];
+    expect(listed.usage).toEqual({
+      payments: 2, people: 2, savedLuna: NIM(65).toString(), fromSpendLuna: NIM(5).toString(), walletLuna: NIM(140).toString(), pickedBy: 1, lastPaymentAt: T + 5,
+    });
+    const { id: quiet } = await json(await send(app, "POST", "/v1/admin/save/apps", { name: "Quiet", payoutAddresses: [APP_PAYOUT] }));
+    const apps = (await json(await send(app, "GET", "/v1/admin/save/apps"))).apps as { id: string; usage: unknown }[];
+    expect(apps.find((x) => x.id === quiet)?.usage).toMatchObject({ payments: 0, people: 0, savedLuna: "0", pickedBy: 0, lastPaymentAt: null });
+  });
+});
+
 describe("the catch-up", () => {
   const HTLC = "NQ89 4VDF DQ8Q JEGL KX8U A1HC DE6K A78Y CJR5";
   const SHOP = "NQ09 XHGH TP20 4444 4444 4444 4444 4444 4444";
@@ -644,6 +702,12 @@ describe("save stores", async () => {
       expect(await store.approveApp("app2")).toBe(true);
       expect(await store.appByKeyHash("h2")).toMatchObject({ pending: false });
       expect(await store.approveApp("nope")).toBe(false);
+      expect(await store.updateApp("app2", { name: "Quiz 2", url: null, payoutAddresses: ["NQ6"] })).toBe(true);
+      expect(await store.appByKeyHash("h2")).toMatchObject({ name: "Quiz 2", url: null, contact: "@quiz", payoutAddresses: ["NQ6"] });
+      expect(await store.updateApp("nope", { name: "X" })).toBe(false);
+      expect(await store.setAppKey("app2", "h3")).toBe(true);
+      expect(await store.appByKeyHash("h2")).toBeUndefined();
+      expect(await store.appByKeyHash("h3")).toMatchObject({ id: "app2" });
       expect(await store.removeApp("app2")).toBe(true);
       expect(await store.removeApp("app2")).toBe(false);
       expect(await store.listApps()).toHaveLength(1);

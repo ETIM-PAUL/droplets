@@ -73,6 +73,11 @@ services:
       # The API's address. Change it if Render gives the API a different one.
       - key: VITE_RAILKIT_API_URL
         value: https://droplets-api.onrender.com
+    # /admin is its own page (admin.html), for the team: sign in with ADMIN_TOKEN.
+    routes:
+      - type: rewrite
+        source: /admin
+        destination: /admin.html
     headers:
       - path: /*
         name: X-Content-Type-Options

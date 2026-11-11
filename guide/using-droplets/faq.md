@@ -16,6 +16,10 @@ Switch away from Droplets and back, or reopen the tab: the newest transactions c
 
 Staked NIM is released at the end of an epoch, 12 to 24 hours after you start a withdrawal. Start it, wait, then finish it on Home.
 
+## I can't withdraw part of my savings
+
+If the missing part is in a goal with a date, it's locked until then. Wait for the date, or [break the goal](goals.md#breaking-a-goal-early): it costs 10% of what's in it and a 24-hour wait.
+
 ## The first screen is slow
 
 Droplets' server sleeps when it's idle, so the first request after a quiet time can take up to a minute. Wait and try again.

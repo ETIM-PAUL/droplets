@@ -210,7 +210,7 @@ button:disabled { cursor: default; }
   background: var(--surface); border-top: 1px solid var(--line); padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
 }
 .tab { flex: 1; max-width: 140px; display: flex; flex-direction: column; align-items: center; gap: 4px; border: 0; background: none; padding: 0; color: var(--ink-soft); font-size: 12px; font-weight: 700; }
-.tab-icon { width: 60px; height: 32px; display: grid; place-items: center; border-radius: 999px; }
+.tab-icon { width: 52px; height: 32px; display: grid; place-items: center; border-radius: 999px; }
 .tab[aria-current="page"] { color: var(--teal); }
 .tab[aria-current="page"] .tab-icon { background: var(--teal-wash); }
 
@@ -546,3 +546,17 @@ button:disabled { cursor: default; }
 .adm-key .secondary { width: auto; align-self: flex-start; padding: 8px 14px; }
 .adm-edit { display: flex; flex-direction: column; gap: 14px; max-width: 560px; }
 .adm-fb-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* ---- Goals as a tab: the plus beside the title, and the date field */
+.add-goal { background: var(--teal-wash); color: var(--teal); }
+.add-goal:disabled { opacity: .4; }
+.date-field { display: flex; flex-direction: column; gap: 10px; }
+.date-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.pill { padding: 8px 14px; min-height: 36px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink); font-size: 14px; font-weight: 700; }
+.pill[aria-pressed="true"] { background: var(--teal-wash); border-color: var(--teal); color: var(--teal); }
+.date-pick { position: relative; display: flex; align-items: center; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); color: var(--ink); font-size: 17px; }
+.date-pick-text { flex: 1; }
+/* The real date input covers the row, invisible, so a tap anywhere opens the phone's own calendar. */
+.date-pick input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; border: 0; padding: 0; cursor: pointer; }
+.date-pick:focus-within { outline: 3px solid var(--teal); outline-offset: 2px; }
+.empty .primary { margin-top: 14px; }

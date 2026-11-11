@@ -1,6 +1,7 @@
 import { createHash, createPublicKey, randomBytes, randomUUID, verify } from "node:crypto";
 import type { Env as HonoEnv, Hono } from "hono";
 import {
+  ALL_APPS,
   BREAK_COOLDOWN_MS,
   BREAK_FEE_ADDRESS,
   breakFeeLuna,
@@ -211,7 +212,7 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
    */
   async function allowedSaver(address: string, payer: SaveApp): Promise<SaveCodeRow | undefined> {
     const row = await s.store.activeCodeByAddress(address);
-    return row && row.appIds.includes(payer.id) ? row : undefined;
+    return row && (row.appIds.includes(payer.id) || row.appIds.includes(ALL_APPS)) ? row : undefined;
   }
 
   /** Apps people can allow, by name. Names that can't be written in a signed rule are left out. */
@@ -252,7 +253,9 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
     if (m.value.savePercent! < 10) return bad("The share to save has to be a whole percent from 10 to 100. To stop saving, turn your save code off.");
     // The apps the user named, as ids. A rule signed before apps and spending existed keeps what was there.
     let appIds = existing?.appIds ?? [];
-    if (m.value.apps) {
+    if (m.value.allApps) {
+      appIds = [ALL_APPS];
+    } else if (m.value.apps) {
       const byName = new Map((await namedApps()).map((a) => [a.name.toLowerCase(), a.id]));
       const unknown = m.value.apps.find((n) => !byName.has(n.toLowerCase()));
       if (unknown) return bad(`Droplets doesn't know an app called ${unknown}. Reload and try again.`);
@@ -307,6 +310,8 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
     const staker = grow.open ? grow.staker : null;
     return {
       code, grow, staker, jailedFrom, blockNumber, receipts, splits,
+      /** Every approved app, for a rule that allows them all. */
+      allowedApps: apps.filter((a) => !a.pending).map((a) => a.id),
       appName: (id: string) => names.get(id) ?? "An app",
       release: staker && staker.inactive > 0n && staker.inactiveFrom !== null ? releaseBlock(staker.inactiveFrom, jailedFrom) : null,
     };
@@ -326,7 +331,8 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
         savePercent: x.code?.savePercent ?? null,
         spendPercent: x.code?.spendPercent ?? null,
         catchUp: x.code?.catchUpEvery ?? null,
-        apps: (x.code?.appIds ?? []).map((id) => ({ id, name: x.appName(id) })),
+        allApps: x.code?.appIds.includes(ALL_APPS) ?? false,
+        apps: (x.code?.appIds.includes(ALL_APPS) ? x.allowedApps : (x.code?.appIds ?? [])).map((id) => ({ id, name: x.appName(id) })),
         blockNumber: x.blockNumber,
         grow: x.staker && { ...lunaJson(x.staker), releaseBlock: x.release, validatorJailed: x.jailedFrom !== null },
         growClosed: x.grow.open ? null : x.grow.reason,
@@ -855,7 +861,14 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
   app.get("/v1/admin/save/apps", async (c) => {
     if (!h.admin(c.req.header("authorization"))) return bad("Not found.", 404);
     const [apps, usage] = await Promise.all([s.store.listApps(), s.store.appUsage()]);
-    return c.json({ apps: apps.map(({ keyHash: _k, ...a }) => ({ ...a, usage: usage.get(a.id) ?? NO_USAGE })) });
+    // People who allowed every app count for each one.
+    const everyApp = usage.get(ALL_APPS)?.pickedBy ?? 0;
+    return c.json({
+      apps: apps.map(({ keyHash: _k, ...a }) => {
+        const u = usage.get(a.id) ?? NO_USAGE;
+        return { ...a, usage: { ...u, pickedBy: u.pickedBy + everyApp } };
+      }),
+    });
   });
 
   /** Change an app's name, link, contact or payout addresses. Only the fields sent change. */

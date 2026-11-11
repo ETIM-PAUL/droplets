@@ -5,7 +5,7 @@ import { canConfirm, plan } from "./confirm-plan";
 const NIM = (n: number) => String(n * 100_000);
 const saver = (over: Partial<SaveMe> = {}): SaveMe => ({
   network: "testnet", address: "NQ25 P6YX JM69 LKAS K2DC EX64 H2V4 0FBY 4MSX", code: "SAVE-YEFMH3Q", savePercent: 30, spendPercent: 5, catchUp: "weekly",
-  apps: [], blockNumber: 1, growClosed: null, receipts: [], splits: [],
+  allApps: false, apps: [], blockNumber: 1, growClosed: null, receipts: [], splits: [],
   grow: { active: NIM(500), inactive: "0", inactiveFrom: null, retired: "0", delegation: "NQ26 0000 0000 02A5 YAK7 4QNF 9MH0 TE2B GVRU", releaseBlock: null, validatorJailed: false },
   ...over,
 });

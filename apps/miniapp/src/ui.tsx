@@ -57,11 +57,12 @@ export function AppBar({ title, onBack, backLabel = "Back", right }: { title: st
   );
 }
 
-export type Tab = "home" | "activity" | "draw" | "profile";
+export type Tab = "home" | "goals" | "activity" | "draw" | "profile";
 
 export function TabBar({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
   const items: { id: Tab; label: string; icon: IconName }[] = [
     { id: "home", label: "Home", icon: "home" },
+    { id: "goals", label: "Goals", icon: "flag" },
     { id: "activity", label: "Activity", icon: "list" },
     { id: "draw", label: "Draw", icon: "gift" },
     { id: "profile", label: "Profile", icon: "user" },

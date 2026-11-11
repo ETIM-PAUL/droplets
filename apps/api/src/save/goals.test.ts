@@ -236,7 +236,7 @@ describe("filling goals as savings grow, and what's locked", () => {
     stake(ada.address, { active: NIM(200) });
     const list = await json(await app.request(`/v1/save/goals?address=${encodeURIComponent(ada.address)}&fresh=1`));
     expect(list.goals[0]).toMatchObject({ allocatedLuna: "0", breached: true, locked: false });
-    expect(list.bannedUntil).toBe(T + 7 * DAY);
+    expect(list.bannedUntil).toBe(T + 30 * DAY);
     // Creating a new goal is refused while banned, even with a perfectly good signed message.
     const create = await app.request("/v1/save/goals", post(signed(ada, goalMsg(ada.address, { name: "New one", targetLuna: null, dueAt: null }))));
     expect(create.status).toBe(403);

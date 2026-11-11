@@ -117,7 +117,7 @@ export function parseGoalMessage(text: string): Result<GoalMessage> {
 /** How long after breaking a dated goal its money is still locked, so breaking one is a deliberate wait, not a tap. */
 export const BREAK_COOLDOWN_MS = 24 * 3_600_000;
 /** How long Droplets refuses a new goal after an address withdraws from a locked goal outside Droplets. */
-export const GOAL_BAN_MS = 7 * 24 * 3_600_000;
+export const GOAL_BAN_MS = 30 * 24 * 3_600_000;
 /** The share of a goal's current savings that breaking it early costs, paid to Droplets. */
 export const BREAK_FEE_PERCENT = 10;
 /** Where a broken goal's fee goes. A fixed address, not configurable: it's Droplets' own, not a user's. */

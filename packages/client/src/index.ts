@@ -21,6 +21,8 @@ export interface SaveMe {
   spendPercent: number | null;
   /** How often Droplets offers to save that share of spending elsewhere; null before the user sets a rule. */
   catchUp: CatchUpEvery | null;
+  /** True when the user allowed every app, including ones approved later. */
+  allApps: boolean;
   /** Apps the user allowed to recognise their address, so they save without the code. */
   apps: { id: string; name: string }[];
   blockNumber: number;

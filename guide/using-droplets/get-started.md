@@ -19,6 +19,6 @@ You now have a **save code**, like `SAVE-7KQ2XMP`. Find it under **My code** or 
 ## 4. Use it
 
 - Give your code to apps that [work with Droplets](../for-apps/overview.md) and pay you NIM. Each time one pays you, your share goes into savings and the rest to your wallet.
-- Pick the apps you use in your [saving rules](saving-rules.md), and they recognise the address they already pay, so you needn't give a code at all.
+- Every app that works with Droplets is allowed by default, including ones added later, so they recognise the address they already pay and you needn't give a code at all. Choose only some in your [saving rules](saving-rules.md).
 
 Nothing else changes about how you use Nimiq Pay.

@@ -15,7 +15,7 @@ export function Help() {
           </div>
           <div className="help-row">
             <strong>Goals</strong>
-            <p>Name part of your savings and set a target, and a date if you like. Drops fill goals in order. A dated goal can't be withdrawn early: breaking it costs 10% of what's in it, paid to Droplets, then a 24-hour wait for the rest. Withdrawing from a locked goal outside Droplets bars new goals for a week.</p>
+            <p>Name part of your savings and set a target, and a date if you like. Drops fill goals in order. A dated goal can't be withdrawn early: breaking it costs 10% of what's in it, paid to Droplets, then a 24-hour wait for the rest. Withdrawing from a locked goal outside Droplets bars new goals for 30 days.</p>
           </div>
         </div>
       </section>
@@ -29,7 +29,7 @@ export function Help() {
           </div>
           <div className="help-row">
             <strong>Apps that know it's you</strong>
-            <p>Most apps already have your address. Pick the ones you use in your saving rules and they save for you, no code needed. Apps you didn't pick can't tell you use Droplets.</p>
+            <p>Most apps already have your address. Every app is allowed by default, new ones too, and they save for you with no code needed. Choose only some in your saving rules; apps you don't allow can't tell you use Droplets.</p>
           </div>
           <div className="help-row">
             <strong>Saving when you pay</strong>

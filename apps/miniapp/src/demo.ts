@@ -24,12 +24,12 @@ const apps: SaveApp[] = [
 function me(): SaveMe {
   if (fresh()) {
     return {
-      network: "testnet", address: DEMO_ADDRESS, code: null, savePercent: null, spendPercent: null, catchUp: null, apps: [], blockNumber: 66_440_000,
+      network: "testnet", address: DEMO_ADDRESS, code: null, savePercent: null, spendPercent: null, catchUp: null, allApps: false, apps: [], blockNumber: 66_440_000,
       grow: null, growClosed: "no-stake", receipts: [], splits: [],
     };
   }
   return {
-    network: "testnet", address: DEMO_ADDRESS, code: "SAVE-YEFMH3Q", savePercent: 30, spendPercent: 5, catchUp: "weekly", apps: apps.slice(0, 2),
+    network: "testnet", address: DEMO_ADDRESS, code: "SAVE-YEFMH3Q", savePercent: 30, spendPercent: 5, catchUp: "weekly", allApps: false, apps: apps.slice(0, 2),
     blockNumber: 66_440_000,
     grow: { active: NIM(3065), inactive: "0", inactiveFrom: null, retired: "0", delegation: "NQ26 0000 0000 02A5 YAK7 4QNF 9MH0 TE2B GVRU", releaseBlock: null, validatorJailed: false },
     growClosed: null,

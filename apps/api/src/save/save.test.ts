@@ -463,6 +463,29 @@ describe("apps that recognise your address (for apps)", () => {
   });
 });
 
+describe("allowing every app", () => {
+  it("covers apps approved after the rule was signed, and shows as all apps", async () => {
+    const f = setup();
+    const arcade = await withApp(f.app);
+    const amaka = account();
+    f.stake(amaka.address);
+    await f.app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address, { spendPercent: 5, allApps: true, catchUp: "weekly" }))));
+    const a = encodeURIComponent(amaka.address);
+    const split = async (who: Record<string, string>) => json(await f.app.request(`/v1/save/split?address=${a}&luna=${NIM(100)}`, { headers: who }));
+    expect((await split(arcade)).grow).not.toBeNull();
+    // An app that signs up and is approved later is covered without the user doing anything.
+    const later = { Authorization: `Bearer ${(await json(await f.app.request("/v1/admin/save/apps", post({ name: "Late Shop", payoutAddresses: [APP_PAYOUT] }, { Authorization: "Bearer admin-secret" })))).apiKey as string}` };
+    expect((await split(later)).grow).not.toBeNull();
+    const me = await json(await f.app.request(`/v1/save/me?address=${a}`));
+    expect(me).toMatchObject({ allApps: true });
+    expect(me.apps.map((x: { name: string }) => x.name).sort()).toEqual(["Arcade", "Late Shop"]);
+    // Naming apps again turns it off.
+    await f.app.request("/v1/save/rule", post(signed(amaka, rule(amaka.address, { spendPercent: 5, apps: ["Arcade"], catchUp: "weekly" }))));
+    expect((await split(later)).grow).toBeNull();
+    expect(await json(await f.app.request(`/v1/save/me?address=${a}`))).toMatchObject({ allApps: false, apps: [{ name: "Arcade" }] });
+  });
+});
+
 describe("apps signing up (from the landing page)", () => {
   const ADMIN = { Authorization: "Bearer admin-secret" };
   const form = (over: Record<string, unknown> = {}) => ({ name: "Treasure Hunt", url: "https://hunt.example", contact: "dev@hunt.example", payoutAddresses: [APP_PAYOUT], ...over });

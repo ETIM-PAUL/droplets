@@ -20,4 +20,4 @@ Your rules are a message you sign with your own key. The server checks the signa
 
 ## Costs and risks
 
-Droplets takes no fee or cut on your savings or on withdrawing them. The only charge is for breaking a dated goal early: 10% of what's in it, paid to Droplets, with the rest free after a 24-hour wait. Withdrawing from a locked goal directly in Nimiq Pay, bypassing Droplets, bars creating a new goal for a week. Staking rewards depend on the validator, and withdrawals take 12 to 24 hours. Droplets is new software: keep in savings only what you're comfortable with, and start small.
+Droplets takes no fee or cut on your savings or on withdrawing them. The only charge is for breaking a dated goal early: 10% of what's in it, paid to Droplets, with the rest free after a 24-hour wait. Withdrawing from a locked goal directly in Nimiq Pay, bypassing Droplets, bars creating a new goal for 30 days. Staking rewards depend on the validator, and withdrawals take 12 to 24 hours. Droplets is new software: keep in savings only what you're comfortable with, and start small.

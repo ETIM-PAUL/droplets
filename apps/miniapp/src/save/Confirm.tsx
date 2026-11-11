@@ -65,7 +65,7 @@ export function ConfirmCard({ intent, address, onDone, onForm, onCancel }: Props
           ? formatSaveMessage({ action: "revoke", address: self.value, time: new Date().toISOString(), nonce: newNonce() })
           : formatSaveMessage({
               action: "set", address: self.value, savePercent: p.savePercent, spendPercent: me!.spendPercent ?? 0,
-              apps: me!.apps.map((a) => a.name).filter((n) => known.has(n)), catchUp: me!.catchUp ?? "weekly",
+              ...(me!.allApps ? { allApps: true } : { apps: me!.apps.map((a) => a.name).filter((n) => known.has(n)) }), catchUp: me!.catchUp ?? "weekly",
               time: new Date().toISOString(), nonce: newNonce(),
             });
         await api.saveRule({ message, ...(await saver.signRule(message)), tzOffsetMinutes: tzOffset() });

@@ -10,7 +10,11 @@ Tap **Add** on Home, choose an amount, and approve it in Nimiq Pay. Anyone's sta
 
 Tap **Withdraw**, choose an amount or all of it, and approve. Nimiq releases staked NIM at the end of an epoch, so it takes **12 to 24 hours** to become available. Come back to Home and finish it with two more approvals in Nimiq Pay, and the NIM lands in your wallet.
 
-Whatever stays in savings must be at least 100 NIM. If a withdrawal would leave less, withdraw everything or leave at least 100 NIM.
+Whatever stays in savings must be at least 100 NIM. If a withdrawal would leave less, withdraw everything or leave at least 100 NIM. Money in a dated goal can't be withdrawn before its date unless you [break the goal](goals.md#breaking-a-goal-early).
+
+## Goals
+
+Give part of your savings a name, a target and a date, and keep it locked until then. See [Goals](goals.md), including what breaking one early costs.
 
 ## While you wait
 

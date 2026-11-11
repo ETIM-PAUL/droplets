@@ -5,7 +5,7 @@ import { createNimiqSaver } from "@railkit/wallet-nimiq";
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { formatMoney } from "../format";
-import { AppBar, Icon } from "../ui";
+import { AppBar, Icon, PageHead } from "../ui";
 import { errorText, newNonce } from "./SaveHome";
 
 const nim = (luna: string | bigint) => formatMoney(lunaToNimString(BigInt(luna)), "NIM");
@@ -43,7 +43,7 @@ export function GoalsHint({ goals, onOpen }: { goals: SaveGoals | null; onOpen: 
  * Goals, fully: the list with progress, creating and editing one, reordering the fill queue, and breaking a dated
  * goal's lock early. Every change is a message signed in Nimiq Pay; nothing here moves money by itself.
  */
-export function GoalsScreen({ address, onBack, onChanged }: { address: string | null; onBack: () => void; onChanged: () => void }) {
+export function GoalsScreen({ address, onInner }: { address: string | null; onInner: (inner: boolean) => void }) {
   const [goals, setGoals] = useState<SaveGoals | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -52,6 +52,11 @@ export function GoalsScreen({ address, onBack, onChanged }: { address: string | 
   const [confirmBreak, setConfirmBreak] = useState(false);
   const self = address ? parseNimiqAddress(address) : null;
   const toList = () => setScreen({ name: "list" });
+  // Every screen but the list has its own back button, so the tab bar steps aside for it.
+  useEffect(() => {
+    onInner(screen.name !== "list");
+    return () => onInner(false);
+  }, [screen.name, onInner]);
 
   const load = async () => {
     if (!self?.ok) return;
@@ -95,7 +100,6 @@ export function GoalsScreen({ address, onBack, onChanged }: { address: string | 
       toList();
       setConfirmDelete(false);
       await load();
-      onChanged();
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -127,8 +131,9 @@ export function GoalsScreen({ address, onBack, onChanged }: { address: string | 
     }
   }
 
-  if (!self?.ok) return <><AppBar title="Goals" onBack={onBack} /><p className="hint">Connecting to Nimiq Pay…</p></>;
-  if (!goals) return <><AppBar title="Goals" onBack={onBack} />{error ? <p className="alert" role="alert">{error}</p> : <p className="hint" role="status">Loading your goals…</p>}</>;
+  if (!self?.ok) return <><PageHead title="Goals" /><p className="hint">Connecting to Nimiq Pay…</p></>;
+  if (!goals) return <><PageHead title="Goals" />{error ? <p className="alert" role="alert">{error}</p> : <p className="hint" role="status">Loading your goals…</p>}</>;
+  const full = goals.goals.length >= 20 || !!goals.bannedUntil;
 
   // ---- Creating or editing a goal.
 
@@ -141,8 +146,7 @@ export function GoalsScreen({ address, onBack, onChanged }: { address: string | 
         onSaved={() => {
           toList();
           void load();
-          onChanged();
-        }}
+            }}
       />
     );
   }
@@ -202,14 +206,21 @@ export function GoalsScreen({ address, onBack, onChanged }: { address: string | 
 
   return (
     <div className="grow">
-      <AppBar title="Goals" onBack={onBack} />
+      <PageHead title="Goals">
+        <button type="button" className="icon-button add-goal" aria-label="New goal" disabled={full} onClick={() => setScreen({ name: "form", goal: null })}>
+          <Icon name="plus" size={24} />
+        </button>
+      </PageHead>
       <p className="lede">Drops fill goals in this order. A dated goal can't be withdrawn early.</p>
       {error && <p className="alert" role="alert">{error}</p>}
       {goals.bannedUntil && (
         <p className="notice">A withdrawal outside Droplets reached into a locked goal, so new goals are on hold until {dateLabel(goals.bannedUntil)}.</p>
       )}
       {goals.goals.length === 0 ? (
-        <p className="empty">No goals yet. Name your savings and set a target; drops fill it first.</p>
+        <div className="empty">
+          <p>No goals yet. Name your savings and set a target; drops fill it first.</p>
+          <button type="button" className="primary" disabled={full} onClick={() => setScreen({ name: "form", goal: null })}>Create a goal</button>
+        </div>
       ) : (
         <>
           <ul className="list goal-list">
@@ -232,9 +243,6 @@ export function GoalsScreen({ address, onBack, onChanged }: { address: string | 
           {goals.goals.length > 1 && <button type="button" className="text-button start" onClick={() => setScreen({ name: "reorder" })}>Change order</button>}
         </>
       )}
-      <div className="bottom">
-        <button type="button" className="primary" disabled={goals.goals.length >= 20 || !!goals.bannedUntil} onClick={() => setScreen({ name: "form", goal: null })}>New goal</button>
-      </div>
     </div>
   );
 }
@@ -294,8 +302,7 @@ function GoalForm({ address, goal, onBack, onSaved }: { address: string; goal: S
         </div>
         <div className="field">
           <label htmlFor="goal-due">Date (optional)</label>
-          <input id="goal-due" type="date" value={due} onChange={(e) => setDue(e.target.value)} />
-          <p className="hint">Blank means withdraw any time. With a date, not before then.</p>
+          <DateField value={due} onChange={setDue} />
         </div>
       </section>
       {error && <p className="alert" role="alert">{error}</p>}
@@ -338,6 +345,47 @@ function GoalReorder({ goals, busy, onBack, onSave }: { goals: SaveGoal[]; busy:
       <div className="bottom">
         <button type="button" className="primary" disabled={busy} onClick={() => onSave(order)}>{busy ? "Opening Nimiq Pay…" : "Save order"}</button>
       </div>
+    </div>
+  );
+}
+
+/** Midnight UTC today, as "YYYY-MM-DD". */
+const todayInput = () => toDateInput(Date.now());
+/** The date this many months from now, as "YYYY-MM-DD". */
+function monthsAhead(n: number): string {
+  const d = new Date();
+  d.setUTCMonth(d.getUTCMonth() + n);
+  return toDateInput(d.getTime());
+}
+const PRESETS: { label: string; months: number }[] = [
+  { label: "1 month", months: 1 },
+  { label: "3 months", months: 3 },
+  { label: "6 months", months: 6 },
+  { label: "1 year", months: 12 },
+];
+
+/** The goal's date: quick choices, a calendar, and a plain sentence for what the choice means. */
+function DateField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const ms = value ? fromDateInput(value) : null;
+  const days = ms === null ? null : Math.max(0, Math.round((ms - Date.parse(`${todayInput()}T00:00:00.000Z`)) / 86_400_000));
+  return (
+    <div className="date-field">
+      <div className="date-chips" role="group" aria-label="Pick a date">
+        <button type="button" className="pill" aria-pressed={value === ""} onClick={() => onChange("")}>No date</button>
+        {PRESETS.map((p) => (
+          <button key={p.label} type="button" className="pill" aria-pressed={value === monthsAhead(p.months)} onClick={() => onChange(monthsAhead(p.months))}>{p.label}</button>
+        ))}
+      </div>
+      <label className="date-pick">
+        <Icon name="clock" size={20} />
+        <span className="date-pick-text">{ms === null ? "Choose a date" : dateLabel(ms)}</span>
+        <input id="goal-due" type="date" min={todayInput()} value={value} onChange={(e) => onChange(e.target.value)} aria-label="Date" />
+      </label>
+      <p className="hint">
+        {ms === null
+          ? "No date means it's never locked: close it any time, or when the target is met."
+          : `Locked until ${dateLabel(ms)}${days ? `, in ${days} day${days === 1 ? "" : "s"}` : ""}. Before then you can only add to it.`}
+      </p>
     </div>
   );
 }

@@ -150,7 +150,7 @@ const WAYS: { icon: IconName; title: string; text: string }[] = [
   {
     icon: "apps",
     title: "Apps that already know your address",
-    text: "Most apps get your address from Nimiq Pay. If one you use works with Droplets, pick it and it saves for you. Apps you didn't pick can't tell you use Droplets.",
+    text: "Most apps get your address from Nimiq Pay. Apps that work with Droplets are allowed by default, new ones too, and save for you. Choose only some and the rest can't tell you use Droplets.",
   },
   {
     icon: "drop",

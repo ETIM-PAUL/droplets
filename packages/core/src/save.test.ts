@@ -88,6 +88,15 @@ describe("signed rules", () => {
     }
   });
 
+  it("writes and reads a rule that allows every app, and keeps all and none as words, not app names", () => {
+    const text = formatSaveMessage({ ...set, spendPercent: 5, allApps: true, catchUp: "weekly" as const });
+    expect(text).toContain("\nApps: all\n");
+    expect(parseSaveMessage(text)).toEqual({ ok: true, value: expect.objectContaining({ allApps: true, spendPercent: 5, catchUp: "weekly" }) });
+    expect(isAppName("All")).toBe(false);
+    expect(isAppName("none")).toBe(false);
+    expect(isAppName("All Stars")).toBe(true);
+  });
+
   it("carries the share saved when paying and the apps allowed to recognise the address", () => {
     const full = { ...set, spendPercent: 5, apps: ["NIMblers", "Quiz Night"], catchUp: "weekly" as const };
     const text = formatSaveMessage(full);

@@ -36,7 +36,7 @@ Built for the Save track of the [Nimiq Mini Apps Competition](https://miniappsco
 ## Features
 
 - **Savings you own.** Your savings are NIM staked from your own account, with a validator Droplets suggests or one you choose. Droplets never holds them, and withdrawing takes 12 to 24 hours, so savings are never one tap from being spent.
-- **Save from what apps pay you.** Choose a share, such as 30%. Games, bounties and shops that work with Droplets put that share straight into your savings: either the apps you allow, which recognise the address they already pay, or the apps you give your save code (`SAVE-7KQ2XMP`). Apps register with Droplets first, and their key works once they're approved.
+- **Save from what apps pay you.** Choose a share, such as 30%. Games, bounties and shops that work with Droplets put that share straight into your savings: either the apps you allow (every app by default, including ones added later, or just the ones you pick), which recognise the address they already pay, or the apps you give your save code (`SAVE-7KQ2XMP`). Apps register with Droplets first, and their key works once they're approved.
 - **Save when you pay.** Apps you allow add a share, such as 5%, on top of what you buy, and put it into your savings.
 - **The catch-up.** For payments anywhere else, Droplets adds up your share daily, weekly, every two weeks or monthly, and asks you to save it with one approval.
 - **The weekly draw.** Keep at least 1,000 NIM saved on 5 of the 7 days to be in Sunday's draw for 1,000 NIM. Saving more gives more tickets, and you never risk your savings.
@@ -91,11 +91,13 @@ Prize draws are regulated in many countries. Get legal advice before paying real
 
 ### Goals
 
+What users read: [guide/using-droplets/goals.md](guide/using-droplets/goals.md).
+
 Droplets has one stake, so a goal is a named slice of it, kept honest by comparing the stake's total with what was last seen and moving the difference across the goals (`reconcileGoals` in `packages/core/src/goals.ts`) — never a separate account.
 
 - **Filling in order.** Growth (a payout, saving when you pay, a catch-up, or adding by hand) fills the first goal to its target, then the next; a goal with no target takes whatever reaches it. Adding by hand can also name a goal, which is credited first, before the order takes over for anything else that grew.
 - **A date locks it.** Droplets won't offer a dated goal's money for withdrawal before that date. Breaking it early is a signed message that costs 10% of what's currently in the goal, paid to Droplets' address, verified on-chain before the break is honoured; the rest is free after a 24-hour wait. Breaking a goal is deliberate and never free, never a tap.
-- **What Droplets can't stop.** Withdrawing directly in Nimiq Pay, bypassing Droplets, isn't something any Mini App can prevent. If that reaches into a locked goal, Droplets reads it from the chain, shows the goal as breached, and bars that address from creating a new goal for a week.
+- **What Droplets can't stop.** Withdrawing directly in Nimiq Pay, bypassing Droplets, isn't something any Mini App can prevent. If that reaches into a locked goal, Droplets reads it from the chain, shows the goal as breached, and bars that address from creating a new goal for 30 days.
 
 ## Getting started
 

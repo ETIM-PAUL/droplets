@@ -8,9 +8,9 @@ Your **share** is the part of each payout that goes into savings: any whole perc
 
 Apps can find your share in two ways:
 - **Your save code.** Give it to an app that works with Droplets.
-- **Apps you allow.** Most Mini Apps get your address from Nimiq Pay and pay it, with nowhere to type a code. Pick the apps you use under **Apps that know it's you**, and they recognise your address.
+- **Apps you allow.** Most Mini Apps get your address from Nimiq Pay and pay it, with nowhere to type a code. When you first choose your share, **every app** is allowed, including apps added to Droplets later. Change it any time under **Apps that know it's you**: turn off *Every app, including new ones*, then tick only the apps you want.
 
-Apps you didn't pick can't tell that you use Droplets: they get the same answer as for someone who doesn't.
+Apps you don't allow can't tell that you use Droplets: they get the same answer as for someone who doesn't.
 
 ## When you pay an app
 

@@ -8,9 +8,9 @@ import { formatMoney } from "../format";
 import { api, hostNetwork } from "../api";
 import { ReportProblem } from "../ReportProblem";
 import { AppBar, Droplet, Icon, PageHead, QrCode, SettingRow, type IconName, type Tab } from "../ui";
-import { GoalsHint, GoalsScreen } from "./Goals";
+import { GoalsHint } from "./Goals";
 
-type Mode = "home" | "rule" | "open" | "add" | "withdraw" | "goals";
+type Mode = "home" | "rule" | "open" | "add" | "withdraw";
 
 const PRESETS = [10, 30, 50, 100];
 /** The share of payouts that goes to savings: any whole percent from 10 to 100. */
@@ -82,6 +82,8 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
   const [spendPercent, setSpendPercent] = useState(0);
   /** Names of the apps allowed to recognise the user's address, as they'll appear in the signed rule. */
   const [chosen, setChosen] = useState<string[]>([]);
+  /** Every app allowed, new ones too. The default for a first rule. */
+  const [everyApp, setEveryApp] = useState(true);
   const [apps, setApps] = useState<SaveApp[] | null>(null);
   const [catchUpEvery, setCatchUpEvery] = useState<CatchUpEvery>("weekly");
   const [catchUp, setCatchUp] = useState<SaveCatchUp | null>(null);
@@ -234,19 +236,26 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
       setSpendPercent(me.spendPercent ?? 0);
       setCatchUpEvery(me.catchUp ?? "weekly");
       setChosen(me.apps.map((a) => a.name));
+      // No rule yet: every app starts allowed, new ones too.
+      setEveryApp(me.code ? me.allApps : true);
     }
     setMode(m);
   };
 
   // ---- Tap handlers. Each opens Nimiq Pay's own dialog; the signing guard checks they stay that way.
 
+  /** The first rule, from the picker on Home: every app starts allowed, new ones too, and Profile changes that later. */
+  async function firstRule() {
+    await saveRule({ savePercent: percent, spendPercent: 0, apps: "all", catchUp: "weekly" });
+  }
+
   /** Signs all three rules in one message: the share of payouts, the share on top when paying, and the apps allowed. */
-  async function saveRule(rules: { savePercent: number; spendPercent: number; apps: string[]; catchUp: CatchUpEvery }) {
+  async function saveRule(rules: { savePercent: number; spendPercent: number; apps: string[] | "all"; catchUp: CatchUpEvery }) {
     if (!self?.ok) return;
     setBusy(true);
     setError(null);
     try {
-      const message = formatSaveMessage({ action: "set", address: self.value, ...rules, time: new Date().toISOString(), nonce: newNonce() });
+      const message = formatSaveMessage({ action: "set", address: self.value, savePercent: rules.savePercent, spendPercent: rules.spendPercent, ...(rules.apps === "all" ? { allApps: true } : { apps: rules.apps }), catchUp: rules.catchUp, time: new Date().toISOString(), nonce: newNonce() });
       const saver = createNimiqSaver(await init({ timeout: 5_000 }));
       const signed = await saver.signRule(message);
       await api.saveRule({ message, ...signed, tzOffsetMinutes: tzOffset() });
@@ -512,7 +521,11 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
         <section className="form-section">
           <div className="field">
             <span className="field-label">Apps that know it's you</span>
-            {apps === null ? <p className="hint">Loading apps…</p> : apps.length === 0 ? <p className="hint">No apps yet. Give apps your save code.</p> : (
+            <button type="button" className="choice toggle" aria-pressed={everyApp} onClick={() => setEveryApp((v) => !v)}>
+              <strong>Every app, including new ones</strong>
+              <small>{everyApp ? "On: apps added later can save for you" : "Off: only the apps you tick below"}</small>
+            </button>
+            {everyApp ? null : apps === null ? <p className="hint">Loading apps…</p> : apps.length === 0 ? <p className="hint">No apps yet. Give apps your save code.</p> : (
               <div className="choices">
                 {apps.map((a) => (
                   <button key={a.id} type="button" className="choice toggle" aria-pressed={chosen.includes(a.name)} onClick={() => toggle(a.name)}>
@@ -527,7 +540,7 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
         </section>
         {messages}
         <div className="bottom">
-          <button type="button" className="primary" disabled={busy || wrongNetwork || apps === null || !shareOk(percent)} onClick={() => void saveRule({ savePercent: percent, spendPercent, apps: allowed, catchUp: catchUpEvery })}>
+          <button type="button" className="primary" disabled={busy || wrongNetwork || (!everyApp && apps === null) || !shareOk(percent)} onClick={() => void saveRule({ savePercent: percent, spendPercent, apps: everyApp ? "all" : allowed, catchUp: catchUpEvery })}>
             {busy ? "Opening Nimiq Pay…" : "Save rules"}
           </button>
           <p className="note center">You sign in Nimiq Pay. Signing is free.</p>
@@ -633,10 +646,6 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
     );
   }
 
-  if (mode === "goals") {
-    return <GoalsScreen address={address} onBack={() => go("home")} onChanged={() => void load(true)} />;
-  }
-
   const g = me.grow;
   const total = g ? BigInt(g.active) + BigInt(g.inactive) + BigInt(g.retired) : 0n;
   const released = !!g && BigInt(g.inactive) > 0n && g.releaseBlock !== null && me.blockNumber >= g.releaseBlock;
@@ -658,13 +667,6 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
             <span>{shortAddress(me.address)}</span>
           </span>
           <button type="button" className="icon-button" aria-label="Copy your address" onClick={() => copy(me.address, "Address copied.")}><Icon name="copy" size={20} /></button>
-        </section>
-
-        <section className="section">
-          <h2 className="section-title">Goals</h2>
-          <div className="group">
-            <SettingRow icon="flag" label="Your goals" value={goals && goals.goals.length > 0 ? `${goals.goals.length}` : "None yet"} onClick={() => go("goals")} />
-          </div>
         </section>
 
         {me.code ? (
@@ -698,7 +700,7 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
               <SettingRow icon="down" label="When an app pays you" value={`${me.savePercent}%`} onClick={() => go("rule")} />
               <SettingRow icon="tag" label="When you pay an app" value={me.spendPercent ? `${me.spendPercent}% on top` : "Off"} onClick={() => go("rule")} />
               {me.spendPercent ? <SettingRow icon="repeat" label="Catch-up" value={CATCH_UP_LABEL[me.catchUp ?? "weekly"]} onClick={() => go("rule")} /> : null}
-              <SettingRow icon="apps" label="Apps that know it's you" value={me.apps.length ? `${me.apps.length} ${me.apps.length === 1 ? "app" : "apps"}` : "None"} onClick={() => go("rule")} />
+              <SettingRow icon="apps" label="Apps that know it's you" value={me.allApps ? "All apps" : me.apps.length ? `${me.apps.length} ${me.apps.length === 1 ? "app" : "apps"}` : "None"} onClick={() => go("rule")} />
             </div>
             {catchUp && catchUp.status !== "off" && catchUp.status !== "due" && <p className="note">Next catch-up on {dayName(catchUp.next)}.</p>}
           </section>
@@ -751,7 +753,7 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
         <span className="balance-label">Your savings</span>
         <p className="balance-amount">{formatMoney(lunaToNimString(total), "NIM").replace(/ NIM$/, "")}<small>NIM</small></p>
         <p className="balance-sub">{balanceSub}</p>
-        {g && <GoalsHint goals={goals} onOpen={() => go("goals")} />}
+        {g && <GoalsHint goals={goals} onOpen={() => onTab("goals")} />}
       </section>
 
       <nav className="quick-actions" aria-label="Quick actions">
@@ -817,11 +819,11 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
               <span className="step-mark">2</span>
               <div className="step-body">
                 <strong>Choose your share</strong>
-                <p className="hint">Your share of what apps pay you. Then you get your save code.</p>
+                <p className="hint">Your share of what apps pay you. Every app that works with Droplets is allowed, new ones too; change that in Profile.</p>
                 {g && (
                   <>
                     {picker}
-                    <button type="button" className="primary" disabled={busy || wrongNetwork || !shareOk(percent)} onClick={() => void saveRule({ savePercent: percent, spendPercent: 0, apps: [], catchUp: "weekly" })}>
+                    <button type="button" className="primary" disabled={busy || wrongNetwork || !shareOk(percent)} onClick={() => void firstRule()}>
                       {busy ? "Opening Nimiq Pay…" : "Get my save code"}
                     </button>
                     <p className="note">You sign in Nimiq Pay. Signing is free.</p>

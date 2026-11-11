@@ -11,6 +11,7 @@ import { InviteGate } from "./InviteGate";
 import { Landing } from "./Landing";
 import { ActivityTab } from "./save/Activity";
 import { DrawCard, DrawTab } from "./save/Draw";
+import { GoalsScreen } from "./save/Goals";
 import { SaveHome } from "./save/SaveHome";
 import { sessionToken } from "./storage";
 import { AppBar, TabBar, type Tab } from "./ui";
@@ -18,7 +19,7 @@ import "./styles.css";
 
 /** The tabs, or one screen over them: Ask Droplets, or Help. */
 type View = { name: "tabs" } | { name: "chat"; text: string } | { name: "help" };
-const TABS: Tab[] = ["home", "activity", "draw", "profile"];
+const TABS: Tab[] = ["home", "goals", "activity", "draw", "profile"];
 const firstTab = (): Tab => {
   const t = import.meta.env.DEV ? demoTab() : null;
   return TABS.includes(t as Tab) ? (t as Tab) : "home";
@@ -119,6 +120,7 @@ function App() {
           onInner={setInner}
         />
       )}
+      {tab === "goals" && <GoalsScreen address={address} onInner={setInner} />}
       {tab === "activity" && <ActivityTab address={address} />}
       {tab === "draw" && <DrawTab address={address} />}
       {!inner && <TabBar tab={tab} onTab={openTab} />}

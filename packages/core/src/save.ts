@@ -65,6 +65,8 @@ export interface SaveRuleMessage {
    * Only for "set"; absent in rules signed before it existed. An empty list is written "none".
    */
   apps?: string[];
+  /** True when the rule allows every app, including ones Droplets approves later. Written "Apps: all"; then `apps` is absent. */
+  allApps?: boolean;
   /** How often Droplets offers to save the share of spending outside those apps. Only for "set", after the two above; optional. */
   catchUp?: CatchUpEvery;
   /** ISO 8601 UTC, e.g. 2026-11-04T15:20:00.000Z. */
@@ -81,7 +83,11 @@ export const MAX_RULE_APPS = 20;
  * An app's name as people see it, and as it's written in a signed rule: letters, digits, spaces and . ' & ! + -,
  * up to 40 characters. No commas, so a list of names in a rule reads back exactly.
  */
-export const isAppName = (name: string): boolean => /^[\p{L}\p{N}](?:[\p{L}\p{N} .'&!+-]{0,38}[\p{L}\p{N}.!+])?$/u.test(name) && !name.includes("  ");
+export const isAppName = (name: string): boolean =>
+  /^[\p{L}\p{N}](?:[\p{L}\p{N} .'&!+-]{0,38}[\p{L}\p{N}.!+])?$/u.test(name) && !name.includes("  ") && !/^(all|none)$/i.test(name);
+
+/** What a stored rule holds in place of app ids when its owner allowed every app, now and later. */
+export const ALL_APPS = "*";
 
 /** The exact text the user signs. One field per line, so what Nimiq Pay shows is what we check. */
 export function formatSaveMessage(m: SaveRuleMessage): string {
@@ -89,7 +95,8 @@ export function formatSaveMessage(m: SaveRuleMessage): string {
   if (m.action === "set") {
     lines.push(`Save: ${m.savePercent}%`);
     if (m.spendPercent !== undefined) lines.push(`Spend: ${m.spendPercent}%`);
-    if (m.apps !== undefined) lines.push(`Apps: ${m.apps.length ? m.apps.join(", ") : "none"}`);
+    if (m.allApps) lines.push("Apps: all");
+    else if (m.apps !== undefined) lines.push(`Apps: ${m.apps.length ? m.apps.join(", ") : "none"}`);
     if (m.catchUp !== undefined) lines.push(`Catch-up: ${m.catchUp}`);
   }
   lines.push(`Time: ${m.time}`, `Nonce: ${m.nonce}`);
@@ -112,7 +119,7 @@ export function parseSaveMessage(text: string): Result<SaveRuleMessage> {
   const address = parseNimiqAddress(field(2, "Address") ?? "");
   if (!address.ok) return bad;
   let i = 3;
-  let set: Pick<SaveRuleMessage, "savePercent" | "spendPercent" | "apps" | "catchUp"> = {};
+  let set: Pick<SaveRuleMessage, "savePercent" | "spendPercent" | "apps" | "allApps" | "catchUp"> = {};
   if (action === "set") {
     const savePercent = percent(field(i++, "Save"));
     if (savePercent === null) return fail("bad_amount", "The share to save must be a whole percent from 0 to 100.");
@@ -123,10 +130,13 @@ export function parseSaveMessage(text: string): Result<SaveRuleMessage> {
       if (spendPercent === null) return fail("bad_amount", "The share to save when you pay must be a whole percent from 0 to 100.");
       const list = field(i++, "Apps");
       if (list === null) return bad;
-      const apps = list === "none" ? [] : list.split(", ");
-      if (apps.length > MAX_RULE_APPS) return fail("unsupported", `A rule can name up to ${MAX_RULE_APPS} apps.`);
-      if (apps.some((a) => !isAppName(a)) || new Set(apps.map((a) => a.toLowerCase())).size !== apps.length) return bad;
-      set = { savePercent, spendPercent, apps };
+      if (list === "all") set = { savePercent, spendPercent, allApps: true };
+      else {
+        const apps = list === "none" ? [] : list.split(", ");
+        if (apps.length > MAX_RULE_APPS) return fail("unsupported", `A rule can name up to ${MAX_RULE_APPS} apps.`);
+        if (apps.some((a) => !isAppName(a)) || new Set(apps.map((a) => a.toLowerCase())).size !== apps.length) return bad;
+        set = { savePercent, spendPercent, apps };
+      }
       // The Mini App build in commit 1bcbe42 signed Spend and Apps without this line: it's optional.
       if (field(i, "Catch-up") !== null) {
         const catchUp = field(i++, "Catch-up")!;

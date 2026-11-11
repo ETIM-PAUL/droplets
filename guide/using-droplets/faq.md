@@ -10,7 +10,7 @@ Open **Activity**. It says why: your savings weren't open, your validator had cl
 
 ## My deposit isn't in Activity
 
-Reopen the tab: the newest transactions can take a minute to show. If it's still missing after a few minutes, use **Report a problem** on Profile.
+Switch away from Droplets and back, or reopen the tab: the newest transactions can take a minute to show. If it's still missing after a few minutes, use **Report a problem** on Profile.
 
 ## I can't withdraw everything
 

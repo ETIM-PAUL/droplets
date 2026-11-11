@@ -67,6 +67,36 @@ export type SaveCatchUp =
       spent: string; alreadySaved: string; paid: string; owed: string; complete: boolean; growOpen: boolean;
     };
 
+/**
+ * A named slice of the user's own savings (their one Nimiq stake). Luna amounts are decimal strings; `dueAt` is
+ * midnight UTC on that date, ms since 1970. `locked` means it can't be withdrawn from Droplets right now; `breaking`
+ * means the person asked to and is waiting out the cooling-off; `breached` means a withdrawal made outside Droplets
+ * reached into it while it was locked.
+ */
+export interface SaveGoal {
+  id: string;
+  name: string;
+  targetLuna: string | null;
+  dueAt: number | null;
+  allocatedLuna: string;
+  done: boolean;
+  locked: boolean;
+  breaking: boolean;
+  /** When a requested break finishes its cooling-off and the goal is free to withdraw from; null unless breaking. */
+  breakReadyAt: number | null;
+  breached: boolean;
+}
+
+/** The user's goals, reconciled against the chain. Luna amounts are decimal strings. */
+export interface SaveGoals {
+  totalLuna: string;
+  /** What's free to withdraw right now: the total, less whatever sits in a currently locked goal. */
+  withdrawableLuna: string;
+  goals: SaveGoal[];
+  /** When Droplets refuses a new goal until, after a withdrawal outside Droplets reached into a locked one; null if not banned. */
+  bannedUntil: number | null;
+}
+
 /** An app that saves with Droplets, which the user can allow to recognise their address. */
 export interface SaveApp {
   id: string;
@@ -227,6 +257,18 @@ export function createRailkitClient(o: RailkitClientOptions) {
     /** A question about the user's own savings, answered from their data. `kind` is what the chat already worked out. */
     saveAsk: (req: { address: string; question: string; kind?: SaveQuestion; period?: SavePeriod; tzOffsetMinutes: number }) =>
       call<{ answer: string; question: SaveQuestion; source: "rules" | "model" }>("/v1/save/ask", json(req)),
+    /** The user's goals, reconciled against the chain. `creditGoalLuna` (luna) sends a declared top-up there first. */
+    saveGoals: (address: string, o: { fresh?: boolean; creditGoalId?: string; creditGoalLuna?: bigint } = {}) =>
+      call<SaveGoals>(
+        `/v1/save/goals?address=${encodeURIComponent(address)}${o.fresh ? "&fresh=1" : ""}${o.creditGoalId ? `&creditGoal=${encodeURIComponent(o.creditGoalId)}&creditLuna=${o.creditGoalLuna}` : ""}`,
+      ),
+    /**
+     * Create, edit, reorder, delete or break a goal: the message the user signed in Nimiq Pay, with the key and
+     * signature. Breaking a goal that costs a fee needs `feeTx`, the hash of a payment already sent for it; without
+     * it (or while it's still confirming), the response is `{ pending: true }` and the same call should be retried.
+     */
+    saveGoalAction: (signed: { message: string; publicKey: string; signature: string }, o: { feeTx?: string } = {}) =>
+      call<{ id: string } | { ok: true } | { ok: true; readyAt: number; feeLuna: string } | { pending: true }>("/v1/save/goals", json({ ...signed, ...o })),
     /** The weekly draw: this week for one person, the latest draw and their wins. */
     prizeMe: (address: string) => call<PrizeMe>(`/v1/prize/me?address=${encodeURIComponent(address)}`),
     /** Joins or leaves the draw with the message signed in Nimiq Pay. Joining also sends Nimiq Pay's identifier for the phone. */

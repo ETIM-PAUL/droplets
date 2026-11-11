@@ -65,7 +65,7 @@ function standing(me: PrizeMe): string {
   const r = me.rules;
   const w = me.week;
   if (!me.joined || !w) return `Keep at least ${nim(r.minLuna)} saved on ${r.daysNeeded} days of the week to get in.`;
-  if (w.tooManyTransactions) return "This account has too many transactions this week for Droplets to check, so it can't enter this week's draw.";
+  if (w.tooManyTransactions) return "Too many transactions this week to check, so no entry this week.";
   if (w.tickets > 0) return `You're in, with ${w.tickets} ticket${w.tickets === 1 ? "" : "s"} for keeping ${nim(w.keptLuna)}.`;
   const ahead = w.days.filter((d) => d.status === "ahead").length;
   const still = r.daysNeeded - w.daysKept;
@@ -94,7 +94,7 @@ export function DrawCard({ address, compact, onOpen }: { address: string | null;
     try {
       // One entry per phone. Nimiq Pay asks the person before it shares this.
       const device = await requestDeviceIdentifier({ reason: "The weekly draw allows one entry per phone." }).catch(() => {
-        throw new Error("Droplets needs Nimiq Pay to recognise this phone, so each phone enters once. If Nimiq Pay didn't ask you, update it and try again.");
+        throw new Error("Each phone enters once, so Nimiq Pay must recognise this one. Update Nimiq Pay if it didn't ask, then retry.");
       });
       const message = formatDrawMessage({ action: "join", address: self.value, time: new Date().toISOString(), nonce: newNonce() });
       const saver = createNimiqSaver(await init({ timeout: 5_000 }));
@@ -184,7 +184,7 @@ export function DrawCard({ address, compact, onOpen }: { address: string | null;
       {!me.joined || !me.week ? (
         <>
           <button type="button" className="primary gold" disabled={busy} onClick={() => void joinDraw()}>{busy ? "Opening Nimiq Pay…" : "Join the draw"}</button>
-          <p className="note">Nimiq Pay asks to recognise this phone, so each phone enters once, and asks you to sign. Both are free.</p>
+          <p className="note">Nimiq Pay recognises your phone (one entry each) and asks you to sign. Both are free.</p>
         </>
       ) : confirmLeave ? (
         <div className="row-buttons">
@@ -212,7 +212,7 @@ export function DrawTab({ address }: { address: string | null }) {
           <ul className="group explain">
             <li><Icon name="drop" size={20} /><span>Keep at least {nim(r.minLuna)} in your savings on {r.daysNeeded} of the 7 days, Monday to Sunday.</span></li>
             <li><Icon name="plus" size={20} /><span>Keep more for more tickets: every 10 times as much adds one, up to {r.maxTickets}.</span></li>
-            <li><Icon name="gift" size={20} /><span>When the week closes on Sunday night, the first Nimiq block after it picks the winner, so nobody can know it in advance. The prize goes into the winner's savings.</span></li>
+            <li><Icon name="gift" size={20} /><span>The first Nimiq block after Sunday night picks the winner, so nobody can know it early. The prize goes into the winner's savings.</span></li>
             <li><Icon name="check" size={20} /><span>You never risk your savings. Taking money out only costs you days this week.</span></li>
           </ul>
         </section>

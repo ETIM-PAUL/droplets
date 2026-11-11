@@ -1,6 +1,6 @@
 import { init } from "@nimiq/mini-app-sdk";
 import type { SaveIntent } from "@railkit/agent";
-import type { SaveApp, SaveCatchUp, SaveMe, SaveValidator } from "@railkit/client";
+import type { SaveApp, SaveCatchUp, SaveGoals, SaveMe, SaveValidator } from "@railkit/client";
 import { CATCH_UP_EVERY, checkWithdrawal, formatSaveMessage, lunaToNimString, MIN_STAKE_LUNA, nimStringToLuna, parseNimiqAddress, WalletError, type CatchUpEvery, type StakerState } from "@railkit/core";
 import { createNimiqSaver } from "@railkit/wallet-nimiq";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -8,8 +8,9 @@ import { formatMoney } from "../format";
 import { api, hostNetwork } from "../api";
 import { ReportProblem } from "../ReportProblem";
 import { AppBar, Droplet, Icon, PageHead, QrCode, SettingRow, type IconName, type Tab } from "../ui";
+import { GoalsHint, GoalsScreen } from "./Goals";
 
-type Mode = "home" | "rule" | "open" | "add" | "withdraw";
+type Mode = "home" | "rule" | "open" | "add" | "withdraw" | "goals";
 
 const PRESETS = [10, 30, 50, 100];
 /** The share of payouts that goes to savings: any whole percent from 10 to 100. */
@@ -91,6 +92,9 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
   const [amount, setAmount] = useState("");
   const [validators, setValidators] = useState<SaveValidator[] | null>(null);
   const [validator, setValidator] = useState<string | null>(null);
+  const [goals, setGoals] = useState<SaveGoals | null>(null);
+  /** Which goal an "Add to savings" is for, if any. */
+  const [addGoal, setAddGoal] = useState<string | null>(null);
   const [confirmRevoke, setConfirmRevoke] = useState(false);
   /** The validator list on Open savings: the recommended one is picked; the rest show on request. */
   const [showValidators, setShowValidators] = useState(false);
@@ -112,6 +116,8 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
       const show = (c: SaveCatchUp | null) => void (seq === catchUpSeq.current && setCatchUp(c));
       if (m.spendPercent) void api.saveCatchUp(self.value, tzOffset(), fresh).then(show, () => show(null));
       else show(null);
+      // Goals are extra, like the catch-up: shown once loaded, never blocking the rest of Savings.
+      void api.saveGoals(self.value, { fresh }).then(setGoals, () => undefined);
       return m;
     } catch (e) {
       setLoadError(errorText(e));
@@ -183,7 +189,7 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
         } else {
           const enough = intent.nim !== undefined && Number(intent.nim) >= 100;
           setAmount(enough ? intent.nim! : "100");
-          setInfo("Your savings aren't open yet, so this opens them. They start with at least 100 NIM.");
+          setInfo("This opens your savings, starting with at least 100 NIM.");
           setMode("open");
         }
         break;
@@ -221,6 +227,7 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
     setError(null);
     setInfo(null);
     setAmount(m === "open" ? "100" : "");
+    if (m === "add") setAddGoal(null);
     // The rules screen starts from what's saved, not from changes left unsigned last time.
     if (m === "rule" && me) {
       setPercent(me.savePercent ?? 30);
@@ -263,10 +270,10 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
     try {
       const saver = createNimiqSaver(await init({ timeout: 5_000 }));
       await saver.openGrow(validator, luna.value);
-      setInfo("Your savings are opening. They show here within a minute.");
+      setInfo("Opening your savings. They show within a minute.");
       setMode("home");
       const open = await waitFor((m) => m.grow !== null);
-      if (open && !me?.code) setInfo("Your savings are open. Now choose your share and get your save code.");
+      if (open && !me?.code) setInfo("Savings open. Choose your share to get your save code.");
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -279,6 +286,7 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
     if (!luna.ok) return setError(luna.error.message);
     if (luna.value <= 0n) return setError("Enter an amount to add.");
     const before = me?.grow ? BigInt(me.grow.active) : 0n;
+    const forGoal = addGoal;
     setBusy(true);
     setError(null);
     try {
@@ -286,7 +294,12 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
       await saver.addToGrow(luna.value);
       setInfo(`Adding ${nim(luna.value)} to your savings.`);
       setMode("home");
-      await waitFor((m) => !!m.grow && BigInt(m.grow.active) > before);
+      const landed = await waitFor((m) => !!m.grow && BigInt(m.grow.active) > before);
+      // Tells Droplets which goal this was for, so it's credited there first instead of waiting its turn in order.
+      if (landed && forGoal && self?.ok) {
+        await api.saveGoals(self.value, { fresh: true, creditGoalId: forGoal, creditGoalLuna: luna.value }).catch(() => undefined);
+        await load(true);
+      }
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -300,6 +313,9 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
     if (!luna.ok) return setError(luna.error.message);
     const check = checkWithdrawal(stakerOf(me.grow), luna.value);
     if (!check.ok) return setError(check.error.message);
+    if (goals && luna.value > BigInt(goals.withdrawableLuna)) {
+      return setError(`That's more than you can withdraw right now: ${nim(BigInt(goals.totalLuna) - BigInt(goals.withdrawableLuna))} is set aside in a dated goal.`);
+    }
     setBusy(true);
     setError(null);
     try {
@@ -478,7 +494,7 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
             <span className="field-label">Save when you pay an app</span>
             {presets(SPEND_PRESETS, spendPercent, setSpendPercent, "Share to save when you pay")}
             <p className="hint">
-              {spendPercent === 0 ? "Nothing extra when you pay." : `Pay an app 100 NIM and you pay ${100 + spendPercent} NIM, with ${spendPercent} NIM going to savings. Only in apps you allow below.`}
+              {spendPercent === 0 ? "Nothing extra when you pay." : `Pay an app 100 NIM, pay ${100 + spendPercent}. The extra ${spendPercent} goes to savings (allowed apps only).`}
             </p>
           </div>
           {spendPercent > 0 && (
@@ -489,14 +505,14 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
                   <button key={e} type="button" className="preset preset-word" aria-pressed={catchUpEvery === e} onClick={() => setCatchUpEvery(e)}>{CATCH_UP_LABEL[e]}</button>
                 ))}
               </div>
-              <p className="hint">For payments anywhere else, Droplets adds up your {spendPercent}% each {CATCH_UP_PERIOD[catchUpEvery]} and asks you to save it. Nothing moves until you approve it.</p>
+              <p className="hint">Other payments: Droplets totals your {spendPercent}% each {CATCH_UP_PERIOD[catchUpEvery]} and asks you to save it.</p>
             </div>
           )}
         </section>
         <section className="form-section">
           <div className="field">
             <span className="field-label">Apps that know it's you</span>
-            {apps === null ? <p className="hint">Loading apps…</p> : apps.length === 0 ? <p className="hint">No apps save with Droplets yet. Until they do, give apps your save code.</p> : (
+            {apps === null ? <p className="hint">Loading apps…</p> : apps.length === 0 ? <p className="hint">No apps yet. Give apps your save code.</p> : (
               <div className="choices">
                 {apps.map((a) => (
                   <button key={a.id} type="button" className="choice toggle" aria-pressed={chosen.includes(a.name)} onClick={() => toggle(a.name)}>
@@ -506,7 +522,7 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
                 ))}
               </div>
             )}
-            <p className="hint">These apps recognise the address they already pay, so you don't need your code there. Other apps can't tell you use Droplets.</p>
+            <p className="hint">These apps know your address, so no code needed. Others can't tell you use Droplets.</p>
           </div>
         </section>
         {messages}
@@ -514,7 +530,7 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
           <button type="button" className="primary" disabled={busy || wrongNetwork || apps === null || !shareOk(percent)} onClick={() => void saveRule({ savePercent: percent, spendPercent, apps: allowed, catchUp: catchUpEvery })}>
             {busy ? "Opening Nimiq Pay…" : "Save rules"}
           </button>
-          <p className="note center">Nimiq Pay asks you to sign, so only you can change your rules. Signing is free.</p>
+          <p className="note center">You sign in Nimiq Pay. Signing is free.</p>
         </div>
       </div>
     );
@@ -525,14 +541,14 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
     return (
       <div className="grow">
         <AppBar title="Open your savings" onBack={() => go("home")} />
-        <p className="lede">Your savings are NIM staked from your own Nimiq account. They earn staking rewards, and only you can move them.</p>
+        <p className="lede">Staked from your own Nimiq account. It earns rewards, and only you can move it.</p>
         <div className="field">
           <label htmlFor="save-open-amount">Amount</label>
           <div className="amount-field">
             <input id="save-open-amount" className="amount-input" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
             <span className="amount-unit">NIM</span>
           </div>
-          <p className="hint">At least 100 NIM, Nimiq's minimum for staking. You can add more any time.</p>
+          <p className="hint">Minimum 100 NIM. Add more any time.</p>
         </div>
         <div className="field">
           <span className="field-label">Staked with</span>
@@ -547,7 +563,7 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
             </div>
           )}
           {!showValidators && (validators?.length ?? 0) > 1 && <button type="button" className="text-button start" onClick={() => setShowValidators(true)}>Choose another validator</button>}
-          <p className="hint">The validator does the staking. It can never move your NIM.</p>
+          <p className="hint">It stakes for you and can never move your NIM.</p>
         </div>
         {messages}
         <div className="bottom">
@@ -560,6 +576,10 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
   if (mode === "add" || mode === "withdraw") {
     const adding = mode === "add";
     const max = me.grow ? BigInt(me.grow.active) : 0n;
+    const lockedInGoals = goals ? BigInt(goals.totalLuna) - BigInt(goals.withdrawableLuna) : 0n;
+    // What Withdraw can actually offer: the active stake, capped by what isn't sitting in a dated goal.
+    const withdrawMax = goals ? (max < BigInt(goals.withdrawableLuna) ? max : BigInt(goals.withdrawableLuna)) : max;
+    const openGoals = goals?.goals.filter((g) => !g.done) ?? [];
     return (
       <div className="grow">
         <AppBar title={adding ? "Add to savings" : "Withdraw"} onBack={() => go("home")} />
@@ -579,10 +599,30 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
               <p className="hint">It moves from your Nimiq Pay wallet into your savings.</p>
             </>
           ) : (
-            <p className="hint">You have {nim(max)} in savings. <button type="button" className="text-button inline" onClick={() => setAmount(lunaToNimString(max))}>Withdraw all</button></p>
+            <p className="hint">
+              You have {nim(max)} in savings{lockedInGoals > 0n ? `, ${nim(lockedInGoals)} of it set aside in a dated goal` : ""}.{" "}
+              <button type="button" className="text-button inline" onClick={() => setAmount(lunaToNimString(withdrawMax))}>Withdraw all you can</button>
+            </p>
           )}
         </div>
-        {!adding && <p className="notice">Withdrawing takes 12 to 24 hours, because Nimiq releases staked NIM at the end of an epoch. Then you finish it on Home, with two approvals in Nimiq Pay.</p>}
+        {adding && openGoals.length > 0 && (
+          <div className="field">
+            <span className="field-label">For a goal (optional)</span>
+            <div className="choices">
+              <button type="button" className="choice toggle" aria-pressed={addGoal === null} onClick={() => setAddGoal(null)}>
+                <strong>No goal</strong>
+                <small>Goes toward your free savings, or fills your goals in order</small>
+              </button>
+              {openGoals.map((g) => (
+                <button key={g.id} type="button" className="choice toggle" aria-pressed={addGoal === g.id} onClick={() => setAddGoal(g.id)}>
+                  <strong>{g.name}</strong>
+                  <small>{g.targetLuna ? `${nim(g.allocatedLuna)} of ${nim(g.targetLuna)}` : nim(g.allocatedLuna)}</small>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {!adding && <p className="notice">Withdrawing takes 12 to 24 hours. Then two approvals in Nimiq Pay finish it.</p>}
         {messages}
         <div className="bottom">
           <button type="button" className="primary" disabled={busy || wrongNetwork || !amount.trim()} onClick={() => void (adding ? addToGrow() : startWithdrawal())}>
@@ -591,6 +631,10 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
         </div>
       </div>
     );
+  }
+
+  if (mode === "goals") {
+    return <GoalsScreen address={address} onBack={() => go("home")} onChanged={() => void load(true)} />;
   }
 
   const g = me.grow;
@@ -616,11 +660,18 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
           <button type="button" className="icon-button" aria-label="Copy your address" onClick={() => copy(me.address, "Address copied.")}><Icon name="copy" size={20} /></button>
         </section>
 
+        <section className="section">
+          <h2 className="section-title">Goals</h2>
+          <div className="group">
+            <SettingRow icon="flag" label="Your goals" value={goals && goals.goals.length > 0 ? `${goals.goals.length}` : "None yet"} onClick={() => go("goals")} />
+          </div>
+        </section>
+
         {me.code ? (
           <section className="card code-card" aria-label="Your save code">
             <span className="card-label">Your save code</span>
             <p className="save-code">{me.code}</p>
-            <p className="hint">Give it to apps that ask where to pay you. Apps you allow below don't need it.</p>
+            <p className="hint">For apps that ask where to pay you. Allowed apps don't need it.</p>
             <div className="row-buttons">
               <button type="button" className="secondary" onClick={() => copy(me.code!, "Code copied.")}><Icon name="copy" size={18} /> Copy</button>
               <button type="button" className="secondary" aria-expanded={showQr} onClick={() => setShowQr((v) => !v)}><Icon name="qr" size={18} /> {showQr ? "Hide QR" : "Show QR"}</button>
@@ -628,14 +679,14 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
             {showQr && (
               <div className="qr-wrap">
                 <QrCode text={me.code} label={`QR code for ${me.code}`} />
-                <p className="hint">An app that pays you can scan this instead of typing your code.</p>
+                <p className="hint">Apps can scan this instead of typing your code.</p>
               </div>
             )}
           </section>
         ) : (
           <section className="card">
             <strong>No save code yet</strong>
-            <p className="hint">Open your savings and choose your share on Home. Your code and rules then show here.</p>
+            <p className="hint">Open your savings on Home to get your code.</p>
             <button type="button" className="secondary" onClick={() => onTab("home")}>Go to Home</button>
           </section>
         )}
@@ -667,7 +718,7 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
             {confirmRevoke ? (
               <div className="card">
                 <strong>Turn off your save code?</strong>
-                <p className="hint">Apps that have it will pay your wallet instead. Your savings stay where they are.</p>
+                <p className="hint">Apps pay your wallet instead. Savings stay put.</p>
                 <div className="row-buttons">
                   <button type="button" className="secondary" onClick={() => setConfirmRevoke(false)}>Keep it</button>
                   <button type="button" className="danger-button" disabled={busy || wrongNetwork} onClick={() => void revokeCode()}>{busy ? "Opening Nimiq Pay…" : "Turn off"}</button>
@@ -688,7 +739,7 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
 
   const balanceSub = !g
     ? me.growClosed === "validator-gone" ? "Your validator has closed. Move your stake in Nimiq Pay." : "Not started yet"
-    : g.validatorJailed ? "Your validator is paused, so rewards and withdrawals wait." : "Staked in your own Nimiq account and earning rewards. Only you can move it.";
+    : g.validatorJailed ? "Your validator is paused, so rewards and withdrawals wait." : "Staked in your own account and earning rewards.";
   return (
     <>
       <header className="page-head">
@@ -700,6 +751,7 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
         <span className="balance-label">Your savings</span>
         <p className="balance-amount">{formatMoney(lunaToNimString(total), "NIM").replace(/ NIM$/, "")}<small>NIM</small></p>
         <p className="balance-sub">{balanceSub}</p>
+        {g && <GoalsHint goals={goals} onOpen={() => go("goals")} />}
       </section>
 
       <nav className="quick-actions" aria-label="Quick actions">
@@ -722,7 +774,7 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
           </p>
           {!due.complete && <p className="note">Some older payments couldn't be read, so this may be a little low.</p>}
           {paying && paidFor ? (
-            <p className="note" role="status">Your {nim(paidFor.luna)} is on its way. It can take a minute to show here.</p>
+            <p className="note" role="status">{nim(paidFor.luna)} is on its way. It can take a minute to show.</p>
           ) : due.growOpen ? (
             <button type="button" className="primary" disabled={busy || wrongNetwork} onClick={() => void saveCatchUp()}>{busy ? "Opening Nimiq Pay…" : `Save ${nim(due.owed)}`}</button>
           ) : (
@@ -742,7 +794,7 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
       {!g && me.code && me.growClosed === "no-stake" && (
         <section className="card attention-card">
           <strong className="card-title">Your savings are closed</strong>
-          <p className="hint">Until you open them again, apps that pay your code send everything to your wallet.</p>
+          <p className="hint">Until you reopen them, apps pay your wallet in full.</p>
           <button type="button" className="primary" disabled={wrongNetwork} onClick={() => go("open")}>Open savings</button>
         </section>
       )}
@@ -750,14 +802,14 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
       {!me.code && (
         <section className="card start-card" aria-label="Get started">
           <h2>Start saving</h2>
-          <p className="hint">Apps that work with Droplets, like games, bounties and shops, can put part of what they pay you straight into your savings. You choose how much.</p>
+          <p className="hint">Apps that pay you can put part of it straight into savings. You choose how much.</p>
           <ol className="steps">
             <li className={g ? "done" : "now"}>
               <span className="step-mark">{g ? <Icon name="check" size={16} /> : "1"}</span>
               <div className="step-body">
                 <strong>Open your savings</strong>
                 <p className="hint">{g ? `Open, with ${nim(BigInt(g.active) + BigInt(g.inactive))}.` : "Put in at least 100 NIM. It stays in your own Nimiq account."}</p>
-                {!g && me.growClosed === "validator-gone" && <p className="notice">The validator you staked with has closed. Move your stake to another validator in Nimiq Pay, then come back.</p>}
+                {!g && me.growClosed === "validator-gone" && <p className="notice">Your validator has closed. Move your stake in Nimiq Pay, then come back.</p>}
                 {!g && me.growClosed !== "validator-gone" && <button type="button" className="primary" disabled={busy || wrongNetwork} onClick={() => go("open")}>Open savings</button>}
               </div>
             </li>
@@ -765,14 +817,14 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
               <span className="step-mark">2</span>
               <div className="step-body">
                 <strong>Choose your share</strong>
-                <p className="hint">How much of what apps pay you goes to savings. Then you get your save code.</p>
+                <p className="hint">Your share of what apps pay you. Then you get your save code.</p>
                 {g && (
                   <>
                     {picker}
                     <button type="button" className="primary" disabled={busy || wrongNetwork || !shareOk(percent)} onClick={() => void saveRule({ savePercent: percent, spendPercent: 0, apps: [], catchUp: "weekly" })}>
                       {busy ? "Opening Nimiq Pay…" : "Get my save code"}
                     </button>
-                    <p className="note">Nimiq Pay asks you to sign your choice. Signing is free.</p>
+                    <p className="note">You sign in Nimiq Pay. Signing is free.</p>
                   </>
                 )}
               </div>
@@ -789,7 +841,7 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
           {me.receipts.length > 0 && <button type="button" className="text-button" onClick={() => onTab("activity")}>See all</button>}
         </div>
         {me.receipts.length === 0 ? (
-          <p className="empty">Nothing yet. When an app pays you, or saves for you when you pay it, it shows here.</p>
+          <p className="empty">Nothing yet. App payments and savings show here.</p>
         ) : (
           <ul className="list">
             {me.receipts.slice(0, RECENT_SHOWN).map((r) => (

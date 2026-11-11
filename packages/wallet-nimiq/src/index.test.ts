@@ -1,4 +1,4 @@
-import { WalletError } from "@railkit/core";
+import { BREAK_FEE_ADDRESS, WalletError } from "@railkit/core";
 import { describe, expect, it } from "vitest";
 import { classifyNimiqError, createNimiqExecutor, createNimiqSaver, nimToLuna, type NimiqProviderLike, type NimiqSaverProvider } from "./index";
 
@@ -112,6 +112,7 @@ describe("createNimiqSaver", () => {
       sendSetActiveStakeTransaction: async (tx) => (calls.push(["setActive", tx]), "tx3"),
       sendRetireStakeTransaction: async (tx) => (calls.push(["retire", tx]), "tx4"),
       sendRemoveStakeTransaction: async (tx) => (calls.push(["remove", tx]), "tx5"),
+      sendBasicTransaction: async (tx) => (calls.push(["basic", tx]), "tx6"),
       ...over,
     };
     return { p, calls };
@@ -125,12 +126,14 @@ describe("createNimiqSaver", () => {
     await s.startWithdrawal(0n);
     await s.retire(10_250_000n);
     await s.remove(10_250_000n);
+    await s.payBreakFee(50_000n);
     expect(calls).toEqual([
       ["newStaker", { delegation: "NQ26 0000 0000 02A5 YAK7 4QNF 9MH0 TE2B GVRU", value: 10_000_000 }],
       ["stake", { value: 250_000 }],
       ["setActive", { newActiveBalance: 0 }],
       ["retire", { retireStake: 10_250_000 }],
       ["remove", { value: 10_250_000 }],
+      ["basic", { recipient: BREAK_FEE_ADDRESS, value: 50_000 }],
     ]);
   });
 

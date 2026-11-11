@@ -41,6 +41,7 @@ Built for the Save track of the [Nimiq Mini Apps Competition](https://miniappsco
 - **The catch-up.** For payments anywhere else, Droplets adds up your share daily, weekly, every two weeks or monthly, and asks you to save it with one approval.
 - **The weekly draw.** Keep at least 1,000 NIM saved on 5 of the 7 days to be in Sunday's draw for 1,000 NIM. Saving more gives more tickets, and you never risk your savings.
 - **Ask Droplets.** Ask about your savings in plain words ("When can I get my money?"), or ask for a change ("Save 30% of what apps pay me", "Withdraw 200 NIM") and confirm it right in the chat.
+- **Goals.** Give part of your savings a name, a target and an optional date. Drops fill your first goal, then the next, in the order you set; you can also add to one by hand. A goal with a date can't be withdrawn until then, without a deliberate break that costs 10% of the goal and a 24-hour wait.
 - **Activity.** Every payment in, every saving, and your own staking transactions, grouped by day.
 
 Nothing moves without your approval: every action opens Nimiq Pay's own approval window.
@@ -87,6 +88,14 @@ sequenceDiagram
 - **Paying.** `pnpm pay-prizes` pays the prize into the winner's savings from a prize wallet whose key never reaches the API. The API marks it paid once the chain shows it.
 
 Prize draws are regulated in many countries. Get legal advice before paying real prizes on mainnet.
+
+### Goals
+
+Droplets has one stake, so a goal is a named slice of it, kept honest by comparing the stake's total with what was last seen and moving the difference across the goals (`reconcileGoals` in `packages/core/src/goals.ts`) — never a separate account.
+
+- **Filling in order.** Growth (a payout, saving when you pay, a catch-up, or adding by hand) fills the first goal to its target, then the next; a goal with no target takes whatever reaches it. Adding by hand can also name a goal, which is credited first, before the order takes over for anything else that grew.
+- **A date locks it.** Droplets won't offer a dated goal's money for withdrawal before that date. Breaking it early is a signed message that costs 10% of what's currently in the goal, paid to Droplets' address, verified on-chain before the break is honoured; the rest is free after a 24-hour wait. Breaking a goal is deliberate and never free, never a tap.
+- **What Droplets can't stop.** Withdrawing directly in Nimiq Pay, bypassing Droplets, isn't something any Mini App can prevent. If that reaches into a locked goal, Droplets reads it from the chain, shows the goal as breached, and bars that address from creating a new goal for a week.
 
 ## Getting started
 
@@ -230,6 +239,7 @@ The API ([apps/api](apps/api)) is Hono on Node. It holds no wallet keys.
 | `POST /v1/save/apps/register` | The landing page | An app signs up. It waits for review, and its key works once approved. |
 | `POST /v1/save/ask` | The Mini App | Ask Droplets' answers about the user's own savings. |
 | `GET /v1/save/split`, `GET /v1/save/spend`, `POST /v1/save/receipts` | Paying apps (app key) | How to split a payment, what to charge, and what was sent. |
+| `GET /v1/save/goals`, `POST /v1/save/goals` | The Mini App | The user's goals, reconciled against the chain; creating, editing, reordering, deleting or breaking one. |
 | `POST /v1/prize/join`, `GET /v1/prize/me`, `GET /v1/prize/draws` | The Mini App | The weekly draw. |
 | `/v1/admin/save/apps`, `/v1/admin/prize/*` | Admin token | Adding, approving, editing, re-keying and removing apps (the `/admin` page), and the prize payout tool. |
 
@@ -322,7 +332,7 @@ It pays any unpaid prizes into the winner's savings and stops. Prizes that aren'
 
 | | |
 |---|---|
-| **Built** | Savings, save codes, apps you allow, saving when you pay, the catch-up, the weekly draw, Ask Droplets, and the SDK for apps. Deployed on mainnet (`SAVE_NETWORK`); local development defaults to testnet. |
+| **Built** | Savings, save codes, apps you allow, saving when you pay, the catch-up, goals, the weekly draw, Ask Droplets, and the SDK for apps. Deployed on mainnet (`SAVE_NETWORK`); local development defaults to testnet. |
 | **Next** | Mainnet, with the first partner apps, self-serve sign-up for apps, and the SDK on npm. |
 | **Planned** | Bitcoin Lightning in, NIM savings out, which depends on a swap partner. |
 

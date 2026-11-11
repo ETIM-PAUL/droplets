@@ -27,6 +27,10 @@ const code = parseSaveCode(input); // { ok: true, value: "7KQ2XMP" } or { ok: fa
 
 Codes ignore case, spaces and dashes, and read `O` as `0` and `I` or `L` as `1`.
 
+## Rewards only for people who use Droplets
+
+You can't ask Droplets whether an address belongs to a saver: that is private, so an app you didn't allow can't tell. If your reward is meant only for people who use Droplets, ask for a **save code** instead of an address. A code exists only for someone who has set up Droplets, and `api.split(code, luna)` answers `404` for any other, so you can check it before you start, and `pay()` checks it again when paying.
+
 ## Not a reward? Skip the split
 
 For anything that isn't a reward, such as refunding an entry fee, pay with `into: "wallet"`:

@@ -1,14 +1,23 @@
 import { createHash, createPublicKey, randomBytes, randomUUID, verify } from "node:crypto";
 import type { Env as HonoEnv, Hono } from "hono";
 import {
+  BREAK_COOLDOWN_MS,
+  BREAK_FEE_ADDRESS,
+  breakFeeLuna,
   CATCH_UP_MAX_DAYS,
   catchUpOwed,
   catchUpWindow,
   formatSaveCode,
+  GOAL_BAN_MS,
+  goalBreaking,
+  goalDone,
+  goalLocked,
   growEvents,
   HTLC_LIFETIME_DAYS,
   isAppName,
   isOwn,
+  lunaToNimString,
+  MAX_GOALS,
   MIN_STAKE_LUNA,
   newSaveCode,
   nextCatchUpPeriodStart,
@@ -17,14 +26,18 @@ import {
   nimiqMessageHash,
   ownAddresses,
   ownHistory,
+  parseGoalMessage,
   parseNimiqAddress,
   parseSaveCode,
   parseSaveMessage,
+  reconcileGoals,
   releaseBlock,
   spendSave,
   spentBetween,
   splitPayout,
   STAKING_CONTRACT,
+  withdrawableLuna,
+  type GoalInput,
   type GrowState,
   type NimiqRpc,
   type OwnHistory,
@@ -32,6 +45,7 @@ import {
 } from "@railkit/core";
 import { answerSavingsQuestion, looksEnglish, parseSave, phraseSavingsAnswer, type SavePeriod, type SaveQuestion, type SavingsClassifier, type SavingsFacts, type SavingsPhraser } from "@railkit/agent";
 import { rateLimiter } from "../rate-limit";
+import { MemoryGoalStore, type GoalRow, type GoalStore } from "./goals-store";
 import { NO_USAGE, type AppEdit, type SaveApp, type SaveCodeRow, type SaveStore } from "./store";
 
 export interface SaveDeps {
@@ -42,6 +56,8 @@ export interface SaveDeps {
   recommended?: { address: string; name: string }[];
   /** Ed25519 check of Nimiq Pay's signature; node:crypto by default. */
   verifySignature?: (hash: Uint8Array, publicKeyHex: string, signatureHex: string) => boolean;
+  /** Goals: named slices of Grow. In memory (and lost on restart) if left out. */
+  goals?: GoalStore;
 }
 
 interface Helpers {
@@ -81,6 +97,9 @@ const sha256Hex = (s: string) => createHash("sha256").update(s).digest("hex");
 const hex = (b: Uint8Array) => Buffer.from(b).toString("hex");
 const lunaJson = (s: StakerState) => ({ active: s.active.toString(), inactive: s.inactive.toString(), inactiveFrom: s.inactiveFrom, retired: s.retired.toString(), delegation: s.delegation });
 
+/** Waits a bit, for a short retry while a just-sent transaction is still propagating. */
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 /** Small time-boxed cache, so one busy app can't turn every payout into several node calls. */
 function cache<T>(ttlMs: number, now: () => number) {
   const m = new Map<string, { at: number; v: T }>();
@@ -115,6 +134,7 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
   const validators = cache<{ jailedFrom: number | null } | null>(10 * 60_000, now);
   const validatorList = cache<{ address: string; stakeLuna: string; numStakers: number }[]>(10 * 60_000, now);
   const histories = cache<OwnHistory>(60_000, now);
+  const goalStore: GoalStore = s.goals ?? new MemoryGoalStore();
 
   const ip = (c: { req: { header(n: string): string | undefined } }) => h.clientKey((n) => c.req.header(n));
 
@@ -127,6 +147,35 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
     });
     if (!v) return { grow: { open: false, reason: "validator-gone" }, jailedFrom: null };
     return { grow: { open: true, staker }, jailedFrom: v.jailedFrom };
+  }
+
+  /** Every luna in Grow, moving or not: what goals are slices of. */
+  const growTotal = (grow: GrowState): bigint => (grow.open ? grow.staker.active + grow.staker.inactive + grow.staker.retired : 0n);
+  const toGoalInput = (g: GoalRow): GoalInput => ({
+    id: g.id, order: g.order, targetLuna: g.targetLuna === null ? null : BigInt(g.targetLuna), dueAt: g.dueAt,
+    allocatedLuna: BigInt(g.allocatedLuna), breakRequestedAt: g.breakRequestedAt, breachedAt: g.breachedAt,
+  });
+
+  /**
+   * Keeps goals in step with the chain: compares Grow's current total with what was last seen for this address, and
+   * moves the difference across the goals (see reconcileGoals in @railkit/core). A no-op when nothing changed.
+   * `targeted` sends growth the user declares ("I just added this for goal X") to that goal first.
+   */
+  async function reconcileGoalsFor(address: string, totalLuna: bigint, targeted?: { goalId: string; luna: bigint }) {
+    const cursor = await goalStore.goalCursor(address);
+    if (cursor === undefined) {
+      // First time we've seen this address: nothing to reconcile retroactively, just remember where it stands.
+      await goalStore.setGoalCursor(address, totalLuna, now());
+      return;
+    }
+    const delta = totalLuna - cursor;
+    if (delta === 0n && !targeted) return;
+    const goals = (await goalStore.listGoals(address)).map(toGoalInput);
+    const { changes, breached } = reconcileGoals(goals, delta, now(), targeted);
+    if (changes.size > 0) await goalStore.applyGoalChanges(changes, breached, now());
+    await goalStore.setGoalCursor(address, totalLuna, now());
+    // A withdrawal outside Droplets reached into a locked goal: bar new goals for a while.
+    if (breached.size > 0) await goalStore.banGoals(address, now() + GOAL_BAN_MS);
   }
 
   /**
@@ -418,6 +467,136 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
       log("save catch-up failed", { error: String(e) });
       return bad("Couldn't reach the Nimiq network. Try again in a minute.", 502);
     }
+  });
+
+  /**
+   * Goals: named slices of Grow, filled in the order the person set. Reconciles against the chain first, so this
+   * always reflects what's actually there. `creditGoal` and `creditLuna` (luna) name an amount the person just
+   * added, to go to that goal before the fill order takes over for anything else that's grown.
+   */
+  app.get("/v1/save/goals", async (c) => {
+    if (!readLimit(ip(c))) return bad("Too many requests. Wait a minute.", 429);
+    const addr = parseNimiqAddress(c.req.query("address") ?? "");
+    if (!addr.ok) return bad(addr.error.message);
+    const creditGoal = c.req.query("creditGoal");
+    const creditLunaRaw = c.req.query("creditLuna");
+    let targeted: { goalId: string; luna: bigint } | undefined;
+    if (creditGoal) {
+      if (!creditLunaRaw || !/^[1-9]\d{0,15}$/.test(creditLunaRaw)) return bad("creditLuna must be a whole number above 0.");
+      targeted = { goalId: creditGoal, luna: BigInt(creditLunaRaw) };
+    }
+    try {
+      const { grow } = await growState(addr.value, c.req.query("fresh") === "1");
+      const total = growTotal(grow);
+      await reconcileGoalsFor(addr.value, total, targeted);
+      const rows = await goalStore.listGoals(addr.value);
+      const nowMs = now();
+      const inputs = rows.map(toGoalInput);
+      const goals = rows.map((g, i) => {
+        const input = inputs[i]!;
+        return {
+          id: g.id, name: g.name, targetLuna: g.targetLuna, dueAt: g.dueAt, allocatedLuna: g.allocatedLuna,
+          done: goalDone(input), locked: goalLocked(input, nowMs), breaking: goalBreaking(input, nowMs),
+          breakReadyAt: g.breakRequestedAt === null ? null : g.breakRequestedAt + BREAK_COOLDOWN_MS, breached: g.breachedAt !== null,
+        };
+      });
+      const bannedUntil = await goalStore.goalBanUntil(addr.value);
+      return c.json({
+        totalLuna: total.toString(), withdrawableLuna: withdrawableLuna(inputs, total, nowMs).toString(), goals,
+        bannedUntil: bannedUntil !== null && bannedUntil > nowMs ? bannedUntil : null,
+      });
+    } catch (e) {
+      log("save goals failed", { error: String(e) });
+      return bad("Couldn't reach the Nimiq network. Try again in a minute.", 502);
+    }
+  });
+
+  /** Create, edit, reorder, delete or break a goal: the message the user signed in Nimiq Pay, with the key and signature. */
+  app.post("/v1/save/goals", async (c) => {
+    if (!ruleLimit(ip(c))) return bad("Too many tries in a short time. Wait a minute.", 429);
+    const body = (await c.req.json().catch(() => null)) as { message?: unknown; publicKey?: unknown; signature?: unknown; feeTx?: unknown } | null;
+    const message = typeof body?.message === "string" ? body.message : "";
+    const publicKey = typeof body?.publicKey === "string" ? body.publicKey.toLowerCase() : "";
+    const signature = typeof body?.signature === "string" ? body.signature.toLowerCase() : "";
+    const m = parseGoalMessage(message);
+    if (!m.ok) return bad(m.error.message);
+    if (Math.abs(now() - Date.parse(m.value.time)) > MAX_CLOCK_SKEW_MS) return bad("That request is too old. Try again.");
+    let signer: string;
+    try {
+      signer = nimiqAddressFromPublicKey(publicKey);
+    } catch {
+      return bad("Nimiq Pay's signature is missing. Try again.");
+    }
+    if (signer !== m.value.address) return bad("That was signed by a different Nimiq account. Use the account you're saving with.", 403);
+    if (!verifySig(nimiqMessageHash(message), publicKey, signature)) return bad("Nimiq Pay's signature didn't check out. Try again.", 403);
+    const { action, address } = m.value;
+    // "break" may need the fee payment to confirm on-chain first, so the same signed message can be retried
+    // without burning its nonce; every other action is consumed right away, as usual.
+    if (action !== "break") {
+      if (!(await s.store.useNonce(m.value.nonce, now()))) return bad("That request was already used. Try again.");
+    }
+
+    if (action === "create") {
+      const bannedUntil = await goalStore.goalBanUntil(address);
+      if (bannedUntil !== null && bannedUntil > now()) {
+        return bad(`Droplets won't let you create a goal until ${new Date(bannedUntil).toISOString().slice(0, 10)}: a withdrawal outside Droplets reached into a locked goal.`, 403);
+      }
+      const row: Omit<GoalRow, "order"> = {
+        id: randomUUID().replace(/-/g, "").slice(0, 12), address, name: m.value.name!,
+        targetLuna: m.value.targetLuna == null ? null : m.value.targetLuna.toString(), dueAt: m.value.dueAt ?? null,
+        allocatedLuna: "0", breakRequestedAt: null, breachedAt: null, createdAt: now(), updatedAt: now(),
+      };
+      if (!(await goalStore.insertGoal(row))) return bad(`You can have up to ${MAX_GOALS} goals.`);
+      log("goal created", { id: row.id });
+      return c.json({ id: row.id });
+    }
+    if (action === "edit") {
+      const ok = await goalStore.updateGoal(
+        address, m.value.goalId!,
+        { name: m.value.name, targetLuna: m.value.targetLuna == null ? null : m.value.targetLuna.toString(), dueAt: m.value.dueAt ?? null },
+        now(),
+      );
+      if (!ok) return bad("No goal like that.", 404);
+      log("goal edited", { id: m.value.goalId });
+      return c.json({ ok: true });
+    }
+    if (action === "reorder") {
+      if (!(await goalStore.reorderGoals(address, m.value.order!, now()))) return bad("That list doesn't match your current goals. Reload and try again.");
+      log("goals reordered", { address: address.slice(0, 9) });
+      return c.json({ ok: true });
+    }
+    if (action === "delete") {
+      if (!(await goalStore.deleteGoal(address, m.value.goalId!))) return bad("No goal like that.", 404);
+      log("goal deleted", { id: m.value.goalId });
+      return c.json({ ok: true });
+    }
+    // action === "break"
+    if (await s.store.nonceUsed(m.value.nonce)) return bad("That request was already used. Try again.");
+    const goal = await goalStore.getGoal(address, m.value.goalId!);
+    if (!goal) return bad("No goal like that.", 404);
+    const { grow } = await growState(address, true);
+    await reconcileGoalsFor(address, growTotal(grow));
+    const fresh = await goalStore.getGoal(address, m.value.goalId!);
+    if (!fresh) return bad("No goal like that.", 404);
+    const requiredFee = breakFeeLuna(BigInt(fresh.allocatedLuna));
+    if (requiredFee > 0n) {
+      const feeTxRaw = typeof body?.feeTx === "string" ? body.feeTx.toLowerCase() : "";
+      if (!/^[0-9a-f]{64}$/.test(feeTxRaw)) return bad(`Send the ${lunaToNimString(requiredFee)} NIM fee payment's transaction hash.`);
+      let tx = null;
+      for (let i = 0; i < 4; i++) {
+        tx = await s.chain.transaction(feeTxRaw).catch(() => null);
+        if (tx) break;
+        if (i < 3) await sleep(1_500);
+      }
+      if (!tx) return c.json({ pending: true });
+      if (!tx.executionResult || tx.from !== address || tx.to !== BREAK_FEE_ADDRESS || tx.value < requiredFee) {
+        return bad(`That payment doesn't cover the ${lunaToNimString(requiredFee)} NIM fee to break this goal.`, 403);
+      }
+    }
+    if (!(await s.store.useNonce(m.value.nonce, now()))) return bad("That request was already used. Try again.");
+    if (!(await goalStore.requestBreak(address, m.value.goalId!, now()))) return bad("No goal like that.", 404);
+    log("goal break requested", { id: m.value.goalId, feeLuna: requiredFee.toString() });
+    return c.json({ ok: true, readyAt: now() + BREAK_COOLDOWN_MS, feeLuna: requiredFee.toString() });
   });
 
   /** The approved apps that save with Droplets: for people to pick which may recognise their address, and for the landing page. */

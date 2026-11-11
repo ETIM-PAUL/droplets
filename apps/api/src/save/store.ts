@@ -142,6 +142,8 @@ export interface SaveStore {
   revoke(code: string, at: number): Promise<void>;
   /** True the first time a nonce is seen, false after; old nonces are forgotten after a day. */
   useNonce(nonce: string, at: number): Promise<boolean>;
+  /** Whether a nonce has already been used, without using it. For an action that may need to be retried safely. */
+  nonceUsed(nonce: string): Promise<boolean>;
   addApp(app: SaveApp): Promise<void>;
   appByKeyHash(keyHash: string): Promise<SaveApp | undefined>;
   listApps(): Promise<SaveApp[]>;
@@ -202,6 +204,9 @@ export class MemorySaveStore implements SaveStore {
     if (this.nonces.has(nonce)) return false;
     this.nonces.set(nonce, at);
     return true;
+  }
+  async nonceUsed(nonce: string) {
+    return this.nonces.has(nonce);
   }
   async addApp(app: SaveApp) {
     // As Postgres gives them back: approved unless it says otherwise, and null for what's missing.
@@ -398,6 +403,9 @@ export class PgSaveStore implements SaveStore {
       `INSERT INTO save_nonces (nonce, created_at) SELECT $1::text, $2::bigint WHERE NOT EXISTS (SELECT 1 FROM save_nonces WHERE nonce = $1) RETURNING nonce`,
       [nonce, at],
     );
+  }
+  async nonceUsed(nonce: string) {
+    return (await this.pool.query(`SELECT 1 FROM save_nonces WHERE nonce = $1`, [nonce])).rows.length > 0;
   }
   async addApp(a: SaveApp) {
     await this.pool.query(`INSERT INTO save_apps (id, name, key_hash, payout_addresses, created_at, pending, url, contact) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [

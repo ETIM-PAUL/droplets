@@ -10,6 +10,7 @@ import { airtimeToOps, payoutToOps, rampToOps } from "./ops/map";
 import { MemoryOpsStore, PgOpsStore, type OpsStore } from "./ops/store";
 import { checkStakes, runDraw, type PrizeDeps } from "./prize/routes";
 import { MemoryPrizeStore, PgPrizeStore, type PrizeStore } from "./prize/store";
+import { MemoryGoalStore, PgGoalStore, type GoalStore } from "./save/goals-store";
 import type { SaveDeps } from "./save/routes";
 import { MemorySaveStore, PgSaveStore, type SaveStore } from "./save/store";
 import { watchOnce, webhookAlerter } from "./ops/watcher";
@@ -63,13 +64,18 @@ async function saveDeps(): Promise<SaveDeps | undefined> {
   if (process.env.SAVE_ENABLED !== "true") return undefined;
   const network = process.env.SAVE_NETWORK === "testnet" ? "testnet" : "mainnet";
   let store: SaveStore;
+  let goals: GoalStore;
   if (pool) {
     const pgStore = new PgSaveStore(pool);
     await pgStore.migrate();
     store = pgStore;
+    const pgGoals = new PgGoalStore(pool);
+    await pgGoals.migrate();
+    goals = pgGoals;
   } else {
     console.warn(JSON.stringify({ msg: "DATABASE_URL not set: save codes are in memory and lost on restart" }));
     store = new MemorySaveStore();
+    goals = new MemoryGoalStore();
   }
   // "NQ.. = Name, NQ.. = Name": validators shown first when someone opens Grow.
   const recommended = list(process.env.SAVE_VALIDATORS).flatMap((entry) => {
@@ -77,7 +83,7 @@ async function saveDeps(): Promise<SaveDeps | undefined> {
     const a = parseNimiqAddress(address);
     return a.ok && name ? [{ address: a.value, name }] : [];
   });
-  return { store, chain: createNimiqRpc({ url: rpcUrl(network) }), network, recommended };
+  return { store, goals, chain: createNimiqRpc({ url: rpcUrl(network) }), network, recommended };
 }
 const rpcUrl = (network: "mainnet" | "testnet") =>
   process.env.NIMIQ_RPC_URL || (network === "testnet" ? "https://rpc.testnet.nimiqwatch.com" : "https://rpc.nimiqwatch.com");

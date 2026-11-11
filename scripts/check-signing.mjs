@@ -34,6 +34,8 @@ const EXECUTOR_FILES = new Map([
   // Ask Droplets' Confirm card: the chat hands it a change already read by rules, shown with its exact values, and only
   // the user's tap on Confirm opens Nimiq Pay. Chat.tsx itself stays wallet-free (rule 3).
   ["apps/miniapp/src/save/Confirm.tsx", ["confirmChange"]],
+  // Goals: creating, editing, reordering, deleting and breaking one are each a message the person signs.
+  ["apps/miniapp/src/save/Goals.tsx", ["reorder", "deleteGoal", "breakGoal", "save"]],
 ]);
 // 3. Code that reads untrusted text (chat, QR, providers) or runs on the server must not touch the wallet.
 const NO_WALLET = [/^packages\/(agent|adapters|core|client|save)\//, /^apps\/api\//, /^apps\/miniapp\/src\/Chat\.tsx$/];

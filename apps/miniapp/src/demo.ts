@@ -1,7 +1,7 @@
 // Development only: open the dev server with ?demo to see Droplets with made-up savings and no wallet, for design work
 // and screenshots. ?demo=new shows someone who hasn't started saving; &tab=activity|draw|profile opens that tab.
 // Production builds never include this: every use is behind import.meta.env.DEV.
-import type { PrizeMe, RailkitClient, SaveActivity, SaveApp, SaveCatchUp, SaveMe, SaveValidator } from "@railkit/client";
+import type { PrizeMe, RailkitClient, SaveActivity, SaveApp, SaveCatchUp, SaveGoals, SaveMe, SaveValidator } from "@railkit/client";
 
 const query = () => new URLSearchParams(typeof location === "undefined" ? "" : location.search);
 export const isDemo = (): boolean => import.meta.env.DEV && query().has("demo");
@@ -83,6 +83,19 @@ const prize = (): PrizeMe => ({
   wins: [],
 });
 
+const goals = (): SaveGoals => {
+  if (fresh()) return { totalLuna: "0", withdrawableLuna: "0", goals: [], bannedUntil: null };
+  return {
+    totalLuna: NIM(3065),
+    withdrawableLuna: NIM(2065),
+    goals: [
+      { id: "g1", name: "Rent deposit", targetLuna: NIM(1_500), dueAt: null, allocatedLuna: NIM(1_000), done: false, locked: false, breaking: false, breakReadyAt: null, breached: false },
+      { id: "g2", name: "December trip", targetLuna: NIM(2_000), dueAt: lagos(30), allocatedLuna: NIM(0), done: false, locked: true, breaking: false, breakReadyAt: null, breached: false },
+    ],
+    bannedUntil: null,
+  };
+};
+
 const validators: SaveValidator[] = [
   { address: "NQ26 0000 0000 02A5 YAK7 4QNF 9MH0 TE2B GVRU", name: "Kalimba", stakeLuna: NIM(41_000_000), numStakers: 812 },
   { address: "NQ16 085S 7JNP YJNY UA5N G5Y5 B98N 0JT7 6GKB", name: "Moonpool", stakeLuna: NIM(28_500_000), numStakers: 455 },
@@ -101,5 +114,7 @@ export function demoApi(real: RailkitClient): RailkitClient {
     saveValidators: async () => validators,
     prizeMe: async () => prize(),
     saveAsk: async () => ({ answer: "You have 3,065 NIM in savings, all of it earning staking rewards.", question: "balance", source: "rules" }),
+    saveGoals: async () => goals(),
+    saveGoalAction: async () => ({ ok: true as const }),
   };
 }

@@ -29,6 +29,7 @@ const PATHS = {
   apps: "M5 5h5v5H5zM14 5h5v5h-5zM5 14h5v5H5zM14 14h5v5h-5z",
   repeat: "M17 2l3 3-3 3M4 11V9a4 4 0 0 1 4-4h12M7 22l-3-3 3-3M20 13v2a4 4 0 0 1-4 4H4",
   tag: "M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9-9-9zM7.5 7.5h.01",
+  flag: "M6 3v18M6 4h12l-3 3.5 3 3.5H6",
 } as const;
 
 export type IconName = keyof typeof PATHS;

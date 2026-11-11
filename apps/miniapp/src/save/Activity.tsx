@@ -123,9 +123,9 @@ export function ActivityTab({ address }: { address: string | null }) {
         <p className="hint">Loading your activity…</p>
       ) : (
         <>
-          {save.grow === null && <p className="note">Your own savings transactions couldn't be loaded just now. Try again in a minute.</p>}
+          {save.grow === null && <p className="note">Couldn't load your savings transactions. Try again shortly.</p>}
           {rows.length === 0 ? (
-            <p className="empty">Nothing yet. What apps pay you or save for you, and what you put in or take out of your savings, show up here.</p>
+            <p className="empty">Nothing yet. Payments and savings moves show here.</p>
           ) : (
             days.map((d) => (
               <section key={d.heading} className="section">

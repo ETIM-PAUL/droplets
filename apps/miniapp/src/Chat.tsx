@@ -8,7 +8,7 @@ import { AppBar, ChatInput } from "./ui";
 /** Things to try. Each is one the chat's rules already read as a savings request or question. */
 export const SUGGESTIONS = ["How much have I saved?", "Save 30% of what apps pay me", "Put 500 NIM in savings", "When can I get my money?"];
 
-const NOT_SAVINGS = "Droplets is for saving, so it can't send money or buy NIM. Ask about your savings, or tell me how much to save.";
+const NOT_SAVINGS = "I only help with savings: ask a question or tell me how much to save.";
 
 interface Props {
   /** What was typed or tapped on Savings. */
@@ -53,7 +53,7 @@ export function Chat({ first, address, onSave, onCancel }: Props) {
     if (first.trim()) void turn(first);
     else {
       // Opened from a button: a greeting and things to try, nothing sent yet.
-      say({ from: "errand", text: "Ask about your savings, or tell me what to change. Nothing moves without your approval in Nimiq Pay." });
+      say({ from: "errand", text: "Ask about your savings or tell me what to change. You approve everything in Nimiq Pay." });
       setAfter("suggestions");
     }
     // Only the first message, once.

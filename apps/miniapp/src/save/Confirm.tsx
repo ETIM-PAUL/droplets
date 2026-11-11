@@ -69,10 +69,10 @@ export function ConfirmCard({ intent, address, onDone, onForm, onCancel }: Props
               time: new Date().toISOString(), nonce: newNonce(),
             });
         await api.saveRule({ message, ...(await saver.signRule(message)), tzOffsetMinutes: tzOffset() });
-        onDone(p.kind === "revoke" ? "Done. Your save code is off, and apps that have it now pay your wallet." : `Done. ${p.savePercent}% of what apps pay you now goes to savings.`);
+        onDone(p.kind === "revoke" ? "Done. Save code off; apps pay your wallet." : `Done. ${p.savePercent}% of what apps pay you now goes to savings.`);
       } else if (p.kind === "add") {
         await saver.addToGrow(p.luna);
-        onDone(`Done. ${nim(p.luna)} is on its way into your savings. It shows on Home within a minute.`);
+        onDone(`Done. ${nim(p.luna)} is on its way to your savings.`);
       } else {
         await saver.startWithdrawal(p.newActive);
         onDone(`Done. Your withdrawal of ${nim(p.luna)} has started. It's ready in 12 to 24 hours; finish it on Home then.`);
@@ -102,7 +102,7 @@ export function ConfirmCard({ intent, address, onDone, onForm, onCancel }: Props
         <button type="button" className="text-button" disabled={busy} onClick={onForm}>Change it in the form</button>
         <button type="button" className="text-button" disabled={busy} onClick={onCancel}>Cancel</button>
       </div>
-      <p className="note">Nimiq Pay asks you to approve it. Nothing changes until you do.</p>
+      <p className="note">Nothing changes until you approve in Nimiq Pay.</p>
     </div>
   );
 }

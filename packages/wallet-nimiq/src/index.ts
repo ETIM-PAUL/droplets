@@ -1,4 +1,4 @@
-import { toScaled, WalletError, type Step, type WalletExecutor } from "@railkit/core";
+import { BREAK_FEE_ADDRESS, toScaled, WalletError, type Step, type WalletExecutor } from "@railkit/core";
 
 /** The slice of the Nimiq Mini App provider (`await init()` from @nimiq/mini-app-sdk) that we use. */
 export interface NimiqProviderLike {
@@ -74,6 +74,7 @@ export interface NimiqSaverProvider extends Pick<NimiqProviderLike, "isConsensus
   sendSetActiveStakeTransaction(tx: { newActiveBalance: number }): Promise<string>;
   sendRetireStakeTransaction(tx: { retireStake: number }): Promise<string>;
   sendRemoveStakeTransaction(tx: { value: number }): Promise<string>;
+  sendBasicTransaction(tx: { recipient: string; value: number }): Promise<string>;
 }
 
 function toLuna(amount: bigint, allowZero = false): number {
@@ -106,6 +107,8 @@ export function createNimiqSaver(provider: NimiqSaverProvider, options: NimiqExe
     retire: (luna: bigint) => run(() => provider.sendRetireStakeTransaction({ retireStake: toLuna(luna) })),
     /** Step 3: the retired stake goes back to the wallet. Must be the whole retired amount. */
     remove: (luna: bigint) => run(() => provider.sendRemoveStakeTransaction({ value: toLuna(luna) })),
+    /** Pays the fee to break a locked goal early, from the wallet: staked NIM can only ever pay back its own owner, never a third party. */
+    payBreakFee: (luna: bigint) => run(() => provider.sendBasicTransaction({ recipient: BREAK_FEE_ADDRESS, value: toLuna(luna) })),
   };
 }
 

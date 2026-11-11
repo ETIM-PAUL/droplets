@@ -1,0 +1,23 @@
+{
+  "name": "puddle-quiz",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A sample app that pays NIM rewards and saves with Droplets, for trying Droplets as a third-party app would.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild client.ts --bundle --format=esm --target=es2022 --minify --outfile=public/client.js",
+    "start": "pnpm run build && tsx server.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@droplets/save": "workspace:*",
+    "@nimiq/core": "2.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "esbuild": "0.27.7",
+    "tsx": "4.23.15",
+    "typescript": "^5.9.0"
+  }
+}

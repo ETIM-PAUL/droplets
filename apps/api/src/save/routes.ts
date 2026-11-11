@@ -84,7 +84,7 @@ const lunaJson = (s: StakerState) => ({ active: s.active.toString(), inactive: s
 /** Small time-boxed cache, so one busy app can't turn every payout into several node calls. */
 function cache<T>(ttlMs: number, now: () => number) {
   const m = new Map<string, { at: number; v: T }>();
-  return async (key: string, load: () => Promise<T>): Promise<T> => {
+  const get = async (key: string, load: () => Promise<T>): Promise<T> => {
     const hit = m.get(key);
     if (hit && now() - hit.at < ttlMs) return hit.v;
     const v = await load();
@@ -92,6 +92,8 @@ function cache<T>(ttlMs: number, now: () => number) {
     if (m.size > 5_000) for (const [k, e] of m) if (now() - e.at >= ttlMs) m.delete(k);
     return v;
   };
+  /** Drops one entry, for when we know it just changed. */
+  return Object.assign(get, { forget: (key: string) => void m.delete(key) });
 }
 
 /**
@@ -640,6 +642,11 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
           createdAt: tx.timestamp || now(),
         });
         out[t.k] = "recorded";
+      }
+      // Their savings just changed on-chain: the next time they open Droplets, read it afresh instead of up to a minute late.
+      if (Object.values(out).includes("recorded")) {
+        stakers.forget(row.address);
+        histories.forget(row.address);
       }
     } catch (e) {
       log("save receipt failed", { error: String(e) });

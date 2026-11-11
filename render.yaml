@@ -103,3 +103,27 @@ services:
       - path: /*
         name: X-Content-Type-Options
         value: nosniff
+
+  # Puddle Quiz: the sample app that pays rewards through Droplets (examples/puddle-quiz). It pays real NIM from its own
+  # wallet, so the two secrets are set in the dashboard, never here.
+  - type: web
+    name: puddle-quiz
+    runtime: node
+    plan: free
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @droplets/save build && pnpm --filter puddle-quiz build
+    startCommand: pnpm --filter puddle-quiz exec tsx server.ts
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NETWORK
+        value: main
+      - key: DROPLETS_API_URL
+        value: https://droplets-api.onrender.com
+      # The rk_save_... key Droplets gave Puddle Quiz when it was registered.
+      - key: DROPLETS_KEY
+        sync: false
+      # The payout wallet's private key, from examples/puddle-quiz/.data/wallet.key. Free hosts lose their disk on restart.
+      - key: PAYOUT_KEY
+        sync: false

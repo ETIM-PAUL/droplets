@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Puddle Quiz</title>
+<style>
+  :root { --ink:#10222b; --soft:#5c7280; --paper:#f3f9fb; --card:#fff; --water:#1b8fb5; --deep:#0e5878; --line:#d5e5ec; --ok:#17794a; --bad:#a3322b; --grow:#e8a317; }
+  @media (prefers-color-scheme: dark) { :root { --ink:#e8f3f7; --soft:#93a9b4; --paper:#0b1a21; --card:#122630; --water:#4cc0e3; --deep:#9fdcf0; --line:#24404c; --ok:#5ed39a; --bad:#ff8f86; --grow:#f2bd45; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--paper); color:var(--ink); font:16px/1.5 ui-rounded, "Avenir Next", "Segoe UI", system-ui, sans-serif; padding:env(safe-area-inset-top) 16px 40px; }
+  main { max-width:30rem; margin:0 auto; }
+  header { padding:28px 0 8px; }
+  h1 { font-size:2rem; line-height:1.1; margin:0 0 6px; letter-spacing:-0.02em; color:var(--deep); }
+  .lede { margin:0; color:var(--soft); }
+  .lede b { color:var(--ink); }
+  .banner { margin:14px 0 0; padding:8px 12px; border-radius:10px; background:color-mix(in srgb, var(--grow) 22%, transparent); font-size:.9rem; }
+  fieldset { border:1px solid var(--line); border-radius:14px; background:var(--card); margin:14px 0 0; padding:12px 14px 8px; }
+  legend { padding:0 6px; font-weight:700; }
+  label { display:flex; align-items:center; gap:8px; padding:9px 0; min-height:44px; }
+  input[type=radio] { accent-color:var(--water); width:20px; height:20px; }
+  .to { margin-top:22px; }
+  .to label { display:block; font-weight:700; padding:0 0 6px; min-height:0; }
+  input[type=text] { width:100%; font:inherit; padding:12px; border-radius:12px; border:1px solid var(--line); background:var(--card); color:var(--ink); }
+  input[type=text]:focus-visible, button:focus-visible, input[type=radio]:focus-visible { outline:3px solid var(--water); outline-offset:2px; }
+  .hint { color:var(--soft); font-size:.9rem; margin:6px 0 0; }
+  button { width:100%; margin-top:18px; padding:14px; font:inherit; font-weight:700; border:0; border-radius:14px; background:var(--deep); color:#fff; cursor:pointer; }
+  @media (prefers-color-scheme: dark) { button { color:#06222d; } }
+  button:disabled { opacity:.6; cursor:default; }
+  .result { margin-top:18px; padding:16px; border-radius:14px; background:var(--card); border:1px solid var(--line); }
+  .result.ok { border-color:var(--ok); }
+  .result.bad { border-color:var(--bad); color:var(--bad); }
+  .result p { margin:6px 0; }
+  .big { font-size:1.35rem; font-weight:800; color:var(--ok); }
+  .split { display:flex; gap:3px; height:14px; margin:10px 0; }
+  .split span { border-radius:7px; }
+  .wallet { background:var(--water); }
+  .grow { background:var(--grow); }
+  .tx code { font-size:.8rem; }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1 id="app">Puddle Quiz</h1>
+    <p class="lede">Answer three new questions and win <b id="reward"></b>, paid to you today.</p>
+    <p class="banner" id="net" hidden>Testnet: these rewards aren't real NIM.</p>
+    <p class="banner" id="plain" hidden>This copy isn't connected to Droplets, so rewards are paid whole.</p>
+  </header>
+  <section id="step-code" class="to">
+    <label for="to">Your Droplets save code</label>
+    <input id="to" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="SAVE-7KQ2XMP">
+    <p class="hint" id="code-only">Rewards go to people saving with Droplets. Open Droplets, copy your save code from your savings, and paste it here. Part of every reward goes straight into your savings.</p>
+    <p class="hint" id="any" hidden>A save code, or a Nimiq address. With a code, part of the reward goes straight into your savings.</p>
+    <button id="begin" type="button">Start the quiz</button>
+  </section>
+  <section id="step-quiz" hidden>
+    <div id="questions"></div>
+    <button id="claim" type="button">Claim my reward</button>
+  </section>
+  <div id="result" class="result" hidden aria-live="polite"></div>
+</main>
+<script type="module" src="/client.js"></script>
+</body>
+</html>

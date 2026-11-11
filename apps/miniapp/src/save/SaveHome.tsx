@@ -133,6 +133,18 @@ export function SaveHome({ address, tab, start, onStarted, draw, onTab, onAsk, o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [address]);
 
+  // Coming back to Droplets (from an app that just paid you, say) shows what arrived. Only on the plain home view, so
+  // nothing someone is in the middle of editing is overwritten.
+  useEffect(() => {
+    if (mode !== "home") return;
+    const back = () => {
+      if (document.visibilityState === "visible") void load(true);
+    };
+    document.addEventListener("visibilitychange", back);
+    return () => document.removeEventListener("visibilitychange", back);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, address]);
+
   useEffect(() => {
     if (mode !== "rule" || apps) return;
     api.saveApps().then(setApps, (e) => setError(errorText(e)));

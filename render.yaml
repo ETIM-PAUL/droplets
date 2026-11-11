@@ -56,7 +56,7 @@ services:
       - key: PRIZE_MIN_NIM
         value: "1000"
       - key: PRIZE_DAYS
-        value: "5"
+        value: "4"
       - key: PRIZE_UTC_OFFSET_MINUTES
         value: "60"
       - key: PRIZE_ADDRESS

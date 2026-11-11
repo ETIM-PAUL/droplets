@@ -41,7 +41,7 @@ Built for the Save track of the [Nimiq Mini Apps Competition](https://miniappsco
 - **Save from what apps pay you.** Choose a share, such as 30%. Games, bounties and shops that work with Droplets put that share straight into your savings: either the apps you allow (every app by default, including ones added later, or just the ones you pick), which recognise the address they already pay, or the apps you give your save code (`SAVE-7KQ2XMP`). Apps register with Droplets first, and their key works once they're approved.
 - **Save when you pay.** Apps you allow add a share, such as 5%, on top of what you buy, and put it into your savings.
 - **The catch-up.** For payments anywhere else, Droplets adds up your share daily, weekly, every two weeks or monthly, and asks you to save it with one approval.
-- **The weekly draw.** Keep at least 1,000 NIM saved on 5 of the 7 days to be in Sunday's draw for 1,000 NIM. Saving more gives more tickets, and you never risk your savings.
+- **The weekly draw.** Keep at least 1,000 NIM saved on 4 of the 7 days to be in Sunday's draw for 1,000 NIM. Saving more gives more tickets, and you never risk your savings.
 - **Ask Droplets.** Ask about your savings in plain words ("When can I get my money?"), or ask for a change ("Save 30% of what apps pay me", "Withdraw 200 NIM") and confirm it right in the chat.
 - **Goals.** Give part of your savings a name, a target and an optional date. Drops fill your first goal, then the next, in the order you set; you can also add to one by hand. A goal with a date can't be withdrawn until then, without a deliberate break that costs 10% of the goal and a 24-hour wait.
 - **Activity.** Every payment in, every saving, and your own staking transactions, grouped by day.
@@ -85,7 +85,7 @@ sequenceDiagram
 
 - **Entering.** Joining is a signed message plus Nimiq Pay's identifier for the phone, so each phone enters once.
 - **Counting days.** A day counts if your stake never went under the minimum at any moment that day. Only you can lower your stake, and only with a transaction that records the new amount, so Droplets reads every drop from the chain.
-- **Tickets.** You get 1 ticket at the minimum and one more for each 10 times as much, up to 4, based on the amount kept on 5 days.
+- **Tickets.** You get 1 ticket at the minimum and one more for each 10 times as much, up to 4, based on the amount kept on 4 days.
 - **Picking the winner.** The draw closes on Sunday at 23:59 (`PRIZE_UTC_OFFSET_MINUTES`, West Africa Time by default). The hash of the first Nimiq block after that picks the winning ticket, so nobody can know it in advance. Each draw is stored with its entries, so anyone can check it.
 - **Paying.** `pnpm pay-prizes` pays the prize into the winner's savings from a prize wallet whose key never reaches the API. The API marks it paid once the chain shows it.
 

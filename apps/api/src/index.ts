@@ -118,7 +118,7 @@ async function prizeDeps(): Promise<PrizeDeps | undefined> {
     chain: createNimiqRpc({ url: rpcUrl(save.network) }),
     rules: {
       minLuna: nim("PRIZE_MIN_NIM", "1000"),
-      daysNeeded: whole("PRIZE_DAYS", 5, (n) => n >= 1 && n <= 7),
+      daysNeeded: whole("PRIZE_DAYS", 4, (n) => n >= 1 && n <= 7),
       prizeLuna: nim("PRIZE_NIM", "1000"),
       utcOffsetMinutes: whole("PRIZE_UTC_OFFSET_MINUTES", 60, (n) => Math.abs(n) <= 14 * 60),
     },

@@ -62,7 +62,7 @@ const catchUp = (): SaveCatchUp => ({
 });
 
 const prize = (): PrizeMe => ({
-  rules: { minLuna: NIM(1000), daysNeeded: 5, prizeLuna: NIM(1000), maxTickets: 4, utcOffsetMinutes: 60, prizeAddress: null },
+  rules: { minLuna: NIM(1000), daysNeeded: 4, prizeLuna: NIM(1000), maxTickets: 4, utcOffsetMinutes: 60, prizeAddress: null },
   joined: !fresh(),
   week: fresh() ? null : {
     week: "2026-11-09", drawAt: lagos(15, 23, 59), daysKept: 3, keptLuna: NIM(3065), tickets: 0, tooManyTransactions: false,

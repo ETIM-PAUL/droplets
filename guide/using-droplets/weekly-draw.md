@@ -4,7 +4,7 @@ Every week, one saver wins a prize. You never risk any of your savings to take p
 
 ## How you get in
 
-Join on the **Draw** tab. You're in a week's draw if you keep **at least 1,000 NIM** in your savings on **5 of the 7 days** of that week.
+Join on the **Draw** tab. You're in a week's draw if you keep **at least 1,000 NIM** in your savings on **4 of the 7 days** of that week.
 
 ## How many tickets
 

@@ -8,15 +8,17 @@ Built for the Save track of the [Nimiq Mini Apps Competition](https://miniappsco
 
 
 <p align="center">
-  <img src=".github/screenshots/home.png" width="21%" alt="Home: your savings balance, quick actions, a catch-up to save, the weekly draw and recent payments" />
+  <img src=".github/screenshots/home.png" width="17%" alt="Home: your savings balance, quick actions, a catch-up to save, the weekly draw and recent payments" />
   &nbsp;&nbsp;
-  <img src=".github/screenshots/activity.png" width="21%" alt="Activity: every payment in and out of savings, grouped by day" />
+  <img src=".github/screenshots/goals.png" width="17%" alt="Goals: named slices of your savings with targets and dates" />
   &nbsp;&nbsp;
-  <img src=".github/screenshots/draw.png" width="21%" alt="Weekly draw: this week's days kept and missed, and how the draw works" />
+  <img src=".github/screenshots/activity.png" width="17%" alt="Activity: every payment in and out of savings, grouped by day" />
   &nbsp;&nbsp;
-  <img src=".github/screenshots/profile.png" width="21%" alt="Profile: your save code and your saving rules" />
+  <img src=".github/screenshots/draw.png" width="17%" alt="Weekly draw: this week's days kept and missed, and how the draw works" />
+  &nbsp;&nbsp;
+  <img src=".github/screenshots/profile.png" width="17%" alt="Profile: your save code and your saving rules" />
 </p>
-<p align="center"><sub>Home, Activity, Draw and Profile, with demo data.</sub></p>
+<p align="center"><sub>Home, Goals, Activity, Draw and Profile, with demo data.</sub></p>
 
 ## Contents
 
@@ -122,7 +124,7 @@ Without `DATABASE_URL`, the API keeps everything in memory and forgets it on res
 Droplets normally runs only inside Nimiq Pay. In development, open [http://localhost:5173/?demo](http://localhost:5173/?demo) to see it with made-up savings and no wallet:
 
 - `?demo=new` shows someone who hasn't started saving;
-- `&tab=activity`, `&tab=draw` or `&tab=profile` opens that tab.
+- `&tab=goals`, `&tab=activity`, `&tab=draw` or `&tab=profile` opens that tab.
 
 Demo mode only exists in the dev server, and production builds leave it out. Buttons that need Nimiq Pay won't work in it.
 
@@ -258,6 +260,7 @@ This repository is RailKit, a pnpm workspace. Droplets is built on these parts:
 | [packages/client](packages/client) | A typed client for the API. |
 | [packages/wallet-nimiq](packages/wallet-nimiq) | The Nimiq Pay actions, each opening Nimiq Pay's approval window. |
 | [packages/save](packages/save) | The SDK for apps, its server-side payer, and the testnet tools. |
+| [examples/puddle-quiz](examples/puddle-quiz) | Puddle Quiz: a sample app that pays NIM rewards through the SDK, for trying Droplets as a third-party app. See [its README](examples/puddle-quiz/README.md). |
 
 Names in the code that users don't see:
 - the user's savings are called Grow (`grow`, `growLuna`, `GrowState`);
@@ -301,12 +304,12 @@ pnpm run ci   # type checks, tests, build, licence check, signing guard
 
 ## Deployment
 
-[render.yaml](render.yaml) is a Render Blueprint for the API (`droplets-api`) and the Mini App as a static site (`droplets-app`). It's set up for mainnet, open to everyone, with the API and the Mini App already pointing at each other's `onrender.com` addresses. The database is any Postgres you give it: the free tier of [Neon](https://neon.tech) works well.
+[render.yaml](render.yaml) is a Render Blueprint for the API (`droplets-api`), the Mini App as a static site (`droplets-app`), the docs (`droplets-docs`) and the sample app (`puddle-quiz`, which needs its own `DROPLETS_KEY` and `PAYOUT_KEY`, set in the dashboard). It's set up for mainnet, open to everyone, with the API and the Mini App already pointing at each other's `onrender.com` addresses. The database is any Postgres you give it: the free tier of [Neon](https://neon.tech) works well.
 
 1. Create a Postgres database and copy its **direct** connection string, not the pooled one, because the API runs its own table migrations at startup. With Neon that's the host without `-pooler`. If your Neon login came from Vercel, create it in Vercel under **Storage > Create Database > Neon**, then copy `DATABASE_URL_UNPOOLED`.
 2. Push the repo to GitHub, then in Render choose **New > Blueprint** and pick it.
 3. Render asks for `DATABASE_URL`: paste the connection string. It asks for `PRIZE_ADDRESS`, the mainnet wallet the weekly prize is paid from (see below). It also asks for two optional secrets, `OPENAI_API_KEY` and `ALERT_WEBHOOK_URL`; leave them empty if you don't use them.
-4. Once both services are live, open `https://droplets-app.onrender.com` in Nimiq Pay.
+4. Once the services are live, open `https://droplets-app.onrender.com` in Nimiq Pay.
 
 If Render gives either service a different address, update `ALLOWED_ORIGINS` on the API and `VITE_RAILKIT_API_URL` on the Mini App to match.
 
@@ -337,6 +340,7 @@ It pays any unpaid prizes into the winner's savings and stops. Prizes that aren'
 | **Built** | Savings, save codes, apps you allow, saving when you pay, the catch-up, goals, the weekly draw, Ask Droplets, and the SDK for apps. Deployed on mainnet (`SAVE_NETWORK`); local development defaults to testnet. |
 | **Next** | Mainnet, with the first partner apps, self-serve sign-up for apps, and the SDK on npm. |
 | **Planned** | Bitcoin Lightning in, NIM savings out, which depends on a swap partner. |
+| **Future work** | Droplets' own validator. It needs a 100,000 NIM deposit, a server that stays online and the node software, and it would earn the validator's fee on NIM that people stake with it. It also makes Droplets responsible for uptime and for users' withdrawal times, so until it has enough savers to be worth that, Droplets suggests other validators. |
 
 ## Licence
 

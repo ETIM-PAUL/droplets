@@ -51,7 +51,7 @@ It works in any browser, and inside Nimiq Pay too.
 
 **Only people with Droplets can play.** A save code exists only for someone who has set up Droplets, and Droplets answers "no such code" for anything else, so the app checks the code before the quiz starts and again when paying. Droplets deliberately doesn't let an app check whether a plain address belongs to a saver, so a code is the only honest proof. To also accept plain addresses (those people just get paid in full), set `REQUIRE_DROPLETS=no`.
 
-**Questions don't repeat.** There are 12 questions, and each person gets three they haven't had. After four quizzes they've seen them all and are told to come back. Add questions to `BANK` in `server.ts`.
+**Questions don't repeat.** There are 42 questions, and each person gets three they haven't had, with the answer order shuffled. After 14 quizzes they've seen them all and are told to come back. Add questions to `BANK` in `server.ts`.
 
 ## What it shows
 
@@ -60,3 +60,5 @@ It works in any browser, and inside Nimiq Pay too.
 - **Keys stay on the server.** The page only gets amounts and transaction hashes.
 
 Outside this repo, install the SDK with `npm install @droplets/save @nimiq/core` instead of the workspace link in `package.json`.
+
+**Demo mode.** Set `DEMO_MODE=yes` to let the same save code play again and again, with questions that can repeat, and every win pays. The daily cap still applies. Turn it off for real use.

@@ -43,6 +43,9 @@ const RPC_URL = setting("NIMIQ_RPC_URL") || (NETWORK === "main" ? "https://rpc.n
 /** Only people with a Droplets save code can play: a code exists only for someone who has set up Droplets. */
 const REQUIRE_DROPLETS = setting("REQUIRE_DROPLETS") !== "no";
 const LUNA_PER_NIM = 100_000n;
+// Demo mode, for showing Droplets live: anyone can play again and again, with questions that may repeat. Every win still
+// pays a real reward and the daily cap still applies. Leave it off for real use.
+const DEMO_MODE = ["yes", "true", "1", "on"].includes(setting("DEMO_MODE").toLowerCase());
 const REWARD = BigInt(Math.round(Number(setting("REWARD_NIM") || 5) * 100_000));
 const DAILY_CAP = BigInt(Math.round(Number(setting("DAILY_CAP_NIM") || 50) * 100_000));
 const DATA = setting("DATA_DIR") || join(here, ".data");
@@ -121,13 +124,50 @@ const BANK: { q: string; options: string[]; answer: number }[] = [
   { q: "How many NIM must you keep saved to enter the weekly Droplets draw?", options: ["10", "100", "1,000"], answer: 2 },
   { q: "Who sends your saved share into your stake when an app pays you through Droplets?", options: ["Droplets holds it for you", "The app, straight to your own stake", "Nimiq's validators"], answer: 1 },
   { q: "Which of these can Droplets do with your money?", options: ["Hold it for you", "Nothing: it only tells apps how to split payments", "Trade it for you"], answer: 1 },
+  { q: "Droplets' tagline is \"Every payment leaves a ...\"?", options: ["Droplet", "Coin", "Receipt"], answer: 0 },
+  { q: "What is the largest share of a payment you can save in Droplets?", options: ["50%", "90%", "100%"], answer: 2 },
+  { q: "Who can move the NIM in your Droplets savings?", options: ["Only you", "Droplets and you", "The app that paid you"], answer: 0 },
+  { q: "Does joining the weekly Droplets draw put your savings at risk?", options: ["Yes, you can lose them", "No, your savings stay yours", "Only if you don't win"], answer: 1 },
+  { q: "Where does Droplets keep your savings?", options: ["In Droplets' wallet", "In a stake under your own Nimiq account", "In the app that paid you"], answer: 1 },
+  { q: "What does \"spend and save\" in Droplets mean?", options: ["You save a share when you pay an app", "You borrow against savings", "You lock all your NIM"], answer: 0 },
+  { q: "What is a Droplets goal?", options: ["A named slice of your savings, with an optional target and date", "A second wallet", "A loan limit"], answer: 0 },
+  { q: "Which goals does Droplets lock until their date?", options: ["Every goal", "Goals that have a date", "Goals with no target"], answer: 1 },
+  { q: "How much does it cost to break a dated Droplets goal early?", options: ["Nothing", "10% of what's in it", "50% of what's in it"], answer: 1 },
+  { q: "After you ask to break a dated goal early, how long is the wait?", options: ["24 hours", "7 days", "30 days"], answer: 0 },
+  { q: "What happens if you withdraw from a locked goal outside Droplets?", options: ["Nothing", "You can't create new goals for 30 days", "Your account is deleted"], answer: 1 },
+  { q: "When money is saved, which Droplets goal does it fill first?", options: ["The first goal in the order you set", "The biggest goal", "A random goal"], answer: 0 },
+  { q: "Can a Droplets goal have no date?", options: ["No, a date is required", "Yes, then you can close it any time", "Only for the first goal"], answer: 1 },
+  { q: "If you leave the date of a goal blank, when can you close it?", options: ["Any time, or when the target is met", "Never", "Only after a year"], answer: 0 },
+  { q: "By default, which apps may save from your payouts in Droplets?", options: ["None until you pick them", "Every app, including new ones", "Only the first three"], answer: 1 },
+  { q: "What does a save code prove to an app?", options: ["That you have a Droplets account", "How much NIM you own", "Your name"], answer: 0 },
+  { q: "What does an app need to do before it can use Droplets?", options: ["Register and be approved", "Hold 100,000 NIM", "Run a validator"], answer: 0 },
+  { q: "What is \"catch-up\" in Droplets?", options: ["Saving a missed share, which you approve each time", "Free extra NIM", "A faster draw"], answer: 0 },
+  { q: "How many NIM does a validator need as a deposit?", options: ["1,000", "10,000", "100,000"], answer: 2 },
+  { q: "What is NIM's total supply?", options: ["21 million", "21 billion", "21 trillion"], answer: 1 },
+  { q: "In which year did the Nimiq mainnet launch?", options: ["2014", "2018", "2022"], answer: 1 },
+  { q: "What is Nimiq known for being able to run in?", options: ["A web browser", "A smart fridge", "Only data centers"], answer: 0 },
+  { q: "What does a Nimiq validator do?", options: ["Produces and confirms blocks", "Mints new NIM for itself", "Holds users' savings"], answer: 0 },
+  { q: "How are Nimiq addresses usually written?", options: ["Groups of four characters, like NQ30 KFJH ...", "One long number", "A word list"], answer: 0 },
+  { q: "How many groups of four characters make up a Nimiq address?", options: ["6", "9", "12"], answer: 1 },
+  { q: "What is Nimiq Pay?", options: ["A mobile wallet that runs Mini Apps", "A bank card", "A mining rig"], answer: 0 },
+  { q: "What is a Mini App?", options: ["An app that runs inside Nimiq Pay", "A smaller NIM coin", "A staking pool"], answer: 0 },
+  { q: "What do you earn by staking NIM?", options: ["Rewards", "Nothing, it's only a lock", "A new address"], answer: 0 },
+  { q: "Why would a payment app use Droplets?", options: ["So its users can save part of what it pays them", "To hold users' funds", "To mine NIM"], answer: 0 },
+  { q: "Can Droplets move your savings without you signing?", options: ["No, you approve every change", "Yes, whenever it likes", "Only on weekends"], answer: 0 },
 ];
 const PASS = 2;
+function shuffle(a: number[]): number[] {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j]!, a[i]!];
+  }
+  return a;
+}
 const PER_QUIZ = 3;
 
 const seenFile = join(DATA, "seen.json");
 const seen: Record<string, number[]> = existsSync(seenFile) ? JSON.parse(readFileSync(seenFile, "utf8")) : {};
-const sessions = new Map<string, { to: string; id: string; picks: number[]; expires: number }>();
+const sessions = new Map<string, { to: string; id: string; picks: number[]; orders: number[][]; expires: number }>();
 
 // ---------- Handling a claim ----------
 interface Result {
@@ -163,12 +203,13 @@ function parseTarget(input: unknown): { to: string; id: string; code: boolean } 
   }
 }
 
-const dayOf = (id: string) => `quiz-${createHash("sha256").update(id).digest("hex").slice(0, 24)}-${today()}`;
+/** The payout id: one per person per day, or in demo mode one per quiz so every win pays. */
+const dayOf = (id: string, quizId = "") => `quiz-${createHash("sha256").update(DEMO_MODE ? `${id}|${quizId}` : id).digest("hex").slice(0, 24)}-${today()}`;
 
 /** Checks the person is set up with Droplets, then deals three questions they haven't had. */
 async function start(body: { to?: unknown }) {
   const target = parseTarget(body.to);
-  const done = claims[dayOf(target.id)]?.result;
+  const done = DEMO_MODE ? undefined : claims[dayOf(target.id)]?.result;
   if (done) return { done: { ...done, repeated: true } };
   if (target.code) {
     // A save code only exists for someone who has set up Droplets and opened Grow, and Droplets says 404 for any other.
@@ -180,17 +221,21 @@ async function start(body: { to?: unknown }) {
       throw new Refusal("Couldn't reach Droplets just now. Try again in a minute.", 502);
     });
   }
-  const had = new Set(seen[target.id] ?? []);
+  const had = new Set(DEMO_MODE ? [] : (seen[target.id] ?? []));
   const fresh = BANK.map((_, i) => i).filter((i) => !had.has(i));
   if (fresh.length < PER_QUIZ) throw new Refusal("You've answered every question we have. New ones are coming, so check back soon.", 410);
   const picks: number[] = [];
   while (picks.length < PER_QUIZ) picks.push(...fresh.splice(Math.floor(Math.random() * fresh.length), 1));
-  seen[target.id] = [...had, ...picks];
-  writeFileSync(seenFile, JSON.stringify(seen), { mode: 0o600 });
+  if (!DEMO_MODE) {
+    seen[target.id] = [...had, ...picks];
+    writeFileSync(seenFile, JSON.stringify(seen), { mode: 0o600 });
+  }
+  // The options are shuffled for each quiz, so the right answer isn't always in the same place.
+  const orders = picks.map(() => shuffle([0, 1, 2]));
   const quizId = randomUUID();
   for (const [k, s] of sessions) if (s.expires < Date.now()) sessions.delete(k);
-  sessions.set(quizId, { to: target.to, id: target.id, picks, expires: Date.now() + 20 * 60_000 });
-  return { quizId, questions: picks.map((i) => ({ q: BANK[i]!.q, options: BANK[i]!.options })) };
+  sessions.set(quizId, { to: target.to, id: target.id, picks, orders, expires: Date.now() + 20 * 60_000 });
+  return { quizId, questions: picks.map((i, n) => ({ q: BANK[i]!.q, options: orders[n]!.map((o) => BANK[i]!.options[o]!) })) };
 }
 
 const busy = new Set<string>();
@@ -198,7 +243,7 @@ async function claim(body: { quizId?: unknown; answers?: unknown }): Promise<Res
   const session = typeof body.quizId === "string" ? sessions.get(body.quizId) : undefined;
   if (!session || session.expires < Date.now()) throw new Refusal("That quiz has timed out. Start again.", 410);
   const answers = Array.isArray(body.answers) ? body.answers : [];
-  const score = session.picks.filter((q, i) => answers[i] === BANK[q]!.answer).length;
+  const score = session.picks.filter((q, i) => typeof answers[i] === "number" && session.orders[i]![answers[i]] === BANK[q]!.answer).length;
   const target = { to: session.to, id: session.id };
   if (score < PASS) {
     sessions.delete(body.quizId as string);
@@ -206,7 +251,7 @@ async function claim(body: { quizId?: unknown; answers?: unknown }): Promise<Res
   }
 
   // One reward per person per day. The payout id makes retries safe, and a repeat claim shows the first result.
-  const payoutId = dayOf(target.id);
+  const payoutId = dayOf(target.id, body.quizId as string);
   const known = claims[payoutId];
   if (known?.result) return { ...known.result, repeated: true };
   if (busy.has(payoutId)) throw new Refusal("Your reward is being sent. Give it a moment.", 409);

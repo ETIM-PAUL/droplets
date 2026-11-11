@@ -2,6 +2,9 @@
 
 A small change to the server code that pays your users. You'll register, install the SDK, and replace one payment call.
 
+!!! tip "Prefer not to install an SDK?"
+    You don't need to. [Without the SDK](without-the-sdk.md) shows the same flow using only `fetch` and Nimiq's own library.
+
 ## 1. Register
 
 [Register your app](register.md) on the Droplets home page. You get an app key (`rk_save_…`) once. Keep it in an environment variable on your server, for example `DROPLETS_KEY`. It starts working when the Droplets team approves your app.

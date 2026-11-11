@@ -60,4 +60,5 @@ nav:
       - Paying users: for-apps/paying-users.md
       - Spend and save: for-apps/spend-and-save.md
       - Retries, receipts and going live: for-apps/going-live.md
+      - Without the SDK: for-apps/without-the-sdk.md
       - HTTP API reference: for-apps/api-reference.md

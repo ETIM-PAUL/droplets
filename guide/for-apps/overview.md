@@ -20,7 +20,7 @@ Droplets lets apps that pay people NIM, or take payments in NIM, save for their 
 
 1. A server that sends your payouts, with a Nimiq payout key. Droplets can't be used from the Mini App's front end, because it signs with your key.
 2. **An app key and registered payout addresses.** [Register your app](register.md); the Droplets team approves it.
-3. The SDK, [`@droplets/save`](quickstart.md), or the [HTTP API](api-reference.md) if you don't use Node.
+3. The SDK, [`@droplets/save`](quickstart.md), **or no SDK at all**: the [HTTP API](api-reference.md) does everything the SDK does, and [Without the SDK](without-the-sdk.md) walks through it with only `fetch` and Nimiq's own library.
 
 ## What users see
 

@@ -41,6 +41,10 @@ export interface GoalStore {
   goalBanUntil(address: string): Promise<number | null>;
   /** Extends the ban to `until`, never shortening one already further out. */
   banGoals(address: string, until: number): Promise<void>;
+  /** Lifts a ban right away: for correcting one that was wrongly applied. */
+  clearGoalBan(address: string): Promise<void>;
+  /** Clears a goal's breached flag: for correcting one that was set by mistake. False if there's no such goal. */
+  clearBreach(address: string, id: string): Promise<boolean>;
 }
 
 export class MemoryGoalStore implements GoalStore {
@@ -107,6 +111,15 @@ export class MemoryGoalStore implements GoalStore {
   async banGoals(address: string, until: number) {
     const cur = this.bans.get(address);
     if (cur === undefined || until > cur) this.bans.set(address, until);
+  }
+  async clearGoalBan(address: string) {
+    this.bans.delete(address);
+  }
+  async clearBreach(address: string, id: string) {
+    const g = await this.getGoal(address, id);
+    if (!g) return false;
+    this.goals.set(id, { ...g, breachedAt: null });
+    return true;
   }
 }
 
@@ -228,5 +241,12 @@ export class PgGoalStore implements GoalStore {
     // A cursor row is guaranteed to exist by the time a ban is possible: a breach is only ever found while
     // reconciling a change against an existing cursor, never on the first reconciliation for an address.
     await this.pool.query(`UPDATE save_goal_cursors SET banned_until = GREATEST(COALESCE(banned_until, 0), $2) WHERE address = $1`, [address, until]);
+  }
+  async clearGoalBan(address: string) {
+    await this.pool.query(`UPDATE save_goal_cursors SET banned_until = NULL WHERE address = $1`, [address]);
+  }
+  async clearBreach(address: string, id: string) {
+    const r = await this.pool.query(`UPDATE save_goals SET breached_at = NULL WHERE address = $1 AND id = $2`, [address, id]);
+    return (r.rowCount ?? 0) > 0;
   }
 }

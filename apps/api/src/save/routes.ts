@@ -162,19 +162,29 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
    * moves the difference across the goals (see reconcileGoals in @railkit/core). A no-op when nothing changed.
    * `targeted` sends growth the user declares ("I just added this for goal X") to that goal first.
    */
-  async function reconcileGoalsFor(address: string, totalLuna: bigint, targeted?: { goalId: string; luna: bigint }) {
+  async function reconcileGoalsFor(address: string, totalLuna: bigint, fresh: boolean, targeted?: { goalId: string; luna: bigint }) {
     const cursor = await goalStore.goalCursor(address);
     if (cursor === undefined) {
       // First time we've seen this address: nothing to reconcile retroactively, just remember where it stands.
       await goalStore.setGoalCursor(address, totalLuna, now());
       return;
     }
-    const delta = totalLuna - cursor;
+    let total = totalLuna;
+    let delta = total - cursor;
+    // A shrink claims a withdrawal happened, which can drain a locked goal and ban new ones: never trust that from
+    // a cached read. The cache can still serve a stale, lower total after a later fresh read already moved the
+    // cursor up (adding stake or a payout doesn't invalidate it), which would otherwise look like a withdrawal that
+    // never happened. Re-check against the chain before believing a drop.
+    if (delta < 0n && !fresh) {
+      const { grow } = await growState(address, true);
+      total = growTotal(grow);
+      delta = total - cursor;
+    }
     if (delta === 0n && !targeted) return;
     const goals = (await goalStore.listGoals(address)).map(toGoalInput);
     const { changes, breached } = reconcileGoals(goals, delta, now(), targeted);
     if (changes.size > 0) await goalStore.applyGoalChanges(changes, breached, now());
-    await goalStore.setGoalCursor(address, totalLuna, now());
+    await goalStore.setGoalCursor(address, total, now());
     // A withdrawal outside Droplets reached into a locked goal: bar new goals for a while.
     if (breached.size > 0) await goalStore.banGoals(address, now() + GOAL_BAN_MS);
   }
@@ -492,9 +502,10 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
       targeted = { goalId: creditGoal, luna: BigInt(creditLunaRaw) };
     }
     try {
-      const { grow } = await growState(addr.value, c.req.query("fresh") === "1");
+      const isFresh = c.req.query("fresh") === "1";
+      const { grow } = await growState(addr.value, isFresh);
       const total = growTotal(grow);
-      await reconcileGoalsFor(addr.value, total, targeted);
+      await reconcileGoalsFor(addr.value, total, isFresh, targeted);
       const rows = await goalStore.listGoals(addr.value);
       const nowMs = now();
       const inputs = rows.map(toGoalInput);
@@ -581,7 +592,7 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
     const goal = await goalStore.getGoal(address, m.value.goalId!);
     if (!goal) return bad("No goal like that.", 404);
     const { grow } = await growState(address, true);
-    await reconcileGoalsFor(address, growTotal(grow));
+    await reconcileGoalsFor(address, growTotal(grow), true);
     const fresh = await goalStore.getGoal(address, m.value.goalId!);
     if (!fresh) return bad("No goal like that.", 404);
     const requiredFee = breakFeeLuna(BigInt(fresh.allocatedLuna));
@@ -839,6 +850,22 @@ export function mountSaveRoutes<E extends HonoEnv>(app: Hono<E>, s: SaveDeps, h:
     }
     log("save receipt", { app: payer.id, code: row.code, source, ...out });
     return c.json(out);
+  });
+
+  /**
+   * Lifts a goal-creation ban right away: for an address wrongly banned, such as by a stale cached read that
+   * looked like a withdrawal (fixed, but this undoes its effect on an address already caught by it).
+   */
+  app.post("/v1/admin/save/goals/unban", async (c) => {
+    if (!h.admin(c.req.header("authorization"))) return bad("Not found.", 404);
+    const body = await jsonObject(c);
+    const addr = parseNimiqAddress(typeof body?.address === "string" ? body.address : "");
+    if (!addr.ok) return bad(addr.error.message);
+    await goalStore.clearGoalBan(addr.value);
+    // Optionally also clears the breached flag the same false positive left on a specific goal.
+    if (typeof body?.goalId === "string") await goalStore.clearBreach(addr.value, body.goalId);
+    log("goal ban cleared", { address: addr.value.slice(0, 9), goalId: typeof body?.goalId === "string" ? body.goalId : undefined });
+    return c.json({ ok: true });
   });
 
   // ---- Admin: the apps that save with Droplets, from the admin page or curl. Keys are shown once, and never listed.

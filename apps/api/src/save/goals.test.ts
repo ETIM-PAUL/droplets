@@ -242,6 +242,23 @@ describe("filling goals as savings grow, and what's locked", () => {
     expect(create.status).toBe(403);
   });
 
+  it("never treats a stale cached read as a withdrawal: a non-fresh poll right after a deposit must not falsely breach a locked goal", async () => {
+    const { app, stake } = setup();
+    const ada = account();
+    stake(ada.address, { active: NIM(1_000) });
+    await json(await app.request(`/v1/save/goals?address=${encodeURIComponent(ada.address)}&fresh=1`)); // cursor at 1,000
+    await app.request("/v1/save/goals", post(signed(ada, goalMsg(ada.address, { name: "Trip", targetLuna: null, dueAt: Date.UTC(2027, 0, 1) }))));
+    // A non-fresh read right now caches the pre-deposit total for 60 seconds.
+    await json(await app.request(`/v1/save/goals?address=${encodeURIComponent(ada.address)}`));
+    stake(ada.address, { active: NIM(1_400) }); // 400 NIM lands, e.g. opening Grow or a third-party app's payout
+    await json(await app.request(`/v1/save/goals?address=${encodeURIComponent(ada.address)}&fresh=1`)); // fresh: cursor advances to 1,400, fills the goal
+    // A routine non-fresh poll, still inside that cache window, would otherwise serve the stale 1,000 and
+    // read as a 400 NIM withdrawal reaching into the locked goal.
+    const list = await json(await app.request(`/v1/save/goals?address=${encodeURIComponent(ada.address)}`));
+    expect(list.goals[0]).toMatchObject({ allocatedLuna: NIM(400).toString(), breached: false, locked: true });
+    expect(list.bannedUntil).toBeNull();
+  });
+
   it("sends a declared top-up to the named goal first, then waterfalls anything else over the rest", async () => {
     const { app, stake } = setup();
     const ada = account();
